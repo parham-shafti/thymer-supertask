@@ -274,6 +274,20 @@ function recurOccurrences(rule, fromYmd, cap) {
 	return out;
 }
 
+/* The day of occurrence #n, where the ANCHOR IS OCCURRENCE #1 — Apple's
+ * "End Repeat: After n times". Schedule-based rules only (completion mode
+ * cannot know future days); returns 0 when it cannot answer. */
+function recurNthOccurrence(rule, anchorYmd, n) {
+	if (!rule || !rule.f || rule.from === 'c' || !anchorYmd || !n || n < 1) return 0;
+	let cur = anchorYmd;
+	for (let i = 1; i < Math.min(n, 500); i++) {
+		const next = recurNext(rule, cur);
+		if (!next || next <= cur) return 0;
+		cur = next;
+	}
+	return cur;
+}
+
 /* ==== RECURRENCE ENGINE — end ==== */
 
 /* The DEFAULT timeblock set — Parham's day, in order. Since v0.11.0 users can
@@ -475,6 +489,15 @@ const CSS = `
 .rs-custom .rs-int { width: 52px; }
 .rs-custom .rs-until { width: 132px; }
 .rs-until.rs-bad-date { border-color: rgba(220,90,90,.7); }
+.rs-endafter { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; }
+.rs-cnt {
+	width: 46px; background: transparent; color: inherit; font-family: inherit; font-size: 13px;
+	border: 1px solid rgba(127,127,127,.35); border-radius: 4px; padding: 1px 4px;
+}
+.rs-minical { width: 248px; }
+.rs-minical .datepicker-header { display: flex; align-items: center; }
+.rs-mc-nav { cursor: pointer; padding: 0 6px; opacity: .55; user-select: none; }
+.rs-mc-nav:hover { opacity: 1; }
 .rs-custom input[type="radio"], .rs-custom input[type="checkbox"] {
 	border: none; padding: 0; width: auto;
 	accent-color: var(--color-primary-500, #3aa37f);
@@ -1604,7 +1627,7 @@ class Plugin extends AppPlugin {
 				const prev = this.pageRules[t.guid];
 				if (t.pendingRule) {
 					const rule = {
-						...t.pendingRule, a: ymd, dp: dpId,
+						...this.finalizeRule(t.pendingRule, ymd), dp: dpId,
 						sp: ctx.sp || null, dv: ctx.dv || null, dvl: ctx.dvl || null,
 						rv: ctx.rv || null, rvl: ctx.rvl || null,
 						copies: (prev && prev.copies) || {},
@@ -1670,12 +1693,12 @@ class Plugin extends AppPlugin {
 					const oymd = op && op.year !== undefined
 						? op.year * 10000 + (op.month + 1) * 100 + op.day
 						: rp.year * 10000 + (rp.month + 1) * 100 + rp.day;
-					const rule = t.pendingRule ? { ...t.pendingRule, a: oymd } : null;
+					const rule = this.finalizeRule(t.pendingRule, oymd);
 					await this.writeRule(origLi, rule);
 					seriesOrigin = { pl: plS, li: origLi, rule, ymd: oymd };
 				}
 			} else {
-				const rule = t.pendingRule ? { ...t.pendingRule, a: rp.year * 10000 + (rp.month + 1) * 100 + rp.day } : null;
+				const rule = this.finalizeRule(t.pendingRule, rp.year * 10000 + (rp.month + 1) * 100 + rp.day);
 				await this.writeRule(li, rule);
 				seriesRule = rule; /* null included — that reconciles the series away */
 			}
@@ -3873,7 +3896,7 @@ class Plugin extends AppPlugin {
 					</div>
 				</div>
 				<label class="rs-fromrow" title="Day selections always repeat on schedule — Count from applies to plain intervals only"><span>Count From</span><span class="rs-sel rs-from" data-v="a"><span class="rs-sel-lbl">The Due Date</span><span class="ti ti-chevron-down"></span></span></label>
-				<label title="When the SERIES stops. + End date up top is different: it makes each occurrence a date RANGE."><span>End Repeat</span><span class="rs-sel rs-endsel" data-v=""><span class="rs-sel-lbl">Never</span><span class="ti ti-chevron-down"></span></span><input class="rs-until" type="text" spellcheck="false" placeholder="11 Sep 2026" style="display:none"></label>
+				<label title="When the SERIES stops. + End date up top is different: it makes each occurrence a date RANGE."><span>End Repeat</span><span class="rs-sel rs-endsel" data-v=""><span class="rs-sel-lbl">Never</span><span class="ti ti-chevron-down"></span></span><span class="rs-endafter" style="display:none"><input class="rs-cnt" type="number" min="1" max="100" value="3"> times</span><input class="rs-until" type="text" spellcheck="false" placeholder="pick a date" style="display:none"></label>
 				<label class="rs-trailrow" title="Backwards keeps a completed copy each time you tick. Forward lays out every future occurrence up front (needs Until, schedule-based rules only)."><span>Leave a Trail</span><span class="rs-sel rs-trail" data-v=""><span class="rs-sel-lbl">Off</span><span class="ti ti-chevron-down"></span></span></label>
 			</div>
 			<div class="rs-foot">
@@ -4143,7 +4166,8 @@ class Plugin extends AppPlugin {
 			 * it reads as the current setting you can change rather than a label —
 			 * and a real rule lights up in the accent (his request) */
 			const now = pop.querySelector('.rs-repnow');
-			now.textContent = recurLabel(this.rule);
+			now.textContent = recurLabel(this.rule)
+				+ (this.rule && this.rule.aftN && !this.rule.u ? ', ' + this.rule.aftN + ' times' : '');
 			now.classList.toggle('rs-set', !!(this.rule && this.rule.f));
 			const n = Math.max(1, (this.rule && this.rule.n) || 1);
 			pop.querySelector('.rs-unit').textContent = UNITS[(this.rule && this.rule.f) || 'd'] + (n === 1 ? '' : 's');
@@ -4248,20 +4272,33 @@ class Plugin extends AppPlugin {
 					rule.od = odParse(selVal(pop.querySelector('.rs-yod')));
 				}
 			}
-			/* Until is free text through Thymer's own parser, like the main field */
+			/* End Repeat: After stores the count (compiled to a date at commit);
+			 * On Date parses the field (typed text goes through Thymer's own
+			 * parser, the picker writes the same format) */
 			until.classList.remove('rs-bad-date');
-			const uraw = until.value.trim();
-			if (uraw) {
-				const up = DateTime.parseDateTimeString(uraw);
-				const upp = up && up.getParts();
-				if (upp && upp.year !== undefined) rule.u = upp.year * 10000 + (upp.month + 1) * 100 + upp.day;
-				else until.classList.add('rs-bad-date');
+			let endMode = selVal(pop.querySelector('.rs-endsel'));
+			if (endMode === 'n' && selVal(from) === 'c') {
+				/* completion-counted rules cannot know future days */
+				setSel(pop.querySelector('.rs-endsel'), '', [['', 'Never'], ['n', 'After'], ['d', 'On Date']]);
+				endAfter.style.display = 'none';
+				endMode = '';
+			}
+			if (endMode === 'n') {
+				rule.aftN = Math.max(1, Math.min(100, parseInt(cnt.value, 10) || 1));
+			} else if (endMode === 'd') {
+				const uraw = until.value.trim();
+				if (uraw) {
+					const up = DateTime.parseDateTimeString(uraw);
+					const upp = up && up.getParts();
+					if (upp && upp.year !== undefined) rule.u = upp.year * 10000 + (upp.month + 1) * 100 + upp.day;
+					else until.classList.add('rs-bad-date');
+				}
 			}
 			const tv = selVal(trailSel);
 			if (tv) rule.tr = tv;
 			/* forward needs an end date and a schedule-based rule; the engine
 			 * quietly refuses otherwise, so make the gap visible right here */
-			if (tv === 'f' && !rule.u) until.classList.add('rs-bad-date');
+			if (tv === 'f' && !rule.u && !rule.aftN) until.classList.add('rs-bad-date');
 			this.rule = rule;
 			paintRepeat();
 			updateGrammar();
@@ -4278,10 +4315,13 @@ class Plugin extends AppPlugin {
 			yCheck.checked = !!r.ord && r.f === 'y';
 			if (r.ord) { setSel(pop.querySelector('.rs-mord'), String(r.ord), ORDOPTS); setSel(pop.querySelector('.rs-yordsel'), String(r.ord), ORDOPTS); }
 			if (r.od !== undefined) { setSel(pop.querySelector('.rs-mod'), String(r.od), ODOPTS); setSel(pop.querySelector('.rs-yod'), String(r.od), ODOPTS); }
-			until.value = r.u ? (r.u % 100) + ' ' + RECUR_MONTHNAMES[Math.floor(r.u / 100) % 100 - 1] + ' ' + Math.floor(r.u / 10000) : '';
+			const endMode2 = r.aftN ? 'n' : (r.u ? 'd' : '');
+			until.value = endMode2 === 'd' && r.u ? (r.u % 100) + ' ' + RECUR_MONTHNAMES[Math.floor(r.u / 100) % 100 - 1] + ' ' + Math.floor(r.u / 10000) : '';
 			until.classList.remove('rs-bad-date');
-			setSel(pop.querySelector('.rs-endsel'), r.u ? 'd' : '', [['', 'Never'], ['d', 'On Date']]);
-			until.style.display = r.u ? '' : 'none';
+			cnt.value = r.aftN || 3;
+			setSel(pop.querySelector('.rs-endsel'), endMode2, [['', 'Never'], ['n', 'After'], ['d', 'On Date']]);
+			endAfter.style.display = endMode2 === 'n' ? '' : 'none';
+			until.style.display = endMode2 === 'd' ? '' : 'none';
 			setSel(trailSel, r.tr || '', TRAILOPTS);
 			updateGrammar();
 		};
@@ -4297,23 +4337,40 @@ class Plugin extends AppPlugin {
 		wireSel(freq, FREQOPTS);
 		wireSel(from, FROMOPTS);
 		wireSel(trailSel, TRAILOPTS);
-		/* End Repeat is Apple's shape (his screenshots): Never / On Date, and
-		 * the date field only exists once On Date is picked — prefilled a
-		 * month out so it never sits as an unexplained empty box */
-		const ENDOPTS = [['', 'Never'], ['d', 'On Date']];
+		/* End Repeat is Apple's shape (his screenshots): Never / After n times /
+		 * On Date with a real date picker. After compiles to a date at COMMIT
+		 * (occurrence #n from the committed anchor, engine-computed) so no
+		 * counters ever need mutating on ticks; completion-counted rules
+		 * cannot know future days, so After is absent from the menu there. */
 		const endSel = pop.querySelector('.rs-endsel');
-		endSel.addEventListener('click', () => this.openSelMenu(endSel, ENDOPTS, selVal(endSel), (v) => {
-			setSel(endSel, v, ENDOPTS);
+		const endAfter = pop.querySelector('.rs-endafter');
+		const cnt = pop.querySelector('.rs-cnt');
+		const ENDOPTS_ALL = [['', 'Never'], ['n', 'After'], ['d', 'On Date']];
+		const endApply = (v) => {
+			setSel(endSel, v, ENDOPTS_ALL);
+			endAfter.style.display = v === 'n' ? '' : 'none';
 			until.style.display = v === 'd' ? '' : 'none';
 			if (v === 'd' && !until.value.trim()) {
 				const b = (this.sel || new DateTime(new Date())).getParts();
 				const d2 = new Date(b.year, b.month + 1, b.day);
 				until.value = d2.getDate() + ' ' + RECUR_MONTHNAMES[d2.getMonth()] + ' ' + d2.getFullYear();
 			}
-			if (v !== 'd') until.value = '';
+			if (v !== 'd') { until.value = ''; until.classList.remove('rs-bad-date'); }
 			syncCustom();
-			if (v === 'd') until.focus();
-		}));
+		};
+		endSel.addEventListener('click', () => {
+			const opts = selVal(from) === 'c' ? ENDOPTS_ALL.filter((o) => o[0] !== 'n') : ENDOPTS_ALL;
+			this.openSelMenu(endSel, opts, selVal(endSel), endApply);
+		});
+		cnt.addEventListener('input', syncCustom);
+		until.addEventListener('click', () => {
+			const up = DateTime.parseDateTimeString(until.value.trim() || '');
+			const upp = up && up.getParts();
+			this.openMiniCal(until, upp && upp.year !== undefined ? upp : null, (y2, m2, d2) => {
+				until.value = d2 + ' ' + RECUR_MONTHNAMES[m2] + ' ' + y2;
+				syncCustom();
+			});
+		});
 		wireSel(pop.querySelector('.rs-mord'), ORDOPTS);
 		wireSel(pop.querySelector('.rs-mod'), ODOPTS);
 		wireSel(pop.querySelector('.rs-yordsel'), ORDOPTS);
@@ -4383,6 +4440,76 @@ class Plugin extends AppPlugin {
 	/* Native's own day-cell shape, so native's CSS lights it up:
 	 * <div class="day current-month|prev-month|next-month [today] [selected]
 	 * [inrange]" data-date="YYYY-MM-DD"><span class="day-inner">N</span></div> */
+	/* A compact month picker for End Repeat: On Date — Thymer's OWN datepicker
+	 * markup (wrapper INSIDE the popover, the doctrine) so the app styles and
+	 * themes it. Carries .rs-repmenu so the box's outside-click handler
+	 * treats it as one of ours. */
+	openMiniCal(anchorEl, startParts, onPick) {
+		document.querySelectorAll('.rs-minical').forEach((m) => m.remove());
+		const box = document.createElement('div');
+		box.className = 'rs-repmenu rs-minical';
+		const now = new Date();
+		let vy = startParts ? startParts.year : now.getFullYear();
+		let vm = startParts ? startParts.month : now.getMonth();
+		const selYmd = startParts ? startParts.year * 10000 + (startParts.month + 1) * 100 + startParts.day : 0;
+		const paint = () => {
+			const first = new Date(vy, vm, 1);
+			const lead = (first.getDay() + 6) % 7;
+			let days = '';
+			for (let i = 0; i < 42; i++) {
+				const d = new Date(vy, vm, 1 - lead + i);
+				const ymd = d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+				const cls = ['day', d.getMonth() === vm ? 'current-month' : (d < first ? 'prev-month' : 'next-month')];
+				if (d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()) cls.push('today');
+				if (ymd === selYmd) cls.push('selected');
+				days += '<div class="' + cls.join(' ') + '" data-ymd="' + ymd + '"><span class="day-inner">' + d.getDate() + '</span></div>';
+			}
+			box.innerHTML = '<div class="datepicker-wrapper datepicker-compact"><div class="datepicker-calendar">'
+				+ '<div class="datepicker-header"><span class="current-month" style="flex:1">'
+				+ new Date(vy, vm, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
+				+ '</span><span class="rs-mc-nav rs-mc-prev">‹</span><span class="rs-mc-nav rs-mc-next">›</span></div>'
+				+ '<div class="datepicker-weekdays">' + DOW.map((d) => '<div class="weekday">' + d + '</div>').join('') + '</div>'
+				+ '<div class="datepicker-days">' + days + '</div>'
+				+ '</div></div>';
+		};
+		paint();
+		document.body.appendChild(box);
+		const r = anchorEl.getBoundingClientRect();
+		box.style.top = Math.min(r.bottom + 4, window.innerHeight - box.offsetHeight - 8) + 'px';
+		box.style.left = Math.max(8, Math.min(r.left, window.innerWidth - box.offsetWidth - 8)) + 'px';
+		const outside = (e) => { if (!box.contains(e.target) && e.target !== anchorEl) close(); };
+		const close = () => { document.removeEventListener('pointerdown', outside, true); box.remove(); };
+		setTimeout(() => document.addEventListener('pointerdown', outside, true), 0);
+		box.addEventListener('click', (e) => {
+			const nav = e.target.closest('.rs-mc-nav');
+			if (nav) {
+				vm += nav.classList.contains('rs-mc-next') ? 1 : -1;
+				if (vm < 0) { vm = 11; vy--; }
+				if (vm > 11) { vm = 0; vy++; }
+				paint();
+				return;
+			}
+			const day = e.target.closest('.day');
+			if (day) {
+				const ymd = +day.getAttribute('data-ymd');
+				close();
+				onPick(Math.floor(ymd / 10000), Math.floor(ymd / 100) % 100 - 1, ymd % 100);
+			}
+		});
+	}
+
+	/* anchor the pending rule on the committed day and compile "After n
+	 * times" into its concrete end date (occurrence #1 = the anchor) */
+	finalizeRule(pending, anchorYmd) {
+		if (!pending) return null;
+		const rule = { ...pending, a: anchorYmd };
+		if (rule.aftN) {
+			const nth = recurNthOccurrence(rule, anchorYmd, rule.aftN);
+			if (nth) rule.u = nth;
+		}
+		return rule;
+	}
+
 	renderCal(pop) {
 		const { y, m } = this.view;
 		pop.querySelector('.current-month').textContent =

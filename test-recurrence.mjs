@@ -9,8 +9,8 @@ if (start < 0 || end < 0) { console.error('engine markers not found in plugin.js
 const engine = src.slice(start, end);
 
 const scope = {};
-new Function('S', engine + '\nObject.assign(S,{recurNext,recurMatches,recurLabel,recurOrdinalDay,recurAdvance,recurAddInterval,recurOccurrences});')(scope);
-const { recurNext, recurLabel, recurAdvance, recurOccurrences } = scope;
+new Function('S', engine + '\nObject.assign(S,{recurNext,recurMatches,recurLabel,recurOrdinalDay,recurAdvance,recurAddInterval,recurOccurrences,recurNthOccurrence});')(scope);
+const { recurNext, recurLabel, recurAdvance, recurOccurrences, recurNthOccurrence } = scope;
 
 let fails = 0;
 const check = (name, got, want) => {
@@ -97,6 +97,12 @@ check('no until = no expansion', recurOccurrences({ f: 'd', n: 1, a: 20260810 },
 check('completion mode = no expansion', recurOccurrences({ f: 'd', n: 3, a: 20260810, u: 20260901, from: 'c' }, 20260810).length, '0');
 check('cap bounds a runaway series', recurOccurrences({ f: 'd', n: 1, a: 20260101, u: 20301231 }, 20260101, 50).length, '50');
 check('monthly 31st clamps inside the window', recurOccurrences({ f: 'm', n: 1, a: 20260131, u: 20260501 }, 20260131).join(','), '20260228,20260331,20260430');
+
+console.log('\nEnd Repeat: After n times');
+check('after 1 time = the anchor itself', recurNthOccurrence({ f: 'd', n: 1, a: 20260810 }, 20260810, 1), '20260810');
+check('after 3 daily times', recurNthOccurrence({ f: 'd', n: 1, a: 20260810 }, 20260810, 3), '20260812');
+check('after 4 biweekly Fridays', recurNthOccurrence({ f: 'w', n: 2, a: 20260814, wd: [4] }, 20260814, 4), '20260925');
+check('completion mode cannot count ahead', recurNthOccurrence({ f: 'd', n: 3, a: 20260810, from: 'c' }, 20260810, 3), '0');
 
 console.log(fails ? '\n' + fails + ' FAILED\n' : '\nall passed\n');
 process.exit(fails ? 1 : 0);
