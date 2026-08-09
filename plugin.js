@@ -729,6 +729,9 @@ class Plugin extends AppPlugin {
 		 * of sp that means done), rv (reset value; empty = clear), tr, and
 		 * copies {ymd: recordGuid} for the forward-trail series. */
 		this.pageRules = {};
+		/* last-used field choices per collection — DEFAULTS for the pickers,
+		 * never a forced wiring (his 1.2.2 verdict) */
+		this.pageDefaults = {};
 		this.applySlots(this.tbSlots);
 		try {
 			const ls = JSON.parse(localStorage.getItem('rs_prefs') || 'null');
@@ -1071,6 +1074,7 @@ class Plugin extends AppPlugin {
 			this.globalBins = p.globalBins.filter((k) => ORDER_BINS.some((b) => b.key === k));
 		}
 		if (p.pageRules && typeof p.pageRules === 'object') this.pageRules = p.pageRules;
+		if (p.pageDefaults && typeof p.pageDefaults === 'object') this.pageDefaults = p.pageDefaults;
 		/* legacy master switch (v0.16.2/0.16.3): off meant off regardless of
 		 * the stored choices; on with no stored choices meant Done only */
 		if (p.doneGlobal === false) this.globalBins = [];
@@ -1093,7 +1097,7 @@ class Plugin extends AppPlugin {
 	 * write-through to config for other devices. NOTE: saveConfiguration
 	 * reloads the plugin, so this is always the LAST thing an interaction does. */
 	async savePrefs() {
-		const p = { rev: Date.now(), slots: this.tbSlots, globalBins: (this.globalBins || []).slice(), pageRules: this.pageRules || {} };
+		const p = { rev: Date.now(), slots: this.tbSlots, globalBins: (this.globalBins || []).slice(), pageRules: this.pageRules || {}, pageDefaults: this.pageDefaults || {} };
 		this.prefsRev = p.rev;
 		try { localStorage.setItem('rs_prefs', JSON.stringify(p)); } catch (e) {}
 		try {
@@ -1600,6 +1604,9 @@ class Plugin extends AppPlugin {
 						copies: (prev && prev.copies) || {},
 					};
 					this.pageRules[t.guid] = rule;
+					if (t.collGuid) {
+						this.pageDefaults[t.collGuid] = { dp: dpId, sp: rule.sp, dv: rule.dv, dvl: rule.dvl, rv: rule.rv, rvl: rule.rvl };
+					}
 					if (rule.tr === 'f' && !rule.u) this.toast('Forward trail needs an Until date — no copies laid out yet.');
 					try { await this.reconcilePageSeries(rec, rule); } catch (e) {}
 					this.toast(recurLabel(rule) + ' on ' + (rec.getName() || 'page'));
@@ -1868,20 +1875,26 @@ class Plugin extends AppPlugin {
 	 * value lists for record-type fields from the linked collections'
 	 * records, loaded when the menu opens. Everything lands in t.pageCtx,
 	 * which writeDate persists into the rule. */
-	wirePageRows(pop, t) {
+	async wirePageRows(pop, t) {
 		const rec = this.data.getRecord(t.guid);
 		if (!rec) return;
-		const { fields } = this.pageFields(rec);
+		const { fields, collGuid } = await this.pageFields(rec);
+		if (!fields.length) { this.toast('Could not read this collection’s fields.'); return; }
+		/* last-used choices per collection are remembered as DEFAULTS only */
+		const remembered = (this.pageDefaults && collGuid && this.pageDefaults[collGuid]) || null;
+		t.collGuid = collGuid;
 		const dateFields = fields.filter((f) => (f.type === 'datetime' || f.type === 'date') && f.active !== false && f.id !== 'created_at' && f.id !== 'updated_at');
 		const statusFields = fields.filter((f) => (f.type === 'record' || f.type === 'choice') && f.active !== false && f.id !== 'parent_page');
 		const prev = (this.pageRules && this.pageRules[t.guid]) || null;
 		const defDate = (prev && dateFields.find((f) => f.id === prev.dp))
+			|| (remembered && dateFields.find((f) => f.id === remembered.dp))
 			|| dateFields.find((f) => (f.label || '') === DUE_DATE_FIELD)
 			|| dateFields[0] || null;
+		const seed = prev || remembered || {};
 		t.pageCtx = {
 			dp: defDate && defDate.id, dpl: defDate && defDate.label,
-			sp: prev && prev.sp, spl: null, dv: prev && prev.dv, dvl: prev && prev.dvl,
-			rv: prev && prev.rv, rvl: prev && prev.rvl,
+			sp: seed.sp, spl: null, dv: seed.dv, dvl: seed.dvl,
+			rv: seed.rv, rvl: seed.rvl,
 		};
 		const prevSf = t.pageCtx.sp && statusFields.find((f) => f.id === t.pageCtx.sp);
 		if (prevSf) t.pageCtx.spl = prevSf.label;
@@ -1915,22 +1928,21 @@ class Plugin extends AppPlugin {
 		const valueItems = async (fdef) => {
 			if (!fdef) return [];
 			if (fdef.type === 'choice') {
-				return ((fdef.choices || fdef.options || []).map((c) => [String(c.id != null ? c.id : c.value), c.label || String(c.id)]));
+				return ((fdef.choices || []).map((c) => [String(c.id), c.label || String(c.id)]));
 			}
-			const collIds = (fdef.choices || []).map((c) => c.id).filter(Boolean);
+			/* record fields: the schema's filter_colguid names the linked
+			 * collection; its records are the value space (wrappers carry a
+			 * public .guid — bundle-verified) */
+			const target = fdef.filter_colguid;
+			if (!target) return [];
 			const items = [];
 			try {
 				const all = await this.data.getAllCollections();
-				for (const c of all) {
-					if (collIds.length && collIds.indexOf(c.getGuid()) < 0) continue;
-					if (!collIds.length) continue;
+				const c = (all || []).find((x) => { try { return x.getGuid() === target; } catch (e) { return false; } });
+				if (c) {
 					const recs = await c.getAllRecords();
-					for (const r2 of recs.slice(0, 100)) {
-						/* getAllRecords gives wrappers with getName; guid via prop lookup is
-						 * not exposed, so read it off the state map by name match is unsafe —
-						 * use the record's own guid accessor when present */
-						const g = r2.guid || (r2.getGuid && r2.getGuid()) || null;
-						if (g) items.push([String(g), r2.getName() || String(g)]);
+					for (const r2 of (recs || []).slice(0, 100)) {
+						if (r2 && r2.guid) items.push([String(r2.guid), r2.getName() || String(r2.guid)]);
 					}
 				}
 			} catch (e) {}
@@ -1998,12 +2010,19 @@ class Plugin extends AppPlugin {
 		} catch (e) {}
 	}
 
-	pageFields(rec) {
+	/* PluginRecord has NO getCollection() (types.d.ts lists it on events only
+	 * — the 1.2.2 pickers died on exactly that). Sanctioned route instead:
+	 * a record row's pguid IS its collection root guid (bundle-verified), and
+	 * PluginCollectionAPI.getGuid() returns the same, so getAllCollections()
+	 * finds the right wrapper. */
+	async pageFields(rec) {
 		try {
-			const coll = rec.getCollection();
+			const collGuid = rec._getRow ? (rec._getRow() || {}).pguid : null;
+			const all = await this.data.getAllCollections();
+			const coll = (all || []).find((c) => { try { return c.getGuid() === collGuid; } catch (e) { return false; } }) || null;
 			const cfg = coll && coll.getConfiguration ? coll.getConfiguration() : null;
-			return { coll, fields: (cfg && cfg.fields) || [] };
-		} catch (e) { return { coll: null, fields: [] }; }
+			return { coll, collGuid, fields: (cfg && cfg.fields) || [] };
+		} catch (e) { return { coll: null, collGuid: null, fields: [] }; }
 	}
 
 	async onRecordUpdated(ev) {
@@ -2034,7 +2053,7 @@ class Plugin extends AppPlugin {
 		const next = rule.tr === 'f' ? 0 : recurAdvance(rule, due, today);
 		this.recurBusy.add(guid);
 		try {
-			const { fields } = this.pageFields(rec);
+			const { fields } = await this.pageFields(rec);
 			const sdef = fields.find((f) => f.id === spId) || {};
 			if (!next) {
 				/* forward-trail rules never advance (the series is laid out);
@@ -2064,7 +2083,7 @@ class Plugin extends AppPlugin {
 	/* Duplicate a record with its property values — Reshape's proven recipe
 	 * (createRecord, poll until readable, per-type value copy). */
 	async duplicateRecordShallow(rec) {
-		const { coll, fields } = this.pageFields(rec);
+		const { coll, fields } = await this.pageFields(rec);
 		if (!coll) return null;
 		let guid = null;
 		try { guid = await coll.createRecord(rec.getName() || ''); } catch (e) {}
@@ -4110,7 +4129,7 @@ class Plugin extends AppPlugin {
 		/* records repeat too — the panel carries per-page field pickers (his
 		 * call 2026-08-09: per-collection wiring was the wrong shape; a
 		 * chooser stays, per page for now) */
-		if (t.kind === 'record') this.wirePageRows(pop, t);
+		if (t.kind === 'record') this.wirePageRows(pop, t).catch(() => {});
 
 		const paintRepeat = () => {
 			/* the value is ALWAYS shown, "Never" included, and styled as a button so
