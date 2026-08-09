@@ -3956,7 +3956,7 @@ class Plugin extends AppPlugin {
 		const input = pop.querySelector('.rs-input');
 		const timeInput = pop.querySelector('.rs-time');
 		const sw = pop.querySelector('.rs-switch');
-		const cur = this.currentDate(t);
+		let cur = this.currentDate(t);
 
 		/* Preselect: the date already set, else TODAY — so opening the box and
 		 * pressing Enter schedules today without touching the mouse. */
