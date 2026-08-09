@@ -506,19 +506,21 @@ const CSS = `
  * header another 5px — every layout attempt inherited that tilt. Zero them. */
 .rs-minical .datepicker-wrapper { width: auto; padding: 0; }
 .rs-minical .datepicker-calendar { width: auto; padding: 0; }
-.rs-minical .datepicker-header { display: flex; align-items: center; padding: 0 0 0 4px; margin-bottom: 12px; }
+.rs-minical .datepicker-header { display: flex; align-items: center; padding: 0 0 0 4px; margin-bottom: 10px; }
 .rs-minical .datepicker-weekdays,
 .rs-minical .datepicker-days {
-	display: grid; grid-template-columns: repeat(7, 30px);
-	gap: 4px 2px; width: max-content; height: auto; min-height: 0;
+	display: grid; grid-template-columns: repeat(7, 25px);
+	gap: 3px 2px; width: max-content; height: auto; min-height: 0;
 	margin: 0 auto;
 }
-.rs-minical .datepicker-weekdays { margin-bottom: 8px; }
-.rs-minical .weekday { width: 30px; text-align: center; padding: 0; }
+.rs-minical .datepicker-weekdays { margin-bottom: 7px; }
+.rs-minical .weekday { width: 25px; text-align: center; padding: 0; font-size: 11px; }
 .rs-minical .day {
-	width: 30px; height: 26px; margin: 0; padding: 0;
+	width: 25px; height: 22px; margin: 0; padding: 0;
 	display: flex; align-items: center; justify-content: center;
 }
+.rs-minical .day .day-inner { font-size: 12px; width: 18px; height: 18px; padding: 2px; }
+.rs-minical .current-month { font-size: 13px; }
 .rs-mc-nav { cursor: pointer; padding: 0 9px; opacity: .55; user-select: none; }
 .rs-mc-nav:hover { opacity: 1; }
 .rs-custom input[type="radio"], .rs-custom input[type="checkbox"] {
@@ -4583,7 +4585,7 @@ class Plugin extends AppPlugin {
 				const lastR = cells2[cells2.length - 1].getBoundingClientRect();
 				const cW = dr.width;
 				const cH = lastR.bottom - hr.top;
-				const air = 20;
+				const air = 17; /* his call: ~85% of the first square */
 				const side = Math.max(cW, cH) + air * 2;
 				box.style.width = side + 'px';
 				box.style.height = side + 'px';
