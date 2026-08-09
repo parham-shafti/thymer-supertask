@@ -494,7 +494,7 @@ const CSS = `
 	width: 46px; background: transparent; color: inherit; font-family: inherit; font-size: 13px;
 	border: 1px solid rgba(127,127,127,.35); border-radius: 4px; padding: 1px 4px;
 }
-.rs-minical { width: 248px; padding: 10px 10px 14px; }
+.rs-minical { width: 236px; padding: 12px; } /* equal air on all four sides */
 .rs-minical .datepicker-header { display: flex; align-items: center; }
 .rs-mc-nav { cursor: pointer; padding: 0 6px; opacity: .55; user-select: none; }
 .rs-mc-nav:hover { opacity: 1; }
@@ -1462,8 +1462,14 @@ class Plugin extends AppPlugin {
 		return { segments, lineGuid: st.guid, pageGuid: st.rguid, domGuid: st.guid, props: st.props || null, noCaret: true };
 	}
 
-	/* editor caret first, tasks-view row second — the shared line resolver */
+	/* the surface HOLDING THE FOCUS wins: in a split view a caret parked in
+	 * the other panel must not shadow the tasks row the user is standing on
+	 * (his screenshot: the box opened against the wrong panel entirely) */
 	lineSelection() {
+		const el = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+		if (el && el.closest('.tasks-view-row, .tasks-view-list')) {
+			return this.tasksViewSelection() || this.editorSelection();
+		}
 		return this.editorSelection() || this.tasksViewSelection();
 	}
 
@@ -3954,8 +3960,19 @@ class Plugin extends AppPlugin {
 
 		/* Preselect: the date already set, else TODAY — so opening the box and
 		 * pressing Enter schedules today without touching the mouse. */
-		const start = cur || new DateTime(new Date());
-		const sp = start.getParts();
+		let start = cur || new DateTime(new Date());
+		let sp = start.getParts();
+		/* a TIME-ONLY date (hours without a year) NaN:ed the whole calendar
+		 * ("Invalid Date", his split-view screenshot) — treat it as today at
+		 * that time */
+		if (sp.year === undefined) {
+			const nd = new Date();
+			start = sp.hours !== undefined
+				? DateTime.dateAndTime(nd.getFullYear(), nd.getMonth(), nd.getDate(), sp.hours, sp.minutes || 0, 0)
+				: new DateTime(nd);
+			sp = start.getParts();
+			cur = null;
+		}
 		this.view = { y: sp.year, m: sp.month };
 		this.sel = cur || DateTime.dateOnly(sp.year, sp.month, sp.day);
 		this.endMode = false;
@@ -4654,6 +4671,18 @@ class Plugin extends AppPlugin {
 			const lr = lineEl.getBoundingClientRect();
 			const col = lineEl.closest('.panel');
 			const colr = col ? col.getBoundingClientRect() : { left: 0, right: window.innerWidth };
+			/* a TASKS-VIEW row: native opens its picker under the date chip at
+			 * the row's right edge — mirror that (his screenshots) */
+			if (lineEl.classList.contains('tasks-view-row')) {
+				const when = lineEl.querySelector('.tasks-view-when');
+				const wr = (when || lineEl).getBoundingClientRect();
+				const left = Math.max(8, colr.left + 8, Math.min(wr.right - w, colr.right - w - 8, window.innerWidth - w - 8));
+				let top = lr.bottom + 6;
+				if (top + h > window.innerHeight - 8) top = lr.top - h - 6;
+				pop.style.left = left + 'px';
+				pop.style.top = Math.max(8, Math.min(top, window.innerHeight - h - 8)) + 'px';
+				return;
+			}
 			const chip = lineEl.querySelector('span.lineitem-datetime');
 			let ax;
 			if (chip) {
