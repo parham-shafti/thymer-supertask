@@ -288,6 +288,38 @@ function recurNthOccurrence(rule, anchorYmd, n) {
 	return cur;
 }
 
+/* Copy names for the forward-trail series (his ask 2026-08-10: identical
+ * copies are indistinguishable, and users should pick the shape themselves).
+ * One free-text TEMPLATE covers prefix, suffix, separator and every stepping
+ * variant at once: {title} is the original's name, {n} the occurrence number
+ * (the original is #1, so the first copy renders 2), and the date tokens come
+ * from each copy's own occurrence day. Month names are ENGLISH by his call —
+ * Thymer's dates already are. Replacement goes through functions so a title
+ * containing $ never triggers .replace()'s pattern expansion. */
+const RECUR_MONTHNAMES_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+function recurIsoWeek(ymd) {
+	const d = recurYmdToDate(ymd);
+	const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+	t.setUTCDate(t.getUTCDate() - ((t.getUTCDay() + 6) % 7) + 3); /* Thursday of this week */
+	const firstThursday = t.valueOf();
+	t.setUTCMonth(0, 1);
+	if (t.getUTCDay() !== 4) t.setUTCMonth(0, 1 + ((4 - t.getUTCDay()) + 7) % 7);
+	return 1 + Math.round((firstThursday - t.valueOf()) / 604800000);
+}
+function recurCopyName(tpl, base, ymd, n) {
+	const d = recurYmdToDate(ymd);
+	return String(tpl == null ? '' : tpl)
+		.replace(/\{title\}/g, () => String(base == null ? '' : base))
+		.replace(/\{n\}/g, () => String(n))
+		.replace(/\{year\}/g, () => String(d.getFullYear()))
+		.replace(/\{month\}/g, () => RECUR_MONTHNAMES_FULL[d.getMonth()])
+		.replace(/\{mon\}/g, () => RECUR_MONTHNAMES[d.getMonth()])
+		.replace(/\{date\}/g, () => d.getDate() + ' ' + RECUR_MONTHNAMES[d.getMonth()])
+		.replace(/\{day\}/g, () => String(d.getDate()))
+		.replace(/\{week\}/g, () => String(recurIsoWeek(ymd)))
+		.replace(/\s+/g, ' ').trim();
+}
+
 /* ==== RECURRENCE ENGINE — end ==== */
 
 /* The DEFAULT timeblock set — Parham's day, in order. Since v0.11.0 users can
@@ -495,6 +527,31 @@ const CSS = `
 	width: 46px; background: transparent; color: inherit; font-family: inherit; font-size: 13px;
 	border: 1px solid rgba(127,127,127,.35); border-radius: 4px; padding: 1px 4px;
 }
+/* the Name Copies popover: template field + token hint + live preview */
+.rs-namepop { padding: 9px 10px; width: 276px; }
+.rs-namepop input {
+	width: 100%; box-sizing: border-box;
+	background: transparent; color: inherit; font-family: inherit; font-size: 13px;
+	border: 1px solid rgba(127,127,127,.35); border-radius: 4px; padding: 3px 7px;
+}
+/* the token legend, CleanShot-style: label + chip per row, two columns,
+ * click anywhere on a row to insert its token at the caret */
+.rs-name-hint {
+	display: grid; grid-template-columns: 1fr 1fr; gap: 2px 10px;
+	font-size: 11px; margin-top: 8px;
+}
+.rs-tokrow {
+	display: flex; align-items: center; justify-content: space-between; gap: 6px;
+	padding: 1px 3px; border-radius: 4px; cursor: pointer;
+}
+.rs-tokrow:hover { background: rgba(127,127,127,.16); }
+.rs-toklbl { opacity: .5; white-space: nowrap; }
+.rs-tok {
+	border: 1px solid rgba(127,127,127,.3); border-radius: 4px;
+	padding: 0 4px; opacity: .8; white-space: nowrap;
+}
+.rs-name-prev { font-size: 12px; opacity: .8; margin-top: 7px; }
+.rs-name .rs-sel-lbl { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* HIS DRAWN SPEC (2026-08-09), with the plugin owning EVERY dimension —
  * the app's compact-picker cells carry fixed sizes and a fixed grid height
  * that overflowed and clipped anything responsive. Exact arithmetic:
@@ -1710,6 +1767,10 @@ class Plugin extends AppPlugin {
 						rv: rvSafe, rvl: rvSafe ? ctx.rvl || null : null,
 						copies: (prev && prev.copies) || {},
 					};
+					/* {title} resolves against a SNAPSHOT of the name taken when
+					 * the rule is committed (his ask: renaming the original later
+					 * must not ripple into the series) */
+					if (rule.nt) rule.nb = (prev && prev.nb) || rec.getName() || '';
 					this.pageRules[t.guid] = rule;
 					if (t.collGuid) {
 						this.pageDefaults[t.collGuid] = { dp: dpId, sp: rule.sp, dv: rule.dv, dvl: rule.dvl, rv: rule.rv, rvl: rule.rvl };
@@ -2218,12 +2279,13 @@ class Plugin extends AppPlugin {
 	}
 
 	/* Duplicate a record with its property values — Reshape's proven recipe
-	 * (createRecord, poll until readable, per-type value copy). */
-	async duplicateRecordShallow(rec) {
+	 * (createRecord, poll until readable, per-type value copy). nameOverride
+	 * carries a rendered copy-name template; omitted = the original's name. */
+	async duplicateRecordShallow(rec, nameOverride) {
 		const { coll, fields } = await this.pageFields(rec);
 		if (!coll) return null;
 		let guid = null;
-		try { guid = await coll.createRecord(rec.getName() || ''); } catch (e) {}
+		try { guid = await coll.createRecord(nameOverride != null ? nameOverride : (rec.getName() || '')); } catch (e) {}
 		if (!guid) return null;
 		let dst = this.data.getRecord(guid);
 		for (let i = 0; !dst && i < 16; i++) { await new Promise((r) => setTimeout(r, 120)); dst = this.data.getRecord(guid); }
@@ -2275,7 +2337,13 @@ class Plugin extends AppPlugin {
 			delete rule.copies[ymd];
 		}
 		for (const occ of [...wantedSet].sort((a, b) => a - b)) {
-			const dst = await this.duplicateRecordShallow(rec);
+			/* the copy's name from the template: {title} = the snapshot taken
+			 * at rule commit (renaming the original never ripples), {n} = the
+			 * occurrence's ordinal with the original as #1 */
+			const name = rule.nt
+				? recurCopyName(rule.nt, rule.nb || rec.getName() || '', occ, wanted.indexOf(occ) + 2)
+				: null;
+			const dst = await this.duplicateRecordShallow(rec, name);
 			if (!dst) continue;
 			const d = recurYmdToDate(occ);
 			const dt = p.hours === undefined
@@ -2344,6 +2412,18 @@ class Plugin extends AppPlugin {
 			if (raw && !raw.dlt && raw.mp && raw.mp.rs_series === li.guid) kept.push({ li: x, occ: +raw.mp.rs_occ || 0 });
 		}
 		if (kept.length) anchorLi = kept[kept.length - 1].li; /* chain after the last existing copy */
+		/* Name Copies on a LINE: the copy already IS the title (a clone), so
+		 * the template is applied as an affix pair around {title} — the part
+		 * before it lands at the line start, the part after it lands on the
+		 * last text segment BEFORE the date chip (where a human would write
+		 * it). A template without {title} is treated as a suffix. The
+		 * sentinel split survives recurCopyName's whitespace collapse. */
+		const affixOf = rule && rule.nt ? (occ2, n2) => {
+			const parts = recurCopyName(rule.nt, '\u0000', occ2, n2).split('\u0000');
+			return parts.length > 1
+				? { pre: parts[0].trim(), suf: parts.slice(1).join(' ').trim() }
+				: { pre: '', suf: parts[0].trim() };
+		} : null;
 		for (const occ of [...wantedSet].sort((a, b) => a - b)) {
 			const d = recurYmdToDate(occ);
 			const dt = baseParts.hours === undefined
@@ -2351,6 +2431,22 @@ class Plugin extends AppPlugin {
 				: DateTime.dateAndTime(d.getFullYear(), d.getMonth(), d.getDate(), baseParts.hours, baseParts.minutes || 0, 0);
 			const segs = segsBase.map((s) => ({ ...s }));
 			segs[di] = { type: 'datetime', text: dt.value() };
+			if (affixOf) {
+				const { pre, suf } = affixOf(occ, wanted.indexOf(occ) + 2);
+				if (suf) {
+					let j = di - 1;
+					while (j >= 0 && !(segs[j].type === 'text' && typeof segs[j].text === 'string')) j--;
+					if (j >= 0) segs[j] = { ...segs[j], text: segs[j].text.replace(/\s*$/, '') + ' ' + suf + ' ' };
+					else segs.splice(di, 0, { type: 'text', text: suf + ' ' });
+				}
+				if (pre) {
+					if (segs[0] && segs[0].type === 'text' && typeof segs[0].text === 'string') {
+						segs[0] = { ...segs[0], text: pre + ' ' + segs[0].text.replace(/^\s*/, '') };
+					} else {
+						segs.unshift({ type: 'text', text: pre + ' ' });
+					}
+				}
+			}
 			try {
 				const copy = await rec.createLineItem(parentLi, anchorLi, 'task');
 				if (!copy) continue;
@@ -4019,6 +4115,7 @@ class Plugin extends AppPlugin {
 				<label class="rs-fromrow" title="Day selections always repeat on schedule — Count from applies to plain intervals only"><span>Count From</span><span class="rs-sel rs-from" data-v="a"><span class="rs-sel-lbl">The Due Date</span><span class="ti ti-chevron-down"></span></span></label>
 				<label title="When the SERIES stops. + End date up top is different: it makes each occurrence a date RANGE."><span>End Repeat</span><span class="rs-sel rs-endsel" data-v=""><span class="rs-sel-lbl">Never</span><span class="ti ti-chevron-down"></span></span><input class="rs-cnt" type="number" min="1" max="100" value="3" style="display:none"><input class="rs-until" type="text" spellcheck="false" style="display:none"></label>
 				<label class="rs-trailrow" title="Backwards keeps a completed copy each time you tick. Forward lays out every future occurrence up front (needs Until, schedule-based rules only)."><span>Leave a Trail</span><span class="rs-sel rs-trail" data-v=""><span class="rs-sel-lbl">Off</span><span class="ti ti-chevron-down"></span></span></label>
+				<label class="rs-namerow" style="display:none" title="Name the laid-out copies from a template — {title} is the original's name, {n} numbers the occurrences (the original is #1), and the date tokens come from each copy's own date. The original always keeps its name."><span>Name Copies</span><span class="rs-sel rs-name" data-v=""><span class="rs-sel-lbl">Off</span><span class="ti ti-chevron-down"></span></span></label>
 			</div>
 			<div class="rs-foot">
 				<span class="rs-result"></span>
@@ -4284,6 +4381,21 @@ class Plugin extends AppPlugin {
 		pop.querySelector('.rs-months').innerHTML = RECUR_MONTHNAMES.map((m2, i) => '<div class="rs-cell" data-i="' + i + '">' + m2 + '</div>').join('');
 		this.rule = t.kind === 'line' ? this.readRule(t.line)
 			: (this.pageRules && this.pageRules[t.guid] ? { ...this.pageRules[t.guid] } : null);
+		/* Name Copies: the template survives syncCustom's from-controls rebuild
+		 * as picker state, not as a control value. nameBase feeds the popover's
+		 * live preview (the {title} stand-in). */
+		this.nameTpl = (this.rule && this.rule.nt) || null;
+		this.nameBase = '';
+		try {
+			if (t.kind === 'line') {
+				this.nameBase = (t.line.segments || [])
+					.filter((s) => s.type === 'text' && typeof s.text === 'string')
+					.map((s) => s.text).join('').replace(/\s+/g, ' ').trim();
+			} else {
+				const nrec = this.data.getRecord(t.guid);
+				this.nameBase = (nrec && nrec.getName()) || '';
+			}
+		} catch (e) {}
 		/* Recurrence is scoped to LINES; a page's Due Date cannot repeat. With the
 		 * row visible on a record target, a rule could be set and was then thrown
 		 * away silently on commit — writeDate's record branch has nowhere to put
@@ -4335,6 +4447,7 @@ class Plugin extends AppPlugin {
 					primeCustom(this.rule);
 				} else {
 					this.rule = f ? { f, n: 1 } : null;
+					this.nameTpl = null; /* presets discard the custom extras, template included */
 					custom.style.display = 'none';
 				}
 				menu.remove();
@@ -4430,9 +4543,14 @@ class Plugin extends AppPlugin {
 			/* forward needs an end date and a schedule-based rule; the engine
 			 * quietly refuses otherwise, so make the gap visible right here */
 			if (tv === 'f' && !rule.u && !rule.aftN) until.classList.add('rs-bad-date');
+			/* the copy-name template rides only on forward trails (backwards
+			 * chains clone each generation from the last, so a template would
+			 * compound: "Hyra August September …") */
+			if (tv === 'f' && this.nameTpl) rule.nt = this.nameTpl;
 			this.rule = rule;
 			paintRepeat();
 			paintEnd();
+			paintName();
 			updateGrammar();
 		};
 
@@ -4454,6 +4572,8 @@ class Plugin extends AppPlugin {
 			setSel(pop.querySelector('.rs-endsel'), endMode2, [['', 'Never'], ['n', 'After'], ['d', 'On Date']]);
 			paintEnd();
 			setSel(trailSel, r.tr || '', TRAILOPTS);
+			this.nameTpl = r.nt || null;
+			paintName();
 			updateGrammar();
 		};
 
@@ -4515,6 +4635,19 @@ class Plugin extends AppPlugin {
 		endSel.addEventListener('click', () => {
 			const opts = selVal(from) === 'c' ? ENDOPTS_ALL.filter((o) => o[0] !== 'n') : ENDOPTS_ALL;
 			this.openSelMenu(endSel, opts, selVal(endSel), endApply);
+		});
+		/* Name Copies: a conditional row (forward trail only) whose chip
+		 * carries the whole template, edited in a popover — the End Repeat
+		 * idiom, so the panel never grows */
+		const nameRow = pop.querySelector('.rs-namerow');
+		const nameSel = pop.querySelector('.rs-name');
+		const paintName = () => {
+			nameRow.style.display = selVal(trailSel) === 'f' ? '' : 'none';
+			nameSel.querySelector('.rs-sel-lbl').textContent = this.nameTpl || 'Off';
+			this.fit(pop);
+		};
+		nameSel.addEventListener('click', () => {
+			this.openNamePop(nameSel, () => syncCustom());
 		});
 		wireSel(pop.querySelector('.rs-mord'), ORDOPTS);
 		wireSel(pop.querySelector('.rs-mod'), ODOPTS);
@@ -4705,6 +4838,82 @@ class Plugin extends AppPlugin {
 		});
 	}
 
+	/* the Name Copies popover: template field, clickable token chips, and a
+	 * LIVE preview of the first two copy names — the preview is what makes
+	 * the tokens understandable without a manual. Writes through on every
+	 * keystroke (this.nameTpl + onChange → syncCustom); Enter or an outside
+	 * click closes. */
+	openNamePop(anchorEl, onChange) {
+		document.querySelectorAll('.rs-repmenu').forEach((m) => m.remove());
+		const box = document.createElement('div');
+		box.className = 'rs-repmenu rs-namepop';
+		/* CleanShot's format-field idiom (his screenshot 2026-08-10): every
+		 * token carries a LABEL in the legend, and clicking one inserts it.
+		 * Bare tokens read as line noise without the label column. */
+		const TOKENS = [
+			['{title}', 'Title'], ['{n}', 'Number'],
+			['{month}', 'August'], ['{mon}', 'Aug'],
+			['{date}', '10 Aug'], ['{day}', '10'],
+			['{week}', 'Week no.'], ['{year}', '2026'],
+		];
+		box.innerHTML = '<input type="text" spellcheck="false" placeholder="{title} {month}">'
+			+ '<div class="rs-name-hint">' + TOKENS.map(([t2, l2]) =>
+				'<div class="rs-tokrow" data-t="' + t2 + '"><span class="rs-toklbl">' + l2 + '</span><span class="rs-tok">' + t2 + '</span></div>').join('') + '</div>'
+			+ '<div class="rs-name-prev"></div>';
+		document.body.appendChild(box);
+		const r = anchorEl.getBoundingClientRect();
+		const top = r.bottom + 4 + box.offsetHeight > window.innerHeight - 8 ? r.top - box.offsetHeight - 4 : r.bottom + 4;
+		box.style.top = Math.max(8, top) + 'px';
+		box.style.left = Math.max(8, Math.min(r.left, window.innerWidth - box.offsetWidth - 8)) + 'px';
+		this.repMenu = box;
+		const input = box.querySelector('input');
+		input.value = this.nameTpl || '';
+		const prev = box.querySelector('.rs-name-prev');
+		const preview = () => {
+			const tpl = input.value.trim();
+			if (!tpl) { prev.textContent = 'Off — copies keep the original’s name'; return; }
+			const rule = this.rule || { f: 'd', n: 1 };
+			const sp2 = (this.sel || new DateTime(new Date())).getParts();
+			let anchor;
+			if (sp2.year !== undefined) anchor = sp2.year * 10000 + (sp2.month + 1) * 100 + sp2.day;
+			else { const nd = new Date(); anchor = nd.getFullYear() * 10000 + (nd.getMonth() + 1) * 100 + nd.getDate(); }
+			const base = this.nameBase || 'Title';
+			let o2 = 0, o3 = 0;
+			try {
+				if (rule.from !== 'c') { o2 = recurNext({ ...rule, a: anchor }, anchor); o3 = o2 ? recurNext({ ...rule, a: anchor }, o2) : 0; }
+			} catch (e) {}
+			if (!o2 || !o3) { o2 = recurAddInterval(anchor, rule.f || 'd', rule.n || 1); o3 = recurAddInterval(o2, rule.f || 'd', rule.n || 1); }
+			prev.textContent = recurCopyName(tpl, base, o2, 2) + ',  ' + recurCopyName(tpl, base, o3, 3) + ', …';
+		};
+		input.addEventListener('input', () => {
+			this.nameTpl = input.value.trim() || null;
+			preview();
+			onChange();
+		});
+		/* clicking a legend row inserts its token at the caret */
+		box.querySelector('.rs-name-hint').addEventListener('click', (e) => {
+			const row = e.target.closest('.rs-tokrow');
+			if (!row) return;
+			const tok = row.getAttribute('data-t');
+			const a = input.selectionStart == null ? input.value.length : input.selectionStart;
+			const b = input.selectionEnd == null ? a : input.selectionEnd;
+			input.value = input.value.slice(0, a) + tok + input.value.slice(b);
+			input.focus();
+			input.setSelectionRange(a + tok.length, a + tok.length);
+			input.dispatchEvent(new Event('input'));
+		});
+		input.addEventListener('keydown', (e) => {
+			if (e.key === 'Enter') {
+				e.preventDefault();
+				e.stopPropagation();
+				box.remove();
+				if (this.repMenu === box) this.repMenu = null;
+			}
+		});
+		preview();
+		input.focus();
+	}
+
 	/* anchor the pending rule on the committed day and compile "After n
 	 * times" into its concrete end date (occurrence #1 = the anchor) */
 	finalizeRule(pending, anchorYmd) {
@@ -4843,6 +5052,7 @@ class Plugin extends AppPlugin {
 		document.querySelectorAll('.rs-repmenu').forEach((m) => m.remove());
 		this.repMenu = null;
 		this.sel = this.view = this.rangeEnd = this.showPicker = this.cancelPicker = null;
+		this.nameTpl = this.nameBase = null;
 		this.endMode = false;
 	}
 

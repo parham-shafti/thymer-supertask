@@ -9,8 +9,8 @@ if (start < 0 || end < 0) { console.error('engine markers not found in plugin.js
 const engine = src.slice(start, end);
 
 const scope = {};
-new Function('S', engine + '\nObject.assign(S,{recurNext,recurMatches,recurLabel,recurOrdinalDay,recurAdvance,recurAddInterval,recurOccurrences,recurNthOccurrence});')(scope);
-const { recurNext, recurLabel, recurAdvance, recurOccurrences, recurNthOccurrence } = scope;
+new Function('S', engine + '\nObject.assign(S,{recurNext,recurMatches,recurLabel,recurOrdinalDay,recurAdvance,recurAddInterval,recurOccurrences,recurNthOccurrence,recurCopyName,recurIsoWeek});')(scope);
+const { recurNext, recurLabel, recurAdvance, recurOccurrences, recurNthOccurrence, recurCopyName, recurIsoWeek } = scope;
 
 let fails = 0;
 const check = (name, got, want) => {
@@ -103,6 +103,20 @@ check('after 1 time = the anchor itself', recurNthOccurrence({ f: 'd', n: 1, a: 
 check('after 3 daily times', recurNthOccurrence({ f: 'd', n: 1, a: 20260810 }, 20260810, 3), '20260812');
 check('after 4 biweekly Fridays', recurNthOccurrence({ f: 'w', n: 2, a: 20260814, wd: [4] }, 20260814, 4), '20260925');
 check('completion mode cannot count ahead', recurNthOccurrence({ f: 'd', n: 3, a: 20260810, from: 'c' }, 20260810, 3), '0');
+
+console.log('\ncopy names (forward-trail templates)');
+check('title + long month', recurCopyName('{title} {month}', 'Hyra', 20260901, 2), 'Hyra September');
+check('separator is just template text', recurCopyName('{title}: {mon} {year}', 'Hyra', 20261001, 3), 'Hyra: Oct 2026');
+check('stepping number, original is #1', recurCopyName('{title} #{n}', 'Faktura', 20260901, 2), 'Faktura #2');
+check('week prefix', recurCopyName('V{week} {title}', 'Städning', 20260105, 2), 'V2 Städning');
+check('date and day tokens', recurCopyName('{title} · {date} ({day})', 'Rapport', 20260901, 2), 'Rapport · 1 Sep (1)');
+check('a $ in the title never expands', recurCopyName('{title} {n}', 'Spara $100', 20260901, 2), 'Spara $100 2');
+check('no tokens = plain text', recurCopyName('kopia', 'Hyra', 20260901, 2), 'kopia');
+check('empty template renders empty', recurCopyName('', 'Hyra', 20260901, 2), '');
+check('iso week: Jan 1 2026 is week 1', recurIsoWeek(20260101), '1');
+check('iso week: Sun Jan 4 2026 closes week 1', recurIsoWeek(20260104), '1');
+check('iso week: Mon Jan 5 2026 opens week 2', recurIsoWeek(20260105), '2');
+check('iso week: Jan 1 2027 belongs to week 53 of 2026', recurIsoWeek(20270101), '53');
 
 console.log(fails ? '\n' + fails + ' FAILED\n' : '\nall passed\n');
 process.exit(fails ? 1 : 0);

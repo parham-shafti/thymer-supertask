@@ -22,6 +22,10 @@ First public release.
   - **Completed copies stay** — the ticked task stays done right where it stood (it is the history, backlinks intact) and a fresh copy carries the repeat forward on the next date.
   - **Lay out all occurrences** — with an Until date, every future occurrence is created up front as a real todo or page (Expenses with a repeat become visible months ahead for budgeting). The series is remembered: shorten the Until and superfluous copies are removed, extend it and the missing ones are laid out — completed copies are history and are never touched. Ticking an occurrence just completes it; nothing advances. Capped at 100 copies.
 
+## v1.4.0 — 2026-08-10 (unreleased)
+
+- **Name Copies** — the laid-out occurrences of a forward trail can be named from a free template, so twelve identical "Rent" pages become "Rent September", "Rent October", … A new row in the Custom panel (visible when the trail is "Lay Out All Occurrences", for todos and pages alike) opens a small editor with clickable tokens and a live preview. Tokens: `{title}` (the original's name), `{n}` (occurrence number, the original is #1), `{month}` `{mon}` `{date}` `{day}` `{week}` `{year}` from each copy's own date. Anything else in the template is literal text, so separators are up to you (`{title}: {month}`, `{title} – {n}`). The original always keeps its own name, and for pages the template remembers the name from when the rule was set, so renaming the original later never ripples into the series.
+
 ## v1.3.10 — 2026-08-10 (unreleased)
 
 - **"Completed copies stay" on pages now matches todos**: the ticked page stays done on its old date (history, backlinks intact) and a fresh duplicate carries the repeat forward on the next date. It used to be the other way around.
