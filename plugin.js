@@ -451,8 +451,12 @@ const CSS = `
  * it gets guillotined at the edge (Parham hit exactly that) */
 .rs-repmenu {
 	position: fixed; z-index: 100000; min-width: 170px;
-	background: var(--cmdpal-bg-color, var(--app-bg, #26262b));
-	border: 1px solid rgba(127,127,127,.4); border-radius: 8px;
+	/* a whisper off the surface so the menu never melts into it: 7% of the
+	 * fg mixed into the bg = slightly lighter on dark themes, slightly
+	 * darker on light ones (his call — subtle, not loud). 4px = the radius
+	 * standard. */
+	background: color-mix(in srgb, var(--cmdpal-bg-color, var(--app-bg, #26262b)) 93%, var(--cmdpal-fg-color, var(--text-color, #dadadb)));
+	border: 1px solid rgba(127,127,127,.4); border-radius: 4px;
 	box-shadow: 0 10px 30px rgba(0,0,0,.5); padding: 4px; overflow: hidden;
 	font-size: 13px;
 }
@@ -1917,7 +1921,7 @@ class Plugin extends AppPlugin {
 		const lbl = (el, s2) => { el.querySelector('.rs-sel-lbl').textContent = s2 || '—'; };
 		const paint = () => {
 			lbl(dSel, t.pageCtx.dpl || t.pageCtx.dp);
-			lbl(sSel, t.pageCtx.spl || (t.pageCtx.sp ? t.pageCtx.sp : 'nothing (trail only)'));
+			lbl(sSel, t.pageCtx.spl || (t.pageCtx.sp ? t.pageCtx.sp : 'None (only lays out copies)'));
 			vRow.style.display = t.pageCtx.sp ? '' : 'none';
 			rRow.style.display = t.pageCtx.sp ? '' : 'none';
 			lbl(vSel, t.pageCtx.dvl || (t.pageCtx.dv ? t.pageCtx.dv : 'pick a value'));
@@ -1957,7 +1961,7 @@ class Plugin extends AppPlugin {
 			});
 		});
 		sSel.addEventListener('click', () => {
-			const items = [['', 'nothing (trail only)']].concat(statusFields.map((f) => [f.id, f.label || f.id]));
+			const items = [['', 'None (only lays out copies)']].concat(statusFields.map((f) => [f.id, f.label || f.id]));
 			this.openSelMenu(sSel, items, t.pageCtx.sp || '', (v) => {
 				const f = statusFields.find((x) => x.id === v);
 				t.pageCtx.sp = v || null; t.pageCtx.spl = f && f.label;
@@ -3866,8 +3870,8 @@ class Plugin extends AppPlugin {
 						<span class="rs-sel rs-yod" data-v="day"><span class="rs-sel-lbl">day</span><span class="ti ti-chevron-down"></span></span>
 					</div>
 				</div>
-				<label class="rs-fromrow" title="Day selections always repeat on schedule — Count from applies to plain intervals only"><span>Count from</span><span class="rs-sel rs-from" data-v="a"><span class="rs-sel-lbl">the due date</span><span class="ti ti-chevron-down"></span></span></label>
-				<label><span>Until</span><input class="rs-until" type="text" spellcheck="false" placeholder="never"></label>
+				<label class="rs-fromrow" title="Day selections always repeat on schedule — Count from applies to plain intervals only"><span>Count from</span><span class="rs-sel rs-from" data-v="a"><span class="rs-sel-lbl">The Due Date</span><span class="ti ti-chevron-down"></span></span></label>
+				<label title="When the SERIES stops. + End date up top is different: it makes each occurrence a date RANGE."><span>End repeat</span><input class="rs-until" type="text" spellcheck="false" placeholder="never"></label>
 				<label class="rs-trailrow" title="Backwards keeps a completed copy each time you tick. Forward lays out every future occurrence up front (needs Until, schedule-based rules only)."><span>Leave a trail</span><span class="rs-sel rs-trail" data-v=""><span class="rs-sel-lbl">Off</span><span class="ti ti-chevron-down"></span></span></label>
 			</div>
 			<div class="rs-foot">
@@ -4103,7 +4107,7 @@ class Plugin extends AppPlugin {
 		const from = pop.querySelector('.rs-from');
 		const UNITS = { d: 'day', w: 'week', m: 'month', y: 'year' };
 		const FREQOPTS = [['d', 'Daily'], ['w', 'Weekly'], ['m', 'Monthly'], ['y', 'Yearly']];
-		const FROMOPTS = [['a', 'the due date'], ['c', 'when I tick it']];
+		const FROMOPTS = [['a', 'The Due Date'], ['c', 'When I Tick It']];
 		const TRAILOPTS = [['', 'Off'], ['b', 'Completed copies stay'], ['f', 'Lay out all occurrences']];
 		const ORDOPTS = [['1', 'first'], ['2', 'second'], ['3', 'third'], ['4', 'fourth'], ['5', 'fifth'], ['-2', 'next to last'], ['-1', 'last']];
 		const ODOPTS = [['day', 'day'], ['weekday', 'weekday'], ['weekendday', 'weekend day'],
