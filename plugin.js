@@ -460,7 +460,7 @@ const CSS = `
 	box-shadow: 0 10px 30px rgba(0,0,0,.5); padding: 4px; overflow: hidden;
 	font-size: 13px;
 	/* a touch off pure fg — full white popped too hard (his call) */
-	color: color-mix(in srgb, var(--cmdpal-fg-color, var(--text-color, #dadadb)) 88%, transparent);
+	color: color-mix(in srgb, var(--cmdpal-fg-color, var(--text-color, #dadadb)) 94%, transparent);
 }
 .rs-repmenu div { padding: 5px 10px; border-radius: 5px; cursor: pointer; white-space: nowrap; }
 .rs-repmenu div:hover { background: rgba(127,127,127,.2); }
@@ -1910,10 +1910,10 @@ class Plugin extends AppPlugin {
 		const holder = document.createElement('div');
 		holder.className = 'rs-pagerows';
 		holder.innerHTML = ''
-			+ '<label><span>Date field</span><span class="rs-sel rs-pf-date"><span class="rs-sel-lbl"></span><span class="ti ti-chevron-down"></span></span></label>'
-			+ '<label><span>Done when</span><span class="rs-sel rs-pf-status"><span class="rs-sel-lbl"></span><span class="ti ti-chevron-down"></span></span></label>'
-			+ '<label class="rs-pf-vrow" style="display:none"><span>Is set to</span><span class="rs-sel rs-pf-dval"><span class="rs-sel-lbl"></span><span class="ti ti-chevron-down"></span></span></label>'
-			+ '<label class="rs-pf-rrow" style="display:none"><span>Then reset to</span><span class="rs-sel rs-pf-rval"><span class="rs-sel-lbl"></span><span class="ti ti-chevron-down"></span></span></label>';
+			+ '<label><span>Date Field</span><span class="rs-sel rs-pf-date"><span class="rs-sel-lbl"></span><span class="ti ti-chevron-down"></span></span></label>'
+			+ '<label><span>Done When</span><span class="rs-sel rs-pf-status"><span class="rs-sel-lbl"></span><span class="ti ti-chevron-down"></span></span></label>'
+			+ '<label class="rs-pf-vrow" style="display:none"><span>Is Set To</span><span class="rs-sel rs-pf-dval"><span class="rs-sel-lbl"></span><span class="ti ti-chevron-down"></span></span></label>'
+			+ '<label class="rs-pf-rrow" style="display:none"><span>Then Reset To</span><span class="rs-sel rs-pf-rval"><span class="rs-sel-lbl"></span><span class="ti ti-chevron-down"></span></span></label>';
 		custom.insertBefore(holder, custom.firstChild);
 		const dSel = holder.querySelector('.rs-pf-date');
 		const sSel = holder.querySelector('.rs-pf-status');
@@ -3872,9 +3872,9 @@ class Plugin extends AppPlugin {
 						<span class="rs-sel rs-yod" data-v="day"><span class="rs-sel-lbl">day</span><span class="ti ti-chevron-down"></span></span>
 					</div>
 				</div>
-				<label class="rs-fromrow" title="Day selections always repeat on schedule — Count from applies to plain intervals only"><span>Count from</span><span class="rs-sel rs-from" data-v="a"><span class="rs-sel-lbl">The Due Date</span><span class="ti ti-chevron-down"></span></span></label>
-				<label title="When the SERIES stops. + End date up top is different: it makes each occurrence a date RANGE."><span>End repeat</span><input class="rs-until" type="text" spellcheck="false" placeholder="never"></label>
-				<label class="rs-trailrow" title="Backwards keeps a completed copy each time you tick. Forward lays out every future occurrence up front (needs Until, schedule-based rules only)."><span>Leave a trail</span><span class="rs-sel rs-trail" data-v=""><span class="rs-sel-lbl">Off</span><span class="ti ti-chevron-down"></span></span></label>
+				<label class="rs-fromrow" title="Day selections always repeat on schedule — Count from applies to plain intervals only"><span>Count From</span><span class="rs-sel rs-from" data-v="a"><span class="rs-sel-lbl">The Due Date</span><span class="ti ti-chevron-down"></span></span></label>
+				<label title="When the SERIES stops. + End date up top is different: it makes each occurrence a date RANGE."><span>End Repeat</span><span class="rs-sel rs-endsel" data-v=""><span class="rs-sel-lbl">Never</span><span class="ti ti-chevron-down"></span></span><input class="rs-until" type="text" spellcheck="false" placeholder="11 Sep 2026" style="display:none"></label>
+				<label class="rs-trailrow" title="Backwards keeps a completed copy each time you tick. Forward lays out every future occurrence up front (needs Until, schedule-based rules only)."><span>Leave a Trail</span><span class="rs-sel rs-trail" data-v=""><span class="rs-sel-lbl">Off</span><span class="ti ti-chevron-down"></span></span></label>
 			</div>
 			<div class="rs-foot">
 				<span class="rs-result"></span>
@@ -4280,6 +4280,8 @@ class Plugin extends AppPlugin {
 			if (r.od !== undefined) { setSel(pop.querySelector('.rs-mod'), String(r.od), ODOPTS); setSel(pop.querySelector('.rs-yod'), String(r.od), ODOPTS); }
 			until.value = r.u ? (r.u % 100) + ' ' + RECUR_MONTHNAMES[Math.floor(r.u / 100) % 100 - 1] + ' ' + Math.floor(r.u / 10000) : '';
 			until.classList.remove('rs-bad-date');
+			setSel(pop.querySelector('.rs-endsel'), r.u ? 'd' : '', [['', 'Never'], ['d', 'On Date']]);
+			until.style.display = r.u ? '' : 'none';
 			setSel(trailSel, r.tr || '', TRAILOPTS);
 			updateGrammar();
 		};
@@ -4295,6 +4297,23 @@ class Plugin extends AppPlugin {
 		wireSel(freq, FREQOPTS);
 		wireSel(from, FROMOPTS);
 		wireSel(trailSel, TRAILOPTS);
+		/* End Repeat is Apple's shape (his screenshots): Never / On Date, and
+		 * the date field only exists once On Date is picked — prefilled a
+		 * month out so it never sits as an unexplained empty box */
+		const ENDOPTS = [['', 'Never'], ['d', 'On Date']];
+		const endSel = pop.querySelector('.rs-endsel');
+		endSel.addEventListener('click', () => this.openSelMenu(endSel, ENDOPTS, selVal(endSel), (v) => {
+			setSel(endSel, v, ENDOPTS);
+			until.style.display = v === 'd' ? '' : 'none';
+			if (v === 'd' && !until.value.trim()) {
+				const b = (this.sel || new DateTime(new Date())).getParts();
+				const d2 = new Date(b.year, b.month + 1, b.day);
+				until.value = d2.getDate() + ' ' + RECUR_MONTHNAMES[d2.getMonth()] + ' ' + d2.getFullYear();
+			}
+			if (v !== 'd') until.value = '';
+			syncCustom();
+			if (v === 'd') until.focus();
+		}));
 		wireSel(pop.querySelector('.rs-mord'), ORDOPTS);
 		wireSel(pop.querySelector('.rs-mod'), ODOPTS);
 		wireSel(pop.querySelector('.rs-yordsel'), ORDOPTS);
