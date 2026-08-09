@@ -2,7 +2,7 @@
 
 Supercharged tasks for [Thymer](https://thymer.com) — dates, statuses, timeblock hashtags, repeating tasks and self-organizing sections, all without leaving the keyboard.
 
-![Ordering and grouping in action](assets/ordering.gif)
+![Repeating tasks, statuses and the date box](assets/date-box.png)
 
 ## Shortcuts
 
@@ -26,6 +26,8 @@ Every heading can organize its own tasks — open the `⋯` menu that appears ne
 
 - **Order by Status** — no roofs (except an optional Done group): a flat list sorted by status rank, untriaged at the bottom of the actives.
 
+![Ordering and grouping in action](assets/ordering.gif)
+
 The roofs are real H5 headings, so they fold natively. A roof only exists while it has tasks — empty ones disappear by themselves. Tasks arriving from anywhere — moved in from another page, captured, typed, retagged, restatused — file themselves under the right roof within a couple of seconds. Turn everything off with one click and the section returns to a flat list.
 
 Grouping can also be enabled **globally** in Settings: pick the statuses, and every heading in the workspace groups them as tasks change, no per-section setup. A section's own `⋯` menu always overrides the global choice.
@@ -45,8 +47,6 @@ One set of chords covers both halves of a GTD system. The target resolves in thi
 Rule 4 is deliberately strict: a prose todo that merely mentions `[[Some Project]]` moves its *own* date, never the project's. Everything works inside live searches too — the plugin follows Thymer's virtual result rows to the real lines behind them. `Due Date` is found by name, so any collection with such a field works regardless of its internal field id.
 
 ## The date box
-
-![The date box](assets/date-box.png)
 
 `⌘⇧S` opens a month calendar with a text field above it. It opens with the current date preselected, so **Enter alone schedules it**. Arrow keys walk the calendar; the field uses Thymer's own date parser, so everything you can type into a line works here (`tomorrow`, `next monday`, `aug 13`, `week 10`, `Q1 2024`, `monday to friday`) and the calendar follows along so you can see where `next friday` actually lands. `+ End date` arms a range; *Set time* adds a time; *Clear* removes the date.
 
