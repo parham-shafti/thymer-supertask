@@ -469,15 +469,15 @@ const CSS = `
 	 * fg mixed into the bg = slightly lighter on dark themes, slightly
 	 * darker on light ones (his call — subtle, not loud). 4px = the radius
 	 * standard. */
-	background: color-mix(in srgb, var(--cmdpal-bg-color, var(--app-bg, #26262b)) 93%, var(--cmdpal-fg-color, var(--text-color, #dadadb)));
+	background: var(--rs-menu-bg, #2A2A31); /* set at load: his exact hex on dark themes, a safe mix on light */
 	border: 1px solid rgba(127,127,127,.4); border-radius: 4px;
 	box-shadow: 0 10px 30px rgba(0,0,0,.5); padding: 4px; overflow: hidden;
 	font-size: 13px;
 	/* a touch off pure fg — full white popped too hard (his call) */
-	color: color-mix(in srgb, var(--cmdpal-fg-color, var(--text-color, #dadadb)) 94%, transparent);
+	color: color-mix(in srgb, var(--cmdpal-fg-color, var(--text-color, #dadadb)) 97%, transparent);
 }
 .rs-repmenu div { padding: 5px 10px; border-radius: 5px; cursor: pointer; white-space: nowrap; }
-.rs-repmenu div:hover { background: rgba(127,127,127,.2); }
+.rs-repmenu > div:hover { background: rgba(127,127,127,.2); } /* DIRECT children only — nested datepicker cells must not repaint */
 .rs-repmenu div.rs-on { color: color-mix(in srgb, var(--color-primary-500, #3aa37f) 60%, var(--text-color, currentColor)); font-weight: 600; }
 .rs-custom { padding: 8px 12px 10px; border-top: 1px solid rgba(127,127,127,.18); }
 .rs-custom label { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
@@ -489,7 +489,6 @@ const CSS = `
 .rs-custom .rs-int { width: 52px; }
 .rs-custom .rs-until { width: 132px; }
 .rs-until.rs-bad-date { border-color: rgba(220,90,90,.7); }
-.rs-endafter { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; }
 .rs-cnt {
 	width: 46px; background: transparent; color: inherit; font-family: inherit; font-size: 13px;
 	border: 1px solid rgba(127,127,127,.35); border-radius: 4px; padding: 1px 4px;
@@ -808,6 +807,16 @@ class Plugin extends AppPlugin {
 		this.style = document.createElement('style');
 		this.style.textContent = CSS;
 		document.head.appendChild(this.style);
+		/* menu surface: his exact #2A2A31 on dark themes; on light ones a mix
+		 * a touch darker than the surface (the hex would be a black slab) */
+		try {
+			const bg = getComputedStyle(document.body).backgroundColor;
+			const m = bg && bg.match(/\d+/g);
+			const lum = m ? (0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2]) : 0;
+			document.documentElement.style.setProperty('--rs-menu-bg', lum < 128
+				? '#2A2A31'
+				: 'color-mix(in srgb, var(--cmdpal-bg-color, #fff) 94%, var(--cmdpal-fg-color, #000))');
+		} catch (e) {}
 
 		this.hotkeyHandler = (e) => {
 			/* arrival sweeps use this to tell TYPING from a merely parked
@@ -3896,7 +3905,7 @@ class Plugin extends AppPlugin {
 					</div>
 				</div>
 				<label class="rs-fromrow" title="Day selections always repeat on schedule — Count from applies to plain intervals only"><span>Count From</span><span class="rs-sel rs-from" data-v="a"><span class="rs-sel-lbl">The Due Date</span><span class="ti ti-chevron-down"></span></span></label>
-				<label title="When the SERIES stops. + End date up top is different: it makes each occurrence a date RANGE."><span>End Repeat</span><span class="rs-sel rs-endsel" data-v=""><span class="rs-sel-lbl">Never</span><span class="ti ti-chevron-down"></span></span><span class="rs-endafter" style="display:none"><input class="rs-cnt" type="number" min="1" max="100" value="3"> times</span><input class="rs-until" type="text" spellcheck="false" placeholder="pick a date" style="display:none"></label>
+				<label title="When the SERIES stops. + End date up top is different: it makes each occurrence a date RANGE."><span>End Repeat</span><span class="rs-sel rs-endsel" data-v=""><span class="rs-sel-lbl">Never</span><span class="ti ti-chevron-down"></span></span><input class="rs-cnt" type="number" min="1" max="100" value="3" style="display:none"><input class="rs-until" type="text" spellcheck="false" style="display:none"></label>
 				<label class="rs-trailrow" title="Backwards keeps a completed copy each time you tick. Forward lays out every future occurrence up front (needs Until, schedule-based rules only)."><span>Leave a Trail</span><span class="rs-sel rs-trail" data-v=""><span class="rs-sel-lbl">Off</span><span class="ti ti-chevron-down"></span></span></label>
 			</div>
 			<div class="rs-foot">
@@ -4280,7 +4289,6 @@ class Plugin extends AppPlugin {
 			if (endMode === 'n' && selVal(from) === 'c') {
 				/* completion-counted rules cannot know future days */
 				setSel(pop.querySelector('.rs-endsel'), '', [['', 'Never'], ['n', 'After'], ['d', 'On Date']]);
-				endAfter.style.display = 'none';
 				endMode = '';
 			}
 			if (endMode === 'n') {
@@ -4301,6 +4309,7 @@ class Plugin extends AppPlugin {
 			if (tv === 'f' && !rule.u && !rule.aftN) until.classList.add('rs-bad-date');
 			this.rule = rule;
 			paintRepeat();
+			paintEnd();
 			updateGrammar();
 		};
 
@@ -4320,8 +4329,7 @@ class Plugin extends AppPlugin {
 			until.classList.remove('rs-bad-date');
 			cnt.value = r.aftN || 3;
 			setSel(pop.querySelector('.rs-endsel'), endMode2, [['', 'Never'], ['n', 'After'], ['d', 'On Date']]);
-			endAfter.style.display = endMode2 === 'n' ? '' : 'none';
-			until.style.display = endMode2 === 'd' ? '' : 'none';
+			paintEnd();
 			setSel(trailSel, r.tr || '', TRAILOPTS);
 			updateGrammar();
 		};
@@ -4343,33 +4351,47 @@ class Plugin extends AppPlugin {
 		 * counters ever need mutating on ticks; completion-counted rules
 		 * cannot know future days, so After is absent from the menu there. */
 		const endSel = pop.querySelector('.rs-endsel');
-		const endAfter = pop.querySelector('.rs-endafter');
 		const cnt = pop.querySelector('.rs-cnt');
 		const ENDOPTS_ALL = [['', 'Never'], ['n', 'After'], ['d', 'On Date']];
+		/* the ROW never grows (the Is-set-to lesson): the chip carries the
+		 * whole value ("After 3 times" / "9 Sep 2026") and picking After or
+		 * On Date opens a POPOVER over the field — a count box or the month
+		 * picker — instead of squeezing inputs into the row */
+		const paintEnd = () => {
+			const v = selVal(endSel);
+			const l = endSel.querySelector('.rs-sel-lbl');
+			if (v === 'n') l.textContent = 'After ' + (parseInt(cnt.value, 10) || 3) + ' times';
+			else if (v === 'd') l.textContent = until.value.trim() || 'On Date';
+			else l.textContent = 'Never';
+		};
 		const endApply = (v) => {
 			setSel(endSel, v, ENDOPTS_ALL);
-			endAfter.style.display = v === 'n' ? '' : 'none';
-			until.style.display = v === 'd' ? '' : 'none';
-			if (v === 'd' && !until.value.trim()) {
-				const b = (this.sel || new DateTime(new Date())).getParts();
-				const d2 = new Date(b.year, b.month + 1, b.day);
-				until.value = d2.getDate() + ' ' + RECUR_MONTHNAMES[d2.getMonth()] + ' ' + d2.getFullYear();
+			if (v === 'n') {
+				this.openCountPop(endSel, parseInt(cnt.value, 10) || 3, (n2) => {
+					cnt.value = n2;
+					syncCustom();
+				});
+			} else if (v === 'd') {
+				if (!until.value.trim()) {
+					const b = (this.sel || new DateTime(new Date())).getParts();
+					const d2 = new Date(b.year, b.month + 1, b.day);
+					until.value = d2.getDate() + ' ' + RECUR_MONTHNAMES[d2.getMonth()] + ' ' + d2.getFullYear();
+				}
+				const up = DateTime.parseDateTimeString(until.value.trim());
+				const upp = up && up.getParts();
+				this.openMiniCal(endSel, upp && upp.year !== undefined ? upp : null, (y2, m2, d3) => {
+					until.value = d3 + ' ' + RECUR_MONTHNAMES[m2] + ' ' + y2;
+					syncCustom();
+				});
+			} else {
+				until.value = '';
+				until.classList.remove('rs-bad-date');
 			}
-			if (v !== 'd') { until.value = ''; until.classList.remove('rs-bad-date'); }
 			syncCustom();
 		};
 		endSel.addEventListener('click', () => {
 			const opts = selVal(from) === 'c' ? ENDOPTS_ALL.filter((o) => o[0] !== 'n') : ENDOPTS_ALL;
 			this.openSelMenu(endSel, opts, selVal(endSel), endApply);
-		});
-		cnt.addEventListener('input', syncCustom);
-		until.addEventListener('click', () => {
-			const up = DateTime.parseDateTimeString(until.value.trim() || '');
-			const upp = up && up.getParts();
-			this.openMiniCal(until, upp && upp.year !== undefined ? upp : null, (y2, m2, d2) => {
-				until.value = d2 + ' ' + RECUR_MONTHNAMES[m2] + ' ' + y2;
-				syncCustom();
-			});
 		});
 		wireSel(pop.querySelector('.rs-mord'), ORDOPTS);
 		wireSel(pop.querySelector('.rs-mod'), ODOPTS);
@@ -4494,6 +4516,33 @@ class Plugin extends AppPlugin {
 				const ymd = +day.getAttribute('data-ymd');
 				close();
 				onPick(Math.floor(ymd / 10000), Math.floor(ymd / 100) % 100 - 1, ymd % 100);
+			}
+		});
+	}
+
+	/* the After-count popover: writes through live, Enter or an outside
+	 * click closes — the chip label always mirrors the value */
+	openCountPop(anchorEl, current, onSet) {
+		document.querySelectorAll('.rs-repmenu').forEach((m) => m.remove());
+		const box = document.createElement('div');
+		box.className = 'rs-repmenu rs-countpop';
+		box.innerHTML = '<label style="display:flex;align-items:center;gap:6px;padding:4px 8px;">After <input class="rs-cnt" type="number" min="1" max="100" value="' + (current || 3) + '"> times</label>';
+		document.body.appendChild(box);
+		const r = anchorEl.getBoundingClientRect();
+		const top = r.bottom + 4 + box.offsetHeight > window.innerHeight - 8 ? r.top - box.offsetHeight - 4 : r.bottom + 4;
+		box.style.top = Math.max(8, top) + 'px';
+		box.style.left = Math.max(8, Math.min(r.left, window.innerWidth - box.offsetWidth - 8)) + 'px';
+		this.repMenu = box;
+		const input = box.querySelector('input');
+		input.focus();
+		input.select();
+		input.addEventListener('input', () => onSet(Math.max(1, Math.min(100, parseInt(input.value, 10) || 1))));
+		input.addEventListener('keydown', (e) => {
+			if (e.key === 'Enter') {
+				e.preventDefault();
+				e.stopPropagation();
+				box.remove();
+				if (this.repMenu === box) this.repMenu = null;
 			}
 		});
 	}
