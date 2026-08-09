@@ -311,6 +311,21 @@ const ORDER_BINS = [
  * rows and the Shortcuts card render in THIS order. */
 const STATUS_SHORTCUTS = ['started', 'important', 'alert', 'starred', 'billable', 'discuss', 'waiting', 'tasks', 'done'];
 
+/* PLATFORM: the chords and their labels differ off the Mac. Audited against
+ * the bundle's Windows/Linux keymap AND Electron's menu accelerators
+ * (2026-08-09): digits 1-9 are free on Ctrl and Alt everywhere (only Ctrl+0
+ * is bound, sidebar focus), Ctrl+Shift+S is free (Ctrl+S = save), but
+ * Ctrl+Plus/Minus are Electron's ZOOM accelerators on PC — hence Alt for the
+ * nudges there. Win/Meta is avoided entirely on PC (the OS owns it). The
+ * exclusive-modifier guards double as an AltGr shield: AltGr reports
+ * ctrl+alt together and matches nothing. */
+const IS_MAC = /Mac|iPhone|iPad|iPod/.test((navigator.platform || '') + (navigator.userAgent || ''));
+/* labels for settings, the shortcuts card and toasts */
+const KEY_TAG = (n) => (IS_MAC ? '⌘' : 'Ctrl+') + n;
+const KEY_STATUS = (n) => (IS_MAC ? '⌃' : 'Alt+') + n;
+const KEY_BOX = IS_MAC ? '⌘⇧S' : 'Ctrl+Shift+S';
+const KEY_NUDGE = IS_MAC ? '⌃+ / ⌃−' : 'Alt++ / Alt+−';
+
 
 const DUE_DATE_FIELD = 'Due Date';
 
@@ -916,38 +931,34 @@ class Plugin extends AppPlugin {
 	 * something else again elsewhere, but always e.code "Digit2". */
 	match(e) {
 		const code = e.code;
+		/* one modifier family per JOB, exclusive guards throughout. Mac:
+		 * ⌘=hashtags/box, ⌃=status/nudge. PC: Ctrl=hashtags/box, Alt=
+		 * status/nudge (Ctrl+± is Electron zoom there, and Win/Meta belongs
+		 * to the OS). Digits and S match on e.code so keyboard layout is
+		 * irrelevant; the nudges match the CHARACTER (+/=/-/_) because on
+		 * Swedish Pro those caps sit elsewhere than on US. Same chord again
+		 * clears (hashtags and statuses alike). */
+		const tagMod = IS_MAC
+			? (e.metaKey && !e.ctrlKey && !e.altKey)
+			: (e.ctrlKey && !e.metaKey && !e.altKey);
+		const statusMod = IS_MAC
+			? (e.ctrlKey && !e.metaKey && !e.altKey)
+			: (e.altKey && !e.metaKey && !e.ctrlKey);
 
-		/* ⌘ + a bare digit is the timeblock; the date box is ⌘⇧S. Thymer binds no
-		 * digit on any modifier, and ⌘⇧S is unbound. ⌘K is NOT free — it is
-		 * global.launch_cmdpal_jump — see the audit warning at the top. */
-		if (e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+		if (tagMod && !e.shiftKey) {
 			const tb = (this.timeblocks || TIMEBLOCKS).find((t) => t.code === code);
-			return tb ? { kind: 'timeblock', tb } : null;
+			if (tb) return { kind: 'timeblock', tb };
 		}
+		if (tagMod && e.shiftKey && code === 'KeyS') return { kind: 'pick' };
 
-		if (e.metaKey && e.shiftKey && !e.ctrlKey && !e.altKey) {
-			return code === 'KeyS' ? { kind: 'pick' } : null;
-		}
-
-		/* ⌃ with the +/- keys nudges the date one day. Matched on the CHARACTER,
-		 * not the physical key: Parham is on Swedish Pro, where + and - are
-		 * UNSHIFTED and sit in different positions than on US. '=' and '_' are
-		 * the US/shifted spellings of the same two caps, so both layouts work.
-		 * '?' is deliberately NOT accepted — on Swedish Pro that is Shift on the
-		 * + key, and ⌃⇧? is Thymer's own nav.toggleFoldDescendants. */
-		if (!e.ctrlKey || e.metaKey || e.altKey) return null;
-		/* ⌃1-⌃9 set the task STATUS in the STATUS_SHORTCUTS order (the same
-		 * order the settings list shows): In Progress, Important, Alert,
-		 * Starred, Billable, Discuss, Blocked, Todo (= clear), Done. Free:
-		 * Thymer binds no digit on any modifier, and the old ⌃⇧/⌃⌥ digit
-		 * jumps were removed in v0.6.0. Matched on e.code like the ⌘ block,
-		 * so keyboard layout is irrelevant. Same chord again clears (the
-		 * timeblock toggle idiom). */
+		if (!statusMod) return null;
 		if (!e.shiftKey && /^Digit[1-9]$/.test(code)) {
 			const key = STATUS_SHORTCUTS[+code.slice(5) - 1];
 			const b = key && ORDER_BINS.find((x) => x.key === key);
 			if (b) return { kind: 'status', status: b.key === 'tasks' ? 'none' : b.statuses[0], label: b.label };
 		}
+		/* '?' is deliberately NOT accepted — on Swedish Pro that is Shift on
+		 * the + key, and ⌃⇧? is Thymer's own fold shortcut */
 		const k = e.key;
 		if (k === '+' || k === '=') return { kind: 'shift', days: 1 };
 		if (k === '-' || k === '_') return { kind: 'shift', days: -1 };
@@ -1131,13 +1142,13 @@ class Plugin extends AppPlugin {
 			const orderingBody = fold.ordering ? '' :
 				'<p class="rs-p-sub rs-p-secsub">Ticked statuses are grouped under every heading as tasks change; '
 				+ 'the Done group starts collapsed. Nothing ticked turns it off, and a section’s ⋯ menu always overrides it. '
-				+ 'The ⌃1 to ⌃9 shortcuts set a line’s status anywhere, ticked or not; the same chord again clears it.</p>'
+				+ 'The ' + KEY_STATUS(1) + ' to ' + KEY_STATUS(9) + ' shortcuts set a line’s status anywhere, ticked or not; the same chord again clears it.</p>'
 				+ '<div class="rs-p-list">'
 				+ STATUS_SHORTCUTS.map((key, i) => {
 					const b = ORDER_BINS.find((x) => x.key === key);
 					if (!b) return '';
 					const on = (this.globalBins || []).indexOf(b.key) >= 0;
-					return '<label class="rs-p-row rs-p-switch"><span class="rs-p-key">⌃' + (i + 1) + '</span>'
+					return '<label class="rs-p-row rs-p-switch"><span class="rs-p-key">' + KEY_STATUS(i + 1) + '</span>'
 						+ '<input type="checkbox" class="rs-gb" data-k="' + b.key + '"' + (on ? ' checked' : '') + '>'
 						+ '<span class="rs-p-ic ti ' + b.icon + '"></span>'
 						+ '<span class="rs-p-name">' + b.label + '</span></label>';
@@ -1150,19 +1161,19 @@ class Plugin extends AppPlugin {
 				+ sec('hashtags', 'Hashtags Settings',
 					(!fold.hashtags && draft.slots.length < 9 ? '<button type="button" class="rs-p-sec-add rs-tb-add"><span class="ti ti-plus"></span>New</button>' : ''))
 				+ (fold.hashtags ? '' :
-					'<p class="rs-p-sub rs-p-secsub">⌘1 to ⌘9 tag the current line; the row is the key. '
+					'<p class="rs-p-sub rs-p-secsub">' + KEY_TAG(1) + ' to ' + KEY_TAG(9) + ' tag the current line; the row is the key. '
 					+ 'Use anything your flow sorts by: timeblocks, priorities, statuses.</p>'
 					+ '<div class="rs-p-list">'
 				+ draft.slots.map((slot, i) => {
 					const so = typeof slot === 'string' ? { tag: slot, title: '' } : (slot || { tag: '', title: '' });
 					return i === editIdx
-						? '<div class="rs-p-row is-editing"><span class="rs-p-key">⌘' + (i + 1) + '</span>'
+						? '<div class="rs-p-row is-editing"><span class="rs-p-key">' + KEY_TAG(i + 1) + '</span>'
 							+ '<span class="rs-p-name rs-p-editcol">'
 							+ '<input class="rs-tb-title" spellcheck="false" placeholder="Title (shown in the UI)" value="' + esc(so.title) + '">'
 							+ '<input class="rs-tb-tag" data-i="' + i + '" spellcheck="false" placeholder="#hashtag" value="' + esc(so.tag) + '">'
 							+ '</span>'
 							+ '<span class="rs-p-acts"><button type="button" class="rs-p-btn rs-tb-ok ti ti-check"></button></span></div>'
-						: '<div class="rs-p-row"><span class="rs-p-key">⌘' + (i + 1) + '</span>'
+						: '<div class="rs-p-row"><span class="rs-p-key">' + KEY_TAG(i + 1) + '</span>'
 							+ '<span class="rs-p-name">' + esc(so.title || so.tag) + '</span>'
 							+ (so.title ? '<span class="rs-p-where">' + esc(so.tag) + '</span>' : '')
 							+ '<span class="rs-p-acts">'
@@ -3932,16 +3943,16 @@ class Plugin extends AppPlugin {
 	// ---- misc ---------------------------------------------------------------
 
 	showShortcuts() {
-		const rows = (this.timeblocks || []).map((t) => '⌘' + t.code.slice(5) + '&nbsp; ' + t.label + ' &nbsp;<span style="opacity:.5">' + t.tag + '</span>').join('<br>');
+		const rows = (this.timeblocks || []).map((t) => KEY_TAG(t.code.slice(5)) + '&nbsp; ' + t.label + ' &nbsp;<span style="opacity:.5">' + t.tag + '</span>').join('<br>');
 		this.ui.addToaster({
 			title: 'Supertask',
 			messageHTML: rows
 				+ '<br><br>' + STATUS_SHORTCUTS.map((key, i) => {
 				const b = ORDER_BINS.find((x) => x.key === key);
-				return '⌃' + (i + 1) + '&nbsp; ' + (key === 'tasks' ? 'Clear status (Todo)' : (b ? b.label : key));
+				return KEY_STATUS(i + 1) + '&nbsp; ' + (key === 'tasks' ? 'Clear status (Todo)' : (b ? b.label : key));
 			}).join('<br>')
-				+ '<br><br>⌃+ / ⌃−&nbsp; move the date one day forward / back'
-				+ '<br>⌘⇧S&nbsp; date box — arrows walk the calendar, Enter sets, Clear removes',
+				+ '<br><br>' + KEY_NUDGE + '&nbsp; move the date one day forward / back'
+				+ '<br>' + KEY_BOX + '&nbsp; date box — arrows walk the calendar, Enter sets, Clear removes',
 			dismissible: true,
 			autoDestroyTime: 15000,
 		});

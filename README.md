@@ -6,14 +6,14 @@ Supercharged tasks for [Thymer](https://thymer.com): date management and repeati
 
 ## Shortcuts
 
-| Chord | What it does |
-|---|---|
-| `⌘1` … `⌘9` | Tag the caret's line with your own hashtags (timeblocks, priorities, contexts — yours to define in Settings). Same key again clears. |
-| `⌃1` … `⌃9` | Set the task status: In Progress, Important, Alert, Starred, Billable, Discuss, Blocked, Clear, Done. Same chord again clears. |
-| `⌃+` / `⌃−` | Move the date one day forward / back |
-| `⌘⇧S` | Open the date box: calendar, free-text parsing, time toggle, end dates, Repeat rule |
+| Mac | Windows / Linux | What it does |
+|---|---|---|
+| `⌘1` … `⌘9` | `Ctrl+1` … `Ctrl+9` | Tag the caret's line with your own hashtags (timeblocks, priorities, contexts — yours to define in Settings). Same key again clears. |
+| `⌃1` … `⌃9` | `Alt+1` … `Alt+9` | Set the task status: In Progress, Important, Alert, Starred, Billable, Discuss, Blocked, Clear, Done. Same chord again clears. |
+| `⌃+` / `⌃−` | `Alt++` / `Alt+-` | Move the date one day forward / back |
+| `⌘⇧S` | `Ctrl+Shift+S` | Open the date box: calendar, free-text parsing, time toggle, end dates, Repeat rule |
 
-Keys are matched by physical position, so any keyboard layout works. Thymer binds no digit key on any modifier, so all three blocks are free. (macOS itself can claim `⌃`-digits for *Switch to Desktop* when you use multiple Spaces — check System Settings → Keyboard → Shortcuts → Mission Control if a chord does nothing.)
+Keys are matched by physical position, so any keyboard layout works, and the Settings panel shows the chords for your platform. Thymer binds no digit key on any modifier, so the blocks are free in-app. Two OS-level caveats: macOS can claim `⌃`-digits for *Switch to Desktop* when you use multiple Spaces (System Settings → Keyboard → Shortcuts → Mission Control), and some Linux desktops bind `Alt`-digits to window or workspace switching — free the chord in your desktop's keyboard settings if one does nothing.
 
 ## Group and order your sections
 
