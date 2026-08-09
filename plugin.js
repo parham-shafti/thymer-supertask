@@ -495,10 +495,12 @@ const CSS = `
 	width: 46px; background: transparent; color: inherit; font-family: inherit; font-size: 13px;
 	border: 1px solid rgba(127,127,127,.35); border-radius: 4px; padding: 1px 4px;
 }
-/* the box SHRINK-WRAPS the grid and the header aligns with it — fixed
- * widths always left leftover air on one side (his screenshots) */
-.rs-minical { width: auto; padding: 12px; }
-.rs-minical .datepicker-wrapper { width: fit-content; }
+/* FIXED box width (auto + the compact picker's width:100% child = the box
+ * explodes to the viewport — seen live). Inside it the CALENDAR BLOCK
+ * (header + grids) shrinks to the day grid's own width and centers, so the
+ * header aligns with the columns and the air is equal on all sides. */
+.rs-minical { width: 248px; padding: 12px; }
+.rs-minical .datepicker-wrapper { width: auto; display: flex; justify-content: center; }
 .rs-minical .datepicker-calendar { width: fit-content; }
 .rs-minical .datepicker-header { display: flex; align-items: center; }
 .rs-mc-nav { cursor: pointer; padding: 0 6px; opacity: .55; user-select: none; }
