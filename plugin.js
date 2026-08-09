@@ -1068,7 +1068,7 @@ class Plugin extends AppPlugin {
 	 * advance and the ordering sweeps run exactly as if the status was set
 	 * by hand. Works on virtual live-search rows via editorSelection's remap. */
 	async setStatus(act) {
-		const line = this.editorSelection();
+		const line = this.lineSelection();
 		if (!line || !line.lineGuid || !line.pageGuid) { this.toast('Put the caret on a task line first.'); return; }
 		const pl = await this.pageLines(line.pageGuid);
 		const li = pl && pl.byG.get(line.lineGuid);
@@ -1444,6 +1444,29 @@ class Plugin extends AppPlugin {
 		return { segments, lineGuid: st.guid, pageGuid: st.rguid, domGuid, props: st.props || null };
 	}
 
+	/* The focused (or selected) row in Thymer's TASKS VIEW — a first-class
+	 * surface for every command since v1.3.0 (his ask: some users live
+	 * there). Rows carry the LINE guid directly; there is no editor caret,
+	 * so noCaret tells every write path to skip caret work. */
+	tasksViewSelection() {
+		let el = document.activeElement instanceof HTMLElement
+			? document.activeElement.closest('.tasks-view-row[data-guid]') : null;
+		if (!el) el = document.querySelector('.tasks-view-row.is-selected[data-guid]');
+		if (!el) return null;
+		const guid = el.getAttribute('data-guid');
+		const st = ((window.g_universe && window.g_universe.itemsByGuid) || {})[guid];
+		if (!st || !st.rguid) return null;
+		const ts = st.text_segments || [];
+		const segments = [];
+		for (let i = 0; i + 1 < ts.length; i += 2) segments.push({ type: String(ts[i]), text: ts[i + 1] });
+		return { segments, lineGuid: st.guid, pageGuid: st.rguid, domGuid: st.guid, props: st.props || null, noCaret: true };
+	}
+
+	/* editor caret first, tasks-view row second — the shared line resolver */
+	lineSelection() {
+		return this.editorSelection() || this.tasksViewSelection();
+	}
+
 	/* Which date a command should act on. See the header for the order. */
 	dateTarget() {
 		const view = this.focusedViewRecord(this.activePanelEl());
@@ -1451,7 +1474,7 @@ class Plugin extends AppPlugin {
 			if (view.err === 'editing') return { err: 'Finish editing that cell first.' };
 			return { kind: 'record', guid: view.guid };
 		}
-		const line = this.editorSelection();
+		const line = this.lineSelection();
 		if (!line) return null;
 		/* a page returned by a live search: its Due Date is the only date there is */
 		if (line.recordGuid) {
@@ -1730,8 +1753,10 @@ class Plugin extends AppPlugin {
 		}
 		this.refreshRepeatStyle();
 		const dom = t.line.domGuid || t.line.lineGuid;
-		if (move) await this.placeCaret(dom, move);
-		else await this.restoreCaret(dom, t.line.caret);
+		if (!t.line.noCaret) {
+			if (move) await this.placeCaret(dom, move);
+			else await this.restoreCaret(dom, t.line.caret);
+		}
 		this.toast(this.label(dt));
 		return true;
 	}
@@ -3758,7 +3783,7 @@ class Plugin extends AppPlugin {
 			if (plc) this.reconcileLineSeries(plc.rec, li, null, 0).catch(() => {});
 		} catch (e2) {}
 		this.refreshRepeatStyle();
-		await this.restoreCaret(t.line.domGuid || t.line.lineGuid, t.line.caret);
+		if (!t.line.noCaret) await this.restoreCaret(t.line.domGuid || t.line.lineGuid, t.line.caret);
 		this.toast('Date cleared');
 	}
 
@@ -3788,7 +3813,7 @@ class Plugin extends AppPlugin {
 	 * hashtags (#recurring and the rest) are never touched. Pressing the same
 	 * one again clears it. */
 	async setTimeblock(tb) {
-		const line = this.editorSelection();
+		const line = this.lineSelection();
 		if (line && line.recordGuid) { this.toast('That row is a page, and timeblocks live on lines.'); return; }
 		if (!line || !line.lineGuid || !line.pageGuid) { this.toast('Put the caret on a line first.'); return; }
 		const li = await this.lineItem(line);
@@ -3815,8 +3840,10 @@ class Plugin extends AppPlugin {
 		/* Same rule as dates: reposition only when the tag is NEW. Swapping one
 		 * timeblock for another leaves the caret exactly where it was. */
 		const dom = line.domGuid || line.lineGuid;
-		if (created) await this.placeCaret(dom, 'hashtag', tb.tag);
-		else await this.restoreCaret(dom, line.caret);
+		if (!line.noCaret) {
+			if (created) await this.placeCaret(dom, 'hashtag', tb.tag);
+			else await this.restoreCaret(dom, line.caret);
+		}
 		this.toast(cleared ? 'Timeblock cleared' : tb.label);
 	}
 
@@ -3960,7 +3987,7 @@ class Plugin extends AppPlugin {
 		this.cancelPicker = () => {
 			const line = t.kind === 'line' ? t.line : null;
 			this.closePicker();
-			if (line) this.restoreCaret(line.domGuid || line.lineGuid, line.caret);
+			if (line && !line.noCaret) this.restoreCaret(line.domGuid || line.lineGuid, line.caret);
 		};
 
 		/* Whatever is picked or typed, the time toggle and the end date are
@@ -4621,7 +4648,8 @@ class Plugin extends AppPlugin {
 			? (t.kind === 'line' ? (t.line && (t.line.domGuid || t.line.lineGuid)) : t.domGuid)
 			: null;
 		const sel = domGuid && '.listitem[data-guid="' + domGuid + '"]';
-		const lineEl = sel ? ((panel && panel.querySelector(sel)) || document.querySelector(sel)) : null;
+		const lineEl = sel ? ((panel && panel.querySelector(sel)) || document.querySelector(sel)
+			|| document.querySelector('.tasks-view-row[data-guid="' + domGuid + '"]')) : null;
 		if (lineEl) {
 			const lr = lineEl.getBoundingClientRect();
 			const col = lineEl.closest('.panel');
