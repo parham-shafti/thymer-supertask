@@ -618,7 +618,10 @@ const CSS = `
 	padding: 8px 13px; border-radius: 4px; font-weight: 400;
 }
 .rs-ordmenu .rs-om-row .rs-om-ic { width: 17px; flex: 0 0 auto; font-size: 15px; opacity: .6; text-align: center; }
-.rs-ordmenu .rs-om-row.rs-om-cur { background: color-mix(in srgb, currentColor 13%, transparent); }
+.rs-ordmenu .rs-om-row.rs-om-cur {
+	background: color-mix(in srgb, currentColor 13%, transparent);
+	color: color-mix(in srgb, var(--color-primary-500, #3aa37f) 70%, var(--text-color, currentColor));
+}
 /* the highlight SHIFTS while hovering the other mode row — without this the
  * active row's fill sat flush against the hovered row's fill (his report) */
 .rs-ordmenu:has(.rs-om-row[data-m]:hover) .rs-om-row.rs-om-cur:not(:hover) { background: transparent; }
@@ -850,7 +853,7 @@ class Plugin extends AppPlugin {
 			onSelected: () => this.toggleOrder({ m: 's', k: [] }).catch(() => {}),
 		});
 		this.cmd7 = this.ui.addCommandPaletteCommand({
-			label: 'Supertask: Order Done Tasks',
+			label: 'Supertask: Group Done Tasks',
 			icon: 'ti-check',
 			onSelected: () => this.toggleOrder({ m: 'g', k: ['done'] }).catch(() => {}),
 		});
@@ -2221,21 +2224,25 @@ class Plugin extends AppPlugin {
 		const all = (headSt.children || []).filter((k) => k && !k.is_trashed && !k.is_deleted);
 		const myAt = all.findIndex((k) => k.guid === selfGuid);
 		if (myAt >= 0) {
+			/* judged against the nearest NON-collector neighbours. A roof
+			 * sitting above me does NOT make me misplaced — the roof is the
+			 * misplaced one, and binOrderTidy moves IT; when tasks tried to
+			 * fix it themselves they leapfrogged each other forever (his
+			 * 2026-08-09 recording). */
 			let inPlace = true;
-			if (myAt > 0) {
-				const p = all[myAt - 1];
-				if (this.binKeyOf(p)) inPlace = false; /* collectors keep the bottom */
-				else {
-					const pli = pl.byG.get(p.guid);
-					let s = null;
-					try { s = pli ? await pli.getTaskStatus() : null; } catch (e) {}
-					if (this.rankOfStatus(s) > myRank) inPlace = false;
-				}
+			let pAt = myAt - 1;
+			while (pAt >= 0 && this.binKeyOf(all[pAt])) pAt--;
+			if (pAt >= 0) {
+				const pli = pl.byG.get(all[pAt].guid);
+				let s = null;
+				try { s = pli ? await pli.getTaskStatus() : null; } catch (e) {}
+				if (this.rankOfStatus(s) > myRank) inPlace = false;
 			}
-			if (inPlace && myAt + 1 < all.length) {
-				const n = all[myAt + 1];
-				if (!this.binKeyOf(n)) {
-					const nli = pl.byG.get(n.guid);
+			if (inPlace) {
+				let nAt = myAt + 1;
+				while (nAt < all.length && this.binKeyOf(all[nAt])) nAt++;
+				if (nAt < all.length) {
+					const nli = pl.byG.get(all[nAt].guid);
 					let s = null;
 					try { s = nli ? await nli.getTaskStatus() : null; } catch (e) {}
 					if (this.rankOfStatus(s) < myRank) inPlace = false;
@@ -2374,9 +2381,16 @@ class Plugin extends AppPlugin {
 		for (const [hg, headSt] of heads) {
 			const kids = (headSt.children || []).filter((k) => k && !k.is_trashed && !k.is_deleted);
 			const bins = kids.filter((k) => this.binKeyOf(k));
-			if (bins.length < 2) continue;
+			if (!bins.length) continue;
 			const ranks = bins.map((k) => this.binRank(this.binKeyOf(k)));
-			if (ranks.every((r, i) => i === 0 || ranks[i - 1] <= r)) continue; /* ordered */
+			const ranksOk = ranks.every((r, i) => i === 0 || ranks[i - 1] <= r);
+			/* collectors must also sit BELOW every ordinary row — a lone Done
+			 * roof stranded ABOVE two tasks was never re-seated (the old
+			 * bins<2 bail), and everything downstream assumes roofs-at-the-
+			 * bottom, which set off the task leapfrog in his recording */
+			const lastTaskAt = (() => { let at = -1; kids.forEach((k, i) => { if (!this.binKeyOf(k)) at = i; }); return at; })();
+			const firstBinAt = kids.findIndex((k) => this.binKeyOf(k));
+			if (ranksOk && (lastTaskAt < 0 || firstBinAt < 0 || firstBinAt > lastTaskAt)) continue; /* ordered */
 			const pl = await this.pageLines(headSt.rguid);
 			if (!pl) continue;
 			const desired = bins.map((k, i) => ({ g: k.guid, r: ranks[i], i }))
@@ -2694,7 +2708,7 @@ class Plugin extends AppPlugin {
 		const next = same ? null : preset;
 		const name = preset.m === 's' ? 'Order by Status'
 			: preset.m === 'h' ? 'Group by Hashtags'
-				: (preset.k.length === 1 && preset.k[0] === 'done' ? 'Order Done Tasks' : 'Group by Status');
+				: (preset.k.length === 1 && preset.k[0] === 'done' ? 'Group Done Tasks' : 'Group by Status');
 		this.toast(name + (next ? ': on for this section' : ': off — list restored'));
 		await this.setOrderConf(t, next);
 	}

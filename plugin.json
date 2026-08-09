@@ -3,5 +3,5 @@
 	"version": "1.0.0",
 	"name": "Supertask",
 	"icon": "calendar-bolt",
-	"description": "Supercharged tasks without leaving the keyboard. Cmd+1..9 tags the line with your own hashtags (timeblocks, priorities, whatever your flow sorts by); Ctrl+Plus and Ctrl+Minus move a date one day; Ctrl+1..9 set the task status; Cmd+Shift+S opens a calendar with Clear, a time toggle, end dates and a Repeat rule. Ticking a repeating task moves it to the next occurrence by itself, on a fixed schedule or counted from when you ticked it. Group by status or by your own cmd-digit hashtags collects a section's flagged tasks under status headings (Starred, Important, In Progress, Done and more), per heading or globally for Done, with a menu on the heading to pick which rows are active. Works on a todo's own date and on a page's Due Date, including inside live searches and embeds."
+	"description": "Supercharged tasks without leaving the keyboard. Cmd+1..9 tag lines with your own hashtags, Ctrl+1..9 set the task status, Ctrl+Plus/Minus nudge dates, and Cmd+Shift+S opens a date box with repeating tasks. Sections group themselves by status or hashtag. Full guide in the README."
 }
