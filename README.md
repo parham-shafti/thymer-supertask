@@ -2,7 +2,7 @@
 
 Supercharged tasks for [Thymer](https://thymer.com) — dates, statuses, timeblock hashtags, repeating tasks and self-organizing sections, all without leaving the keyboard.
 
-![Ordering and grouping in action](assets/demo-ordering.gif)
+![Ordering and grouping in action](assets/ordering.gif)
 
 ## Shortcuts
 
@@ -54,7 +54,7 @@ Rule 4 is deliberately strict: a prose todo that merely mentions `[[Some Project
 
 The date box's **Repeat** row does Never, Every Day / Week / Month / Year, or **Custom**: any interval, weekday sets, month-day sets, ordinals ("the last Friday"), yearly months, and an end date.
 
-![Repeating tasks in action](assets/demo-repeats.gif)
+![Repeating tasks in action](assets/repeats.gif)
 
 Tick a repeating task and it un-ticks itself and moves to the next occurrence. Two ways to count, chosen in Custom:
 
