@@ -477,7 +477,8 @@ const CSS = `
 	color: var(--rs-menu-fg, #D5D4D4); /* set at load: his exact hex on dark, theme fg on light */
 }
 .rs-repmenu div { padding: 5px 10px; border-radius: 5px; cursor: pointer; white-space: nowrap; }
-.rs-repmenu > div:hover { background: rgba(127,127,127,.2); } /* DIRECT children only — nested datepicker cells must not repaint */
+.rs-repmenu > div[data-v]:hover,
+.rs-repmenu > .rs-om-row:hover { background: rgba(127,127,127,.2); } /* real menu ROWS only — never the datepicker wrapper or its cells */
 .rs-repmenu div.rs-on { color: color-mix(in srgb, var(--color-primary-500, #3aa37f) 60%, var(--text-color, currentColor)); font-weight: 600; }
 .rs-custom { padding: 8px 12px 10px; border-top: 1px solid rgba(127,127,127,.18); }
 .rs-custom label { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
@@ -494,10 +495,11 @@ const CSS = `
 	width: 46px; background: transparent; color: inherit; font-family: inherit; font-size: 13px;
 	border: 1px solid rgba(127,127,127,.35); border-radius: 4px; padding: 1px 4px;
 }
-.rs-minical { width: 236px; padding: 12px; }
-/* the app's day grid does not stretch to fill — CENTER it, or the leftover
- * width piles up on one side and the padding reads uneven (his screenshots) */
-.rs-minical .datepicker-wrapper { display: flex; justify-content: center; }
+/* the box SHRINK-WRAPS the grid and the header aligns with it — fixed
+ * widths always left leftover air on one side (his screenshots) */
+.rs-minical { width: auto; padding: 12px; }
+.rs-minical .datepicker-wrapper { width: fit-content; }
+.rs-minical .datepicker-calendar { width: fit-content; }
 .rs-minical .datepicker-header { display: flex; align-items: center; }
 .rs-mc-nav { cursor: pointer; padding: 0 6px; opacity: .55; user-select: none; }
 .rs-mc-nav:hover { opacity: 1; }
