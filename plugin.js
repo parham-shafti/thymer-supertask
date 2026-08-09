@@ -430,7 +430,7 @@ const CSS = `
  * from the Repeat label instead of mashing into it */
 .rs-repval { display: inline-flex; align-items: center; gap: 3px; font-size: var(--text-size-smaller); text-align: right; }
 .rs-repnow {
-	padding: 2px 8px; border-radius: 5px;
+	padding: 2px 8px; border-radius: 4px;
 	border: 1px solid rgba(127,127,127,.3);
 	background: var(--ed-button-bg, transparent);
 }
@@ -498,7 +498,7 @@ const CSS = `
  * Enter-dead bug. Our own menu keeps typography, focus and keys in-house. */
 .rs-sel {
 	display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
-	font-size: 13px; padding: 3px 8px; border-radius: 5px;
+	font-size: 13px; padding: 3px 8px; border-radius: 4px; /* the 4px standard */
 	border: 1px solid rgba(127,127,127,.35);
 }
 .rs-sel:hover { background: rgba(127,127,127,.16); }
@@ -1904,20 +1904,21 @@ class Plugin extends AppPlugin {
 		holder.className = 'rs-pagerows';
 		holder.innerHTML = ''
 			+ '<label><span>Date field</span><span class="rs-sel rs-pf-date"><span class="rs-sel-lbl"></span><span class="ti ti-chevron-down"></span></span></label>'
-			+ '<label><span>Done when</span><span class="rs-sel rs-pf-status"><span class="rs-sel-lbl"></span><span class="ti ti-chevron-down"></span></span>'
-			+ '<span class="rs-sel rs-pf-dval" style="display:none"><span class="rs-sel-lbl"></span><span class="ti ti-chevron-down"></span></span></label>'
+			+ '<label><span>Done when</span><span class="rs-sel rs-pf-status"><span class="rs-sel-lbl"></span><span class="ti ti-chevron-down"></span></span></label>'
+			+ '<label class="rs-pf-vrow" style="display:none"><span>Is set to</span><span class="rs-sel rs-pf-dval"><span class="rs-sel-lbl"></span><span class="ti ti-chevron-down"></span></span></label>'
 			+ '<label class="rs-pf-rrow" style="display:none"><span>Then reset to</span><span class="rs-sel rs-pf-rval"><span class="rs-sel-lbl"></span><span class="ti ti-chevron-down"></span></span></label>';
 		custom.insertBefore(holder, custom.firstChild);
 		const dSel = holder.querySelector('.rs-pf-date');
 		const sSel = holder.querySelector('.rs-pf-status');
 		const vSel = holder.querySelector('.rs-pf-dval');
+		const vRow = holder.querySelector('.rs-pf-vrow');
 		const rSel = holder.querySelector('.rs-pf-rval');
 		const rRow = holder.querySelector('.rs-pf-rrow');
 		const lbl = (el, s2) => { el.querySelector('.rs-sel-lbl').textContent = s2 || '—'; };
 		const paint = () => {
 			lbl(dSel, t.pageCtx.dpl || t.pageCtx.dp);
 			lbl(sSel, t.pageCtx.spl || (t.pageCtx.sp ? t.pageCtx.sp : 'nothing (trail only)'));
-			vSel.style.display = t.pageCtx.sp ? '' : 'none';
+			vRow.style.display = t.pageCtx.sp ? '' : 'none';
 			rRow.style.display = t.pageCtx.sp ? '' : 'none';
 			lbl(vSel, t.pageCtx.dvl || (t.pageCtx.dv ? t.pageCtx.dv : 'pick a value'));
 			lbl(rSel, t.pageCtx.rvl || (t.pageCtx.rv ? t.pageCtx.rv : 'cleared'));
