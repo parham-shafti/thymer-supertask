@@ -495,14 +495,21 @@ const CSS = `
 	width: 46px; background: transparent; color: inherit; font-family: inherit; font-size: 13px;
 	border: 1px solid rgba(127,127,127,.35); border-radius: 4px; padding: 1px 4px;
 }
-/* FIXED box width (auto + the compact picker's width:100% child = the box
- * explodes to the viewport — seen live). Inside it the CALENDAR BLOCK
- * (header + grids) shrinks to the day grid's own width and centers, so the
- * header aligns with the columns and the air is equal on all sides. */
-.rs-minical { width: 248px; padding: 12px; }
-.rs-minical .datepicker-wrapper { width: auto; display: flex; justify-content: center; }
-.rs-minical .datepicker-calendar { width: fit-content; }
-.rs-minical .datepicker-header { display: flex; align-items: center; }
+/* HIS DRAWN SPEC (2026-08-09): a near-square box, the SAME padding on all
+ * four sides, month/year nudged right, arrows top right. The grids are
+ * forced to a 7×1fr layout stretched edge to edge, so leftover width has
+ * nowhere to pile up — symmetric by construction, not by tuning. */
+.rs-minical { width: 264px; padding: 16px; }
+.rs-minical .datepicker-wrapper { width: 100%; }
+.rs-minical .datepicker-calendar { width: 100%; }
+.rs-minical .datepicker-header { display: flex; align-items: center; padding-left: 6px; margin-bottom: 12px; }
+.rs-minical .datepicker-weekdays,
+.rs-minical .datepicker-days {
+	display: grid; grid-template-columns: repeat(7, 1fr);
+	width: 100%; justify-items: center;
+}
+.rs-minical .datepicker-weekdays { margin-bottom: 8px; }
+.rs-minical .datepicker-days { row-gap: 6px; }
 .rs-mc-nav { cursor: pointer; padding: 0 6px; opacity: .55; user-select: none; }
 .rs-mc-nav:hover { opacity: 1; }
 .rs-custom input[type="radio"], .rs-custom input[type="checkbox"] {
