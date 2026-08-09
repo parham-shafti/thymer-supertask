@@ -3,5 +3,5 @@
 	"version": "1.0.0",
 	"name": "Supertask",
 	"icon": "calendar-bolt",
-	"description": "Supercharged tasks without leaving the keyboard. Cmd+1..9 tag lines with your own hashtags, Ctrl+1..9 set the task status, Ctrl+Plus/Minus nudge dates, and Cmd+Shift+S opens a date box with repeating tasks. Sections group themselves by status or hashtag. Full guide in the README."
+	"description": "Supercharged tasks: date management and repeating tasks, self-organizing sections where you can Order by Status or Group by Status or Hashtags, and more. All without leaving the keyboard. Full guide in the README."
 }

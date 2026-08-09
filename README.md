@@ -1,6 +1,6 @@
 # Supertask
 
-Supercharged tasks for [Thymer](https://thymer.com) — dates, statuses, timeblock hashtags, repeating tasks and self-organizing sections, all without leaving the keyboard.
+Supercharged tasks for [Thymer](https://thymer.com): date management and repeating tasks, self-organizing sections where you can Order by Status or Group by Status or Hashtags, and more. All without leaving the keyboard.
 
 ![Repeating tasks, statuses and the date box](assets/date-box.png)
 
