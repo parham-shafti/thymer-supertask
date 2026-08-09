@@ -729,11 +729,6 @@ class Plugin extends AppPlugin {
 		 * of sp that means done), rv (reset value; empty = clear), tr, and
 		 * copies {ymd: recordGuid} for the forward-trail series. */
 		this.pageRules = {};
-		/* PER-COLLECTION repeat wiring (his call 2026-08-09): which date field
-		 * repeats drive and which status field + value means done, activated
-		 * per collection (Settings UI to come; seeded by config for now).
-		 * Advancing is ALWAYS status-driven — a date alone never advances. */
-		this.collRepeat = {};
 		this.applySlots(this.tbSlots);
 		try {
 			const ls = JSON.parse(localStorage.getItem('rs_prefs') || 'null');
@@ -1076,7 +1071,6 @@ class Plugin extends AppPlugin {
 			this.globalBins = p.globalBins.filter((k) => ORDER_BINS.some((b) => b.key === k));
 		}
 		if (p.pageRules && typeof p.pageRules === 'object') this.pageRules = p.pageRules;
-		if (p.collRepeat && typeof p.collRepeat === 'object') this.collRepeat = p.collRepeat;
 		/* legacy master switch (v0.16.2/0.16.3): off meant off regardless of
 		 * the stored choices; on with no stored choices meant Done only */
 		if (p.doneGlobal === false) this.globalBins = [];
@@ -1099,7 +1093,7 @@ class Plugin extends AppPlugin {
 	 * write-through to config for other devices. NOTE: saveConfiguration
 	 * reloads the plugin, so this is always the LAST thing an interaction does. */
 	async savePrefs() {
-		const p = { rev: Date.now(), slots: this.tbSlots, globalBins: (this.globalBins || []).slice(), pageRules: this.pageRules || {}, collRepeat: this.collRepeat || {} };
+		const p = { rev: Date.now(), slots: this.tbSlots, globalBins: (this.globalBins || []).slice(), pageRules: this.pageRules || {} };
 		this.prefsRev = p.rev;
 		try { localStorage.setItem('rs_prefs', JSON.stringify(p)); } catch (e) {}
 		try {
@@ -1867,14 +1861,117 @@ class Plugin extends AppPlugin {
 		return null;
 	}
 
-	/* the collection's repeat wiring for a record, or null if not activated */
-	collRepeatCtx(recordGuid) {
-		try {
-			const rec = this.data.getRecord(recordGuid);
-			const coll = rec && rec.getCollection();
-			const cfg = coll && this.collRepeat && this.collRepeat[coll.getGuid()];
-			return cfg ? { ...cfg } : null;
-		} catch (e) { return null; }
+	/* The record-mode rows of the Custom panel: which DATE field the rule
+	 * drives, which STATUS field + value means done (optional — without it
+	 * the rule only powers the forward trail), and what to reset the status
+	 * to (default: clear). Field lists come from the collection's own config;
+	 * value lists for record-type fields from the linked collections'
+	 * records, loaded when the menu opens. Everything lands in t.pageCtx,
+	 * which writeDate persists into the rule. */
+	wirePageRows(pop, t) {
+		const rec = this.data.getRecord(t.guid);
+		if (!rec) return;
+		const { fields } = this.pageFields(rec);
+		const dateFields = fields.filter((f) => (f.type === 'datetime' || f.type === 'date') && f.active !== false && f.id !== 'created_at' && f.id !== 'updated_at');
+		const statusFields = fields.filter((f) => (f.type === 'record' || f.type === 'choice') && f.active !== false && f.id !== 'parent_page');
+		const prev = (this.pageRules && this.pageRules[t.guid]) || null;
+		const defDate = (prev && dateFields.find((f) => f.id === prev.dp))
+			|| dateFields.find((f) => (f.label || '') === DUE_DATE_FIELD)
+			|| dateFields[0] || null;
+		t.pageCtx = {
+			dp: defDate && defDate.id, dpl: defDate && defDate.label,
+			sp: prev && prev.sp, spl: null, dv: prev && prev.dv, dvl: prev && prev.dvl,
+			rv: prev && prev.rv, rvl: prev && prev.rvl,
+		};
+		const prevSf = t.pageCtx.sp && statusFields.find((f) => f.id === t.pageCtx.sp);
+		if (prevSf) t.pageCtx.spl = prevSf.label;
+
+		const custom = pop.querySelector('.rs-custom');
+		const holder = document.createElement('div');
+		holder.className = 'rs-pagerows';
+		holder.innerHTML = ''
+			+ '<label><span>Date field</span><span class="rs-sel rs-pf-date"><span class="rs-sel-lbl"></span><span class="ti ti-chevron-down"></span></span></label>'
+			+ '<label><span>Done when</span><span class="rs-sel rs-pf-status"><span class="rs-sel-lbl"></span><span class="ti ti-chevron-down"></span></span>'
+			+ '<span class="rs-sel rs-pf-dval" style="display:none"><span class="rs-sel-lbl"></span><span class="ti ti-chevron-down"></span></span></label>'
+			+ '<label class="rs-pf-rrow" style="display:none"><span>Then reset to</span><span class="rs-sel rs-pf-rval"><span class="rs-sel-lbl"></span><span class="ti ti-chevron-down"></span></span></label>';
+		custom.insertBefore(holder, custom.firstChild);
+		const dSel = holder.querySelector('.rs-pf-date');
+		const sSel = holder.querySelector('.rs-pf-status');
+		const vSel = holder.querySelector('.rs-pf-dval');
+		const rSel = holder.querySelector('.rs-pf-rval');
+		const rRow = holder.querySelector('.rs-pf-rrow');
+		const lbl = (el, s2) => { el.querySelector('.rs-sel-lbl').textContent = s2 || '—'; };
+		const paint = () => {
+			lbl(dSel, t.pageCtx.dpl || t.pageCtx.dp);
+			lbl(sSel, t.pageCtx.spl || (t.pageCtx.sp ? t.pageCtx.sp : 'nothing (trail only)'));
+			vSel.style.display = t.pageCtx.sp ? '' : 'none';
+			rRow.style.display = t.pageCtx.sp ? '' : 'none';
+			lbl(vSel, t.pageCtx.dvl || (t.pageCtx.dv ? t.pageCtx.dv : 'pick a value'));
+			lbl(rSel, t.pageCtx.rvl || (t.pageCtx.rv ? t.pageCtx.rv : 'cleared'));
+			this.fit(pop);
+		};
+		/* value options for the chosen status field: choice options from the
+		 * schema, or the linked collections' records */
+		const valueItems = async (fdef) => {
+			if (!fdef) return [];
+			if (fdef.type === 'choice') {
+				return ((fdef.choices || fdef.options || []).map((c) => [String(c.id != null ? c.id : c.value), c.label || String(c.id)]));
+			}
+			const collIds = (fdef.choices || []).map((c) => c.id).filter(Boolean);
+			const items = [];
+			try {
+				const all = await this.data.getAllCollections();
+				for (const c of all) {
+					if (collIds.length && collIds.indexOf(c.getGuid()) < 0) continue;
+					if (!collIds.length) continue;
+					const recs = await c.getAllRecords();
+					for (const r2 of recs.slice(0, 100)) {
+						/* getAllRecords gives wrappers with getName; guid via prop lookup is
+						 * not exposed, so read it off the state map by name match is unsafe —
+						 * use the record's own guid accessor when present */
+						const g = r2.guid || (r2.getGuid && r2.getGuid()) || null;
+						if (g) items.push([String(g), r2.getName() || String(g)]);
+					}
+				}
+			} catch (e) {}
+			return items;
+		};
+		dSel.addEventListener('click', () => {
+			this.openSelMenu(dSel, dateFields.map((f) => [f.id, f.label || f.id]), t.pageCtx.dp, (v) => {
+				const f = dateFields.find((x) => x.id === v);
+				t.pageCtx.dp = v; t.pageCtx.dpl = f && f.label;
+				paint();
+			});
+		});
+		sSel.addEventListener('click', () => {
+			const items = [['', 'nothing (trail only)']].concat(statusFields.map((f) => [f.id, f.label || f.id]));
+			this.openSelMenu(sSel, items, t.pageCtx.sp || '', (v) => {
+				const f = statusFields.find((x) => x.id === v);
+				t.pageCtx.sp = v || null; t.pageCtx.spl = f && f.label;
+				if (!v) { t.pageCtx.dv = t.pageCtx.dvl = t.pageCtx.rv = t.pageCtx.rvl = null; }
+				paint();
+			});
+		});
+		vSel.addEventListener('click', async () => {
+			const fdef = statusFields.find((x) => x.id === t.pageCtx.sp);
+			const items = await valueItems(fdef);
+			if (!items.length) { this.toast('No values found for that field.'); return; }
+			this.openSelMenu(vSel, items, t.pageCtx.dv || '', (v) => {
+				const it = items.find((x) => x[0] === v);
+				t.pageCtx.dv = v; t.pageCtx.dvl = it && it[1];
+				paint();
+			});
+		});
+		rSel.addEventListener('click', async () => {
+			const fdef = statusFields.find((x) => x.id === t.pageCtx.sp);
+			const items = [['', 'cleared']].concat(await valueItems(fdef));
+			this.openSelMenu(rSel, items, t.pageCtx.rv || '', (v) => {
+				const it = items.find((x) => x[0] === v);
+				t.pageCtx.rv = v || null; t.pageCtx.rvl = v ? (it && it[1]) : null;
+				paint();
+			});
+		});
+		paint();
 	}
 
 	// ---- page recurrence ------------------------------------------------------
@@ -1916,13 +2013,10 @@ class Plugin extends AppPlugin {
 		if (this.recurBusy.has(guid)) return;
 		const rec = this.data.getRecord(guid);
 		if (!rec) return;
-		/* the LIVE collection wiring wins over what the rule stored at commit
-		 * time, so a settings change applies to existing rules too */
-		const cfg = this.collRepeatCtx(guid) || {};
-		const spId = cfg.sp || rule.sp;
-		const dvVal = cfg.dv || rule.dv;
-		const dpId = cfg.dp || rule.dp;
-		const rvVal = cfg.sp ? (cfg.rv || null) : (rule.rv || null);
+		const spId = rule.sp;
+		const dvVal = rule.dv;
+		const dpId = rule.dp;
+		const rvVal = rule.rv || null;
 		if (!spId || !dvVal) return; /* advancing is ALWAYS status-driven */
 		/* LIVE read, never the event payload: a replayed event against an
 		 * already-reset record bails right here */
@@ -4013,13 +4107,10 @@ class Plugin extends AppPlugin {
 		 * row visible on a record target, a rule could be set and was then thrown
 		 * away silently on commit — writeDate's record branch has nowhere to put
 		 * it. Hide the row instead of lying. */
-		/* records repeat when their COLLECTION is activated for it — the
-		 * fields come from that config, never from per-page pickers */
-		if (t.kind === 'record') {
-			const ctx = this.collRepeatCtx(t.guid);
-			if (ctx) t.pageCtx = ctx;
-			else repBtn.style.display = 'none';
-		}
+		/* records repeat too — the panel carries per-page field pickers (his
+		 * call 2026-08-09: per-collection wiring was the wrong shape; a
+		 * chooser stays, per page for now) */
+		if (t.kind === 'record') this.wirePageRows(pop, t);
 
 		const paintRepeat = () => {
 			/* the value is ALWAYS shown, "Never" included, and styled as a button so
