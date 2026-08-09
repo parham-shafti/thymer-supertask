@@ -500,10 +500,13 @@ const CSS = `
  * that overflowed and clipped anything responsive. Exact arithmetic:
  * 7×30px columns + 6×2px gaps = 222; box = 16 + 222 + 16 = 254. Equal
  * padding on all sides by construction; month nudged right; near-square. */
-.rs-minical { width: 254px; padding: 16px; }
-.rs-minical .datepicker-wrapper { width: auto; }
-.rs-minical .datepicker-calendar { width: auto; }
-.rs-minical .datepicker-header { display: flex; align-items: center; padding-left: 4px; margin-bottom: 12px; }
+.rs-minical { width: 254px; padding: 22px 16px 17px; } /* measured: evens all four gaps at 23px and squares the box (288×287) */
+/* THE root cause of six skewed rounds, read straight from appui.css:
+ * .datepicker-compact ships padding-left:10px + padding-right:20px, and its
+ * header another 5px — every layout attempt inherited that tilt. Zero them. */
+.rs-minical .datepicker-wrapper { width: auto; padding: 0; }
+.rs-minical .datepicker-calendar { width: auto; padding: 0; }
+.rs-minical .datepicker-header { display: flex; align-items: center; padding: 0 0 0 4px; margin-bottom: 12px; }
 .rs-minical .datepicker-weekdays,
 .rs-minical .datepicker-days {
 	display: grid; grid-template-columns: repeat(7, 30px);
@@ -516,7 +519,7 @@ const CSS = `
 	width: 30px; height: 26px; margin: 0; padding: 0;
 	display: flex; align-items: center; justify-content: center;
 }
-.rs-mc-nav { cursor: pointer; padding: 0 6px; opacity: .55; user-select: none; }
+.rs-mc-nav { cursor: pointer; padding: 0 9px; opacity: .55; user-select: none; }
 .rs-mc-nav:hover { opacity: 1; }
 .rs-custom input[type="radio"], .rs-custom input[type="checkbox"] {
 	border: none; padding: 0; width: auto;
