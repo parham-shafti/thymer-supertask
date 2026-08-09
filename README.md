@@ -30,6 +30,8 @@ The roofs are real H5 headings, so they fold natively. A roof only exists while 
 
 Grouping can also be enabled **globally** in Settings: pick the statuses, and every heading in the workspace groups them as tasks change, no per-section setup. A section's own `⋯` menu always overrides the global choice.
 
+![Group Done Tasks](assets/demo-done.gif)
+
 ## Which date moves
 
 One set of chords covers both halves of a GTD system. The target resolves in this order:
@@ -58,6 +60,8 @@ Tick a repeating task and it un-ticks itself and moves to the next occurrence. T
 
 - **From the due date** — Apple Calendar's behaviour: occurrences fall where the rule says, ticking late never shifts the rhythm, and missed ones are skipped rather than piling up.
 - **After completion** — "every 3 days" means three days after you actually did it. For watering the plants, not paying the rent.
+
+![Custom repeat rules](assets/demo-repeats-custom.gif)
 
 The rule rides on the line as an invisible property, so an existing todo can be made repeating without retyping it, and the visible text stays yours. Repeating lines carry a small repeat glyph in front of their date chip, and date ranges move as a block, so "Mon–Fri every week" stays five days long.
 
