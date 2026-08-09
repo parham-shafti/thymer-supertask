@@ -500,7 +500,7 @@ const CSS = `
  * that overflowed and clipped anything responsive. Exact arithmetic:
  * 7×30px columns + 6×2px gaps = 222; box = 16 + 222 + 16 = 254. Equal
  * padding on all sides by construction; month nudged right; near-square. */
-.rs-minical { width: 254px; padding: 22px 16px 17px; } /* measured: evens all four gaps at 23px and squares the box (288×287) */
+.rs-minical { width: 254px; } /* provisional — squareUp() measures the render and sets the exact square + equal air */
 /* THE root cause of six skewed rounds, read straight from appui.css:
  * .datepicker-compact ships padding-left:10px + padding-right:20px, and its
  * header another 5px — every layout attempt inherited that tilt. Zero them. */
@@ -4567,6 +4567,33 @@ class Plugin extends AppPlugin {
 		};
 		paint();
 		document.body.appendChild(box);
+		/* SELF-SQUARING: measure the real rendered content (fonts, UI zoom
+		 * and app CSS all bend static values — seven rounds proved it) and
+		 * set an exact square with the leftover distributed as equal air. */
+		const squareUp = () => {
+			try {
+				const days2 = box.querySelector('.datepicker-days');
+				const header2 = box.querySelector('.datepicker-header');
+				const cells2 = box.querySelectorAll('.datepicker-days .day');
+				if (!days2 || !header2 || !cells2.length) return;
+				box.style.width = 'auto';
+				box.style.padding = '0';
+				const dr = days2.getBoundingClientRect();
+				const hr = header2.getBoundingClientRect();
+				const lastR = cells2[cells2.length - 1].getBoundingClientRect();
+				const cW = dr.width;
+				const cH = lastR.bottom - hr.top;
+				const air = 20;
+				const side = Math.max(cW, cH) + air * 2;
+				box.style.width = side + 'px';
+				box.style.height = side + 'px';
+				box.style.paddingLeft = box.style.paddingRight = ((side - cW) / 2) + 'px';
+				box.style.paddingTop = ((side - cH) / 2) + 'px';
+				box.style.paddingBottom = '0';
+				box.style.boxSizing = 'border-box';
+			} catch (e) {}
+		};
+		squareUp();
 		/* ABOVE the anchor row and horizontally inside the box frame (his
 		 * call — dropping below the field pushed it to the screen's bottom) */
 		const r = anchorEl.getBoundingClientRect();
@@ -4587,6 +4614,7 @@ class Plugin extends AppPlugin {
 				if (vm < 0) { vm = 11; vy--; }
 				if (vm > 11) { vm = 0; vy++; }
 				paint();
+				squareUp();
 				return;
 			}
 			const day = e.target.closest('.day');
