@@ -481,19 +481,20 @@ const CSS = `
 .rs-repmenu div.rs-on { color: color-mix(in srgb, var(--color-primary-500, #3aa37f) 60%, var(--text-color, currentColor)); font-weight: 600; }
 .rs-custom { padding: 8px 12px 10px; border-top: 1px solid rgba(127,127,127,.18); }
 .rs-custom label { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
-.rs-custom label span:first-child { opacity: .6; min-width: 88px; }
+.rs-custom label span:first-child { opacity: .6; min-width: 118px; flex: 0 0 auto; }
 .rs-custom input {
 	background: transparent; color: inherit; font-family: inherit; font-size: 13px;
 	border: 1px solid rgba(127,127,127,.35); border-radius: 4px; padding: 3px 7px;
 }
 .rs-custom .rs-int { width: 52px; }
+.rs-unit { color: var(--rs-menu-fg, #D5D4D4); }
 .rs-custom .rs-until { width: 132px; }
 .rs-until.rs-bad-date { border-color: rgba(220,90,90,.7); }
 .rs-cnt {
 	width: 46px; background: transparent; color: inherit; font-family: inherit; font-size: 13px;
 	border: 1px solid rgba(127,127,127,.35); border-radius: 4px; padding: 1px 4px;
 }
-.rs-minical { width: 248px; }
+.rs-minical { width: 248px; padding: 10px 10px 14px; }
 .rs-minical .datepicker-header { display: flex; align-items: center; }
 .rs-mc-nav { cursor: pointer; padding: 0 6px; opacity: .55; user-select: none; }
 .rs-mc-nav:hover { opacity: 1; }
@@ -4145,7 +4146,7 @@ class Plugin extends AppPlugin {
 		const UNITS = { d: 'day', w: 'week', m: 'month', y: 'year' };
 		const FREQOPTS = [['d', 'Daily'], ['w', 'Weekly'], ['m', 'Monthly'], ['y', 'Yearly']];
 		const FROMOPTS = [['a', 'The Due Date'], ['c', 'When I Tick It']];
-		const TRAILOPTS = [['', 'Off'], ['b', 'Completed copies stay'], ['f', 'Lay out all occurrences']];
+		const TRAILOPTS = [['', 'Off'], ['b', 'Completed Copies Stay'], ['f', 'Lay Out All Occurrences']];
 		const ORDOPTS = [['1', 'first'], ['2', 'second'], ['3', 'third'], ['4', 'fourth'], ['5', 'fifth'], ['-2', 'next to last'], ['-1', 'last']];
 		const ODOPTS = [['day', 'day'], ['weekday', 'weekday'], ['weekendday', 'weekend day'],
 			['0', 'Monday'], ['1', 'Tuesday'], ['2', 'Wednesday'], ['3', 'Thursday'], ['4', 'Friday'], ['5', 'Saturday'], ['6', 'Sunday']];
