@@ -474,7 +474,7 @@ const CSS = `
 	box-shadow: 0 10px 30px rgba(0,0,0,.5); padding: 4px; overflow: hidden;
 	font-size: 13px;
 	/* a touch off pure fg — full white popped too hard (his call) */
-	color: color-mix(in srgb, var(--cmdpal-fg-color, var(--text-color, #dadadb)) 97%, transparent);
+	color: var(--rs-menu-fg, #D5D4D4); /* set at load: his exact hex on dark, theme fg on light */
 }
 .rs-repmenu div { padding: 5px 10px; border-radius: 5px; cursor: pointer; white-space: nowrap; }
 .rs-repmenu > div:hover { background: rgba(127,127,127,.2); } /* DIRECT children only — nested datepicker cells must not repaint */
@@ -816,6 +816,9 @@ class Plugin extends AppPlugin {
 			document.documentElement.style.setProperty('--rs-menu-bg', lum < 128
 				? '#2A2A31'
 				: 'color-mix(in srgb, var(--cmdpal-bg-color, #fff) 94%, var(--cmdpal-fg-color, #000))');
+			document.documentElement.style.setProperty('--rs-menu-fg', lum < 128
+				? '#D5D4D4'
+				: 'var(--cmdpal-fg-color, var(--text-color, #333))');
 		} catch (e) {}
 
 		this.hotkeyHandler = (e) => {
@@ -4496,9 +4499,16 @@ class Plugin extends AppPlugin {
 		};
 		paint();
 		document.body.appendChild(box);
+		/* ABOVE the anchor row and horizontally inside the box frame (his
+		 * call — dropping below the field pushed it to the screen's bottom) */
 		const r = anchorEl.getBoundingClientRect();
-		box.style.top = Math.min(r.bottom + 4, window.innerHeight - box.offsetHeight - 8) + 'px';
-		box.style.left = Math.max(8, Math.min(r.left, window.innerWidth - box.offsetWidth - 8)) + 'px';
+		const frame = this.pop ? this.pop.getBoundingClientRect() : null;
+		let top = r.top - box.offsetHeight - 6;
+		if (top < 8) top = Math.min(r.bottom + 4, window.innerHeight - box.offsetHeight - 8);
+		let left = r.left;
+		if (frame) left = Math.max(frame.left + 4, Math.min(left, frame.right - box.offsetWidth - 4));
+		box.style.top = Math.max(8, top) + 'px';
+		box.style.left = Math.max(8, Math.min(left, window.innerWidth - box.offsetWidth - 8)) + 'px';
 		const outside = (e) => { if (!box.contains(e.target) && e.target !== anchorEl) close(); };
 		const close = () => { document.removeEventListener('pointerdown', outside, true); box.remove(); };
 		setTimeout(() => document.addEventListener('pointerdown', outside, true), 0);
