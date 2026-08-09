@@ -9,8 +9,8 @@ if (start < 0 || end < 0) { console.error('engine markers not found in plugin.js
 const engine = src.slice(start, end);
 
 const scope = {};
-new Function('S', engine + '\nObject.assign(S,{recurNext,recurMatches,recurLabel,recurOrdinalDay,recurAdvance,recurAddInterval});')(scope);
-const { recurNext, recurLabel, recurAdvance } = scope;
+new Function('S', engine + '\nObject.assign(S,{recurNext,recurMatches,recurLabel,recurOrdinalDay,recurAdvance,recurAddInterval,recurOccurrences});')(scope);
+const { recurNext, recurLabel, recurAdvance, recurOccurrences } = scope;
 
 let fails = 0;
 const check = (name, got, want) => {
@@ -88,6 +88,15 @@ check('label with until', recurLabel({ f: 'd', n: 1, u: 20260830 }), 'Every day 
 console.log('\nguards');
 check('no rule never fires', recurNext(null, 20260806), '0');
 check('before the anchor still lands on the anchor', recurNext({ f: 'd', n: 1, a: 20260810 }, 20260801), '20260810');
+
+
+console.log('\nforward-trail occurrences');
+check('daily until lists every day', recurOccurrences({ f: 'd', n: 1, a: 20260810, u: 20260814 }, 20260810).join(','), '20260811,20260812,20260813,20260814');
+check('every 2 weeks on Fri', recurOccurrences({ f: 'w', n: 2, a: 20260814, wd: [4], u: 20261001 }, 20260814).join(','), '20260828,20260911,20260925');
+check('no until = no expansion', recurOccurrences({ f: 'd', n: 1, a: 20260810 }, 20260810).length, '0');
+check('completion mode = no expansion', recurOccurrences({ f: 'd', n: 3, a: 20260810, u: 20260901, from: 'c' }, 20260810).length, '0');
+check('cap bounds a runaway series', recurOccurrences({ f: 'd', n: 1, a: 20260101, u: 20301231 }, 20260101, 50).length, '50');
+check('monthly 31st clamps inside the window', recurOccurrences({ f: 'm', n: 1, a: 20260131, u: 20260501 }, 20260131).join(','), '20260228,20260331,20260430');
 
 console.log(fails ? '\n' + fails + ' FAILED\n' : '\nall passed\n');
 process.exit(fails ? 1 : 0);

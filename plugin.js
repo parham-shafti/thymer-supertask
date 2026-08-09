@@ -253,6 +253,27 @@ function recurAdvance(rule, dueYmd, todayYmd) {
 	return rule.u && next > rule.u ? 0 : next;
 }
 
+/* Every occurrence STRICTLY AFTER fromYmd up to and including the rule's
+ * until date — the forward-trail expansion set. Schedule-based rules only:
+ * "counted from completion" has no future schedule to lay out (each date
+ * depends on when you actually tick), so it returns []. The cap is a safety
+ * net against a distant until on a daily rule; hitting it is reported by the
+ * caller, not silently truncated here — the caller can compare lengths. */
+function recurOccurrences(rule, fromYmd, cap) {
+	if (!rule || !rule.f || !rule.u || rule.from === 'c') return [];
+	const out = [];
+	let cur = fromYmd || 0;
+	const max = Math.max(1, cap || 100);
+	while (out.length < max) {
+		const next = recurNext(rule, cur);
+		if (!next || next <= cur) break;
+		if (next > rule.u) break;
+		out.push(next);
+		cur = next;
+	}
+	return out;
+}
+
 /* ==== RECURRENCE ENGINE — end ==== */
 
 /* The DEFAULT timeblock set — Parham's day, in order. Since v0.11.0 users can
@@ -697,6 +718,17 @@ class Plugin extends AppPlugin {
 		 * the ticked statuses ARE the switch; a separate master toggle read
 		 * as "select all" and was dropped (his 0.16.3 report). */
 		this.globalBins = [];
+		/* PAGE RECURRENCE rules, keyed by record guid — records have no meta-
+		 * property API in the sandbox (bundle-verified), so the rules live in
+		 * the plugin's synced config (custom.rs_prefs.pageRules) with the
+		 * localStorage mirror. Config writes happen ONLY on rule edits (they
+		 * reload the plugin — the documented saveConfiguration behaviour),
+		 * never on an advance: the advance derives everything from the
+		 * record's live property values. Rule shape = the engine fields plus
+		 * dp (date field id), sp (status field id, optional), dv (the value
+		 * of sp that means done), rv (reset value; empty = clear), tr, and
+		 * copies {ymd: recordGuid} for the forward-trail series. */
+		this.pageRules = {};
 		this.applySlots(this.tbSlots);
 		try {
 			const ls = JSON.parse(localStorage.getItem('rs_prefs') || 'null');
@@ -735,6 +767,9 @@ class Plugin extends AppPlugin {
 			/* DELETING a task fires neither updated nor moved — without this
 			 * an emptied collector survived its last child (his report) */
 			this.deleteHandler = this.events.on('lineitem.deleted', () => this.scheduleBinGC(), { collection: '*' });
+		} catch (e) {}
+		try {
+			this.recordHandler = this.events.on('record.updated', (ev) => this.onRecordUpdated(ev).catch(() => {}), { collection: '*' });
 		} catch (e) {}
 		this.pop = null;
 
@@ -889,6 +924,7 @@ class Plugin extends AppPlugin {
 		try { if (this.moveHandler) this.events.off(this.moveHandler); } catch (e) {}
 		try { if (this.createHandler) this.events.off(this.createHandler); } catch (e) {}
 		try { if (this.deleteHandler) this.events.off(this.deleteHandler); } catch (e) {}
+		try { if (this.recordHandler) this.events.off(this.recordHandler); } catch (e) {}
 		try { if (this.domObserver) this.domObserver.disconnect(); } catch (e) {}
 		this.domObserver = null;
 		this.recurKnown = null;
@@ -1034,6 +1070,7 @@ class Plugin extends AppPlugin {
 		if (Array.isArray(p.globalBins)) {
 			this.globalBins = p.globalBins.filter((k) => ORDER_BINS.some((b) => b.key === k));
 		}
+		if (p.pageRules && typeof p.pageRules === 'object') this.pageRules = p.pageRules;
 		/* legacy master switch (v0.16.2/0.16.3): off meant off regardless of
 		 * the stored choices; on with no stored choices meant Done only */
 		if (p.doneGlobal === false) this.globalBins = [];
@@ -1056,7 +1093,7 @@ class Plugin extends AppPlugin {
 	 * write-through to config for other devices. NOTE: saveConfiguration
 	 * reloads the plugin, so this is always the LAST thing an interaction does. */
 	async savePrefs() {
-		const p = { rev: Date.now(), slots: this.tbSlots, globalBins: (this.globalBins || []).slice() };
+		const p = { rev: Date.now(), slots: this.tbSlots, globalBins: (this.globalBins || []).slice(), pageRules: this.pageRules || {} };
 		this.prefsRev = p.rev;
 		try { localStorage.setItem('rs_prefs', JSON.stringify(p)); } catch (e) {}
 		try {
@@ -1542,10 +1579,38 @@ class Plugin extends AppPlugin {
 		if (t.kind === 'record') {
 			const rec = this.data.getRecord(t.guid);
 			if (!rec) { this.toast('Could not read that page.'); return false; }
-			const prop = rec.prop(DUE_DATE_FIELD);
-			if (!prop) { this.toast('“' + (rec.getName() || 'That page') + '” has no ' + DUE_DATE_FIELD + ' field.'); return false; }
+			const ctx = t.pageCtx || {};
+			const dpId = ctx.dp || DUE_DATE_FIELD;
+			const prop = rec.prop(dpId);
+			if (!prop) { this.toast('“' + (rec.getName() || 'That page') + '” has no ' + (ctx.dpl || dpId) + ' field.'); return false; }
 			prop.set(dt.value());
 			this.toast((rec.getName() || 'Page') + ' → ' + this.label(dt));
+			/* the RULE rides in pageRules (synced config). savePrefs is the
+			 * LAST act — saveConfiguration reloads the plugin. */
+			if (t.ruleTouched) {
+				t.ruleTouched = false;
+				const rp = dt.getParts();
+				const ymd = rp.year * 10000 + (rp.month + 1) * 100 + rp.day;
+				const prev = this.pageRules[t.guid];
+				if (t.pendingRule) {
+					const rule = {
+						...t.pendingRule, a: ymd, dp: dpId,
+						sp: ctx.sp || null, dv: ctx.dv || null, dvl: ctx.dvl || null,
+						rv: ctx.rv || null, rvl: ctx.rvl || null,
+						copies: (prev && prev.copies) || {},
+					};
+					this.pageRules[t.guid] = rule;
+					if (rule.tr === 'f' && !rule.u) this.toast('Forward trail needs an Until date — no copies laid out yet.');
+					try { await this.reconcilePageSeries(rec, rule); } catch (e) {}
+					this.toast(recurLabel(rule) + ' on ' + (rec.getName() || 'page'));
+					await this.savePrefs();
+				} else if (prev) {
+					try { await this.reconcilePageSeries(rec, { ...prev, tr: null }); } catch (e) {}
+					delete this.pageRules[t.guid];
+					this.toast('Repeat removed');
+					await this.savePrefs();
+				}
+			}
 			return true;
 		}
 
@@ -1577,13 +1642,23 @@ class Plugin extends AppPlugin {
 		 * must be the LAST write, so the render that settles is the one the caret
 		 * work then runs against. The rule is anchored on the date being
 		 * committed, which is what gives "every 2 weeks" a stable phase. */
+		let seriesRule; /* reconciled AFTER the segment write settles */
 		if (t.ruleTouched) {
 			const rp = dt.getParts();
 			const rule = t.pendingRule ? { ...t.pendingRule, a: rp.year * 10000 + (rp.month + 1) * 100 + rp.day } : null;
 			await this.writeRule(li, rule);
+			seriesRule = rule; /* null included — that reconciles the series away */
 			t.ruleTouched = false;
 		}
 		await li.setSegments(segs);
+		if (seriesRule !== undefined) {
+			const rp2 = dt.getParts();
+			const pl2 = await this.pageLines(t.line.pageGuid);
+			if (pl2) {
+				this.reconcileLineSeries(pl2.rec, li, seriesRule, rp2.year * 10000 + (rp2.month + 1) * 100 + rp2.day)
+					.catch(() => {});
+			}
+		}
 		this.refreshRepeatStyle();
 		const dom = t.line.domGuid || t.line.lineGuid;
 		if (move) await this.placeCaret(dom, move);
@@ -1758,6 +1833,346 @@ class Plugin extends AppPlugin {
 		return g && this.recurKnown && this.recurKnown.has(g) ? this.recurKnown.get(g) : null;
 	}
 
+	/* The record-mode rows of the Custom panel: which DATE field the rule
+	 * drives, which STATUS field + value means done (optional — without it
+	 * the rule only powers the forward trail), and what to reset the status
+	 * to (default: clear). Field lists come from the collection's own config;
+	 * value lists for record-type fields from the linked collections'
+	 * records, loaded when the menu opens. Everything lands in t.pageCtx,
+	 * which writeDate persists into the rule. */
+	wirePageRows(pop, t) {
+		const rec = this.data.getRecord(t.guid);
+		if (!rec) return;
+		const { fields } = this.pageFields(rec);
+		const dateFields = fields.filter((f) => (f.type === 'datetime' || f.type === 'date') && f.active !== false && f.id !== 'created_at' && f.id !== 'updated_at');
+		const statusFields = fields.filter((f) => (f.type === 'record' || f.type === 'choice') && f.active !== false && f.id !== 'parent_page');
+		const prev = (this.pageRules && this.pageRules[t.guid]) || null;
+		const defDate = (prev && dateFields.find((f) => f.id === prev.dp))
+			|| dateFields.find((f) => (f.label || '') === DUE_DATE_FIELD)
+			|| dateFields[0] || null;
+		t.pageCtx = {
+			dp: defDate && defDate.id, dpl: defDate && defDate.label,
+			sp: prev && prev.sp, spl: null, dv: prev && prev.dv, dvl: prev && prev.dvl,
+			rv: prev && prev.rv, rvl: prev && prev.rvl,
+		};
+		const prevSf = t.pageCtx.sp && statusFields.find((f) => f.id === t.pageCtx.sp);
+		if (prevSf) t.pageCtx.spl = prevSf.label;
+
+		const custom = pop.querySelector('.rs-custom');
+		const holder = document.createElement('div');
+		holder.className = 'rs-pagerows';
+		holder.innerHTML = ''
+			+ '<label><span>Date field</span><span class="rs-sel rs-pf-date"><span class="rs-sel-lbl"></span><span class="ti ti-chevron-down"></span></span></label>'
+			+ '<label><span>Done when</span><span class="rs-sel rs-pf-status"><span class="rs-sel-lbl"></span><span class="ti ti-chevron-down"></span></span>'
+			+ '<span class="rs-sel rs-pf-dval" style="display:none"><span class="rs-sel-lbl"></span><span class="ti ti-chevron-down"></span></span></label>'
+			+ '<label class="rs-pf-rrow" style="display:none"><span>Then reset to</span><span class="rs-sel rs-pf-rval"><span class="rs-sel-lbl"></span><span class="ti ti-chevron-down"></span></span></label>';
+		custom.insertBefore(holder, custom.firstChild);
+		const dSel = holder.querySelector('.rs-pf-date');
+		const sSel = holder.querySelector('.rs-pf-status');
+		const vSel = holder.querySelector('.rs-pf-dval');
+		const rSel = holder.querySelector('.rs-pf-rval');
+		const rRow = holder.querySelector('.rs-pf-rrow');
+		const lbl = (el, s2) => { el.querySelector('.rs-sel-lbl').textContent = s2 || '—'; };
+		const paint = () => {
+			lbl(dSel, t.pageCtx.dpl || t.pageCtx.dp);
+			lbl(sSel, t.pageCtx.spl || (t.pageCtx.sp ? t.pageCtx.sp : 'nothing (trail only)'));
+			vSel.style.display = t.pageCtx.sp ? '' : 'none';
+			rRow.style.display = t.pageCtx.sp ? '' : 'none';
+			lbl(vSel, t.pageCtx.dvl || (t.pageCtx.dv ? t.pageCtx.dv : 'pick a value'));
+			lbl(rSel, t.pageCtx.rvl || (t.pageCtx.rv ? t.pageCtx.rv : 'cleared'));
+			this.fit(pop);
+		};
+		/* value options for the chosen status field: choice options from the
+		 * schema, or the linked collections' records */
+		const valueItems = async (fdef) => {
+			if (!fdef) return [];
+			if (fdef.type === 'choice') {
+				return ((fdef.choices || fdef.options || []).map((c) => [String(c.id != null ? c.id : c.value), c.label || String(c.id)]));
+			}
+			const collIds = (fdef.choices || []).map((c) => c.id).filter(Boolean);
+			const items = [];
+			try {
+				const all = await this.data.getAllCollections();
+				for (const c of all) {
+					if (collIds.length && collIds.indexOf(c.getGuid()) < 0) continue;
+					if (!collIds.length) continue;
+					const recs = await c.getAllRecords();
+					for (const r2 of recs.slice(0, 100)) {
+						/* getAllRecords gives wrappers with getName; guid via prop lookup is
+						 * not exposed, so read it off the state map by name match is unsafe —
+						 * use the record's own guid accessor when present */
+						const g = r2.guid || (r2.getGuid && r2.getGuid()) || null;
+						if (g) items.push([String(g), r2.getName() || String(g)]);
+					}
+				}
+			} catch (e) {}
+			return items;
+		};
+		dSel.addEventListener('click', () => {
+			this.openSelMenu(dSel, dateFields.map((f) => [f.id, f.label || f.id]), t.pageCtx.dp, (v) => {
+				const f = dateFields.find((x) => x.id === v);
+				t.pageCtx.dp = v; t.pageCtx.dpl = f && f.label;
+				paint();
+			});
+		});
+		sSel.addEventListener('click', () => {
+			const items = [['', 'nothing (trail only)']].concat(statusFields.map((f) => [f.id, f.label || f.id]));
+			this.openSelMenu(sSel, items, t.pageCtx.sp || '', (v) => {
+				const f = statusFields.find((x) => x.id === v);
+				t.pageCtx.sp = v || null; t.pageCtx.spl = f && f.label;
+				if (!v) { t.pageCtx.dv = t.pageCtx.dvl = t.pageCtx.rv = t.pageCtx.rvl = null; }
+				paint();
+			});
+		});
+		vSel.addEventListener('click', async () => {
+			const fdef = statusFields.find((x) => x.id === t.pageCtx.sp);
+			const items = await valueItems(fdef);
+			if (!items.length) { this.toast('No values found for that field.'); return; }
+			this.openSelMenu(vSel, items, t.pageCtx.dv || '', (v) => {
+				const it = items.find((x) => x[0] === v);
+				t.pageCtx.dv = v; t.pageCtx.dvl = it && it[1];
+				paint();
+			});
+		});
+		rSel.addEventListener('click', async () => {
+			const fdef = statusFields.find((x) => x.id === t.pageCtx.sp);
+			const items = [['', 'cleared']].concat(await valueItems(fdef));
+			this.openSelMenu(rSel, items, t.pageCtx.rv || '', (v) => {
+				const it = items.find((x) => x[0] === v);
+				t.pageCtx.rv = v || null; t.pageCtx.rvl = v ? (it && it[1]) : null;
+				paint();
+			});
+		});
+		paint();
+	}
+
+	// ---- page recurrence ------------------------------------------------------
+	/* Repeats on PAGES (his spec 2026-08-09): the rule binds to a CHOSEN date
+	 * field (every collection names its dates differently) and, optionally, a
+	 * CHOSEN status field + value that means done — when that value lands on
+	 * the record, the date field advances and the status resets (to rv, or
+	 * clears). Without a status field the rule still powers the forward
+	 * trail, which is the Expenses case: lay every future occurrence out as
+	 * real records for budgeting. Double-advance is contained by reading the
+	 * record's LIVE values at processing time plus the in-memory lastAdvance
+	 * map — a cross-device echo inside that window is the accepted trade. */
+	pagePropValues(prop) {
+		const out = [];
+		try { for (const t of prop.texts() || []) out.push(String(t)); } catch (e) {}
+		try { for (const c of prop.selectedChoices() || []) out.push(String(c)); } catch (e) {}
+		return out;
+	}
+
+	async setPagePropValue(prop, type, value) {
+		try {
+			if (type === 'choice') { prop.setChoice(value ? [value] : []); return; }
+			prop.set(value ? [value] : []);
+		} catch (e) {}
+	}
+
+	pageFields(rec) {
+		try {
+			const coll = rec.getCollection();
+			const cfg = coll && coll.getConfiguration ? coll.getConfiguration() : null;
+			return { coll, fields: (cfg && cfg.fields) || [] };
+		} catch (e) { return { coll: null, fields: [] }; }
+	}
+
+	async onRecordUpdated(ev) {
+		const guid = ev && ev.recordGuid;
+		const rule = guid && this.pageRules && this.pageRules[guid];
+		if (!rule || !rule.sp || !rule.dv) return;
+		if (this.recurBusy.has(guid)) return;
+		const rec = this.data.getRecord(guid);
+		if (!rec) return;
+		/* LIVE read, never the event payload: a replayed event against an
+		 * already-reset record bails right here */
+		const sprop = rec.prop(rule.sp);
+		if (!sprop || this.pagePropValues(sprop).indexOf(rule.dv) < 0) return;
+		const dprop = rec.prop(rule.dp);
+		const cur = dprop && dprop.datetime();
+		const p = cur && cur.getParts();
+		if (!p || p.year === undefined) return;
+		const due = p.year * 10000 + (p.month + 1) * 100 + p.day;
+		const now = new Date();
+		const today = now.getFullYear() * 10000 + (now.getMonth() + 1) * 100 + now.getDate();
+		const la = this.lastAdvance && this.lastAdvance.get(guid);
+		if (la && la.to === due && Date.now() - la.at < 8000) return; /* our own echo */
+		const next = rule.tr === 'f' ? 0 : recurAdvance(rule, due, today);
+		this.recurBusy.add(guid);
+		try {
+			const { fields } = this.pageFields(rec);
+			const sdef = fields.find((f) => f.id === rule.sp) || {};
+			if (!next) {
+				/* forward-trail rules never advance (the series is laid out);
+				 * an exhausted until ends the rule entirely */
+				if (rule.tr !== 'f' && rule.u) {
+					delete this.pageRules[guid];
+					this.toast('Repeat finished for ' + (rec.getName() || 'page'));
+					await this.savePrefs(); /* LAST — reloads the plugin */
+				}
+				return;
+			}
+			/* backwards trail: a completed copy stays behind on the old date */
+			if (rule.tr === 'b') { try { await this.duplicateRecordShallow(rec); } catch (e2) {} }
+			const nd = recurYmdToDate(next);
+			const dt = p.hours === undefined
+				? DateTime.dateOnly(nd.getFullYear(), nd.getMonth(), nd.getDate())
+				: DateTime.dateAndTime(nd.getFullYear(), nd.getMonth(), nd.getDate(), p.hours, p.minutes || 0, 0);
+			dprop.set(dt.value());
+			await this.setPagePropValue(sprop, sdef.type, rule.rv || null);
+			if (this.lastAdvance) this.lastAdvance.set(guid, { to: next, at: Date.now() });
+			this.toast((rec.getName() || 'Page') + ' → ' + this.label(dt) + '  ·  ' + recurLabel(rule));
+		} finally {
+			setTimeout(() => this.recurBusy.delete(guid), 1500);
+		}
+	}
+
+	/* Duplicate a record with its property values — Reshape's proven recipe
+	 * (createRecord, poll until readable, per-type value copy). */
+	async duplicateRecordShallow(rec) {
+		const { coll, fields } = this.pageFields(rec);
+		if (!coll) return null;
+		let guid = null;
+		try { guid = await coll.createRecord(rec.getName() || ''); } catch (e) {}
+		if (!guid) return null;
+		let dst = this.data.getRecord(guid);
+		for (let i = 0; !dst && i < 16; i++) { await new Promise((r) => setTimeout(r, 120)); dst = this.data.getRecord(guid); }
+		if (!dst) return null;
+		for (const f of fields) {
+			if (!f.active || f.read_only || f.type === 'dynamic') continue;
+			if (f.id === 'title' || f.id === 'created_at' || f.id === 'updated_at' || f.id === 'collection' || f.id === 'parent_page' || f.id === 'banner') continue;
+			const from = rec.prop(f.id);
+			const to = dst.prop(f.id);
+			if (!from || !to) continue;
+			try {
+				if (f.type === 'choice') { const c = from.selectedChoices(); if (c && c.length) to.setChoice(c); }
+				else if (f.type === 'datetime' || f.type === 'date') { const d = from.datetime(); if (d) to.set(d.value()); }
+				else if (f.type === 'number') { const n = f.many ? from.numbers() : from.number(); if (n !== null && n !== undefined && (!Array.isArray(n) || n.length)) to.set(n); }
+				else if (f.type === 'text' || f.type === 'url') { const t2 = f.many ? from.texts() : from.text(); if (t2 && (!Array.isArray(t2) || t2.length)) to.set(t2); }
+				else if (f.type === 'record' || f.type === 'user') { const g = from.texts(); if (g && g.length) to.set(f.many ? g : g[0]); }
+			} catch (e) {}
+		}
+		return dst;
+	}
+
+	/* Forward-trail reconcile for a PAGE rule: rule.copies remembers every
+	 * copy by occurrence day (his follow-up spec) — shorten the until and the
+	 * superfluous NOT-completed copies are trashed, extend it and the missing
+	 * days are laid out. Caller saves prefs afterwards. */
+	async reconcilePageSeries(rec, rule) {
+		if (!rule) return;
+		rule.copies = rule.copies || {};
+		const dprop = rec.prop(rule.dp);
+		const cur = dprop && dprop.datetime();
+		const p = cur && cur.getParts();
+		const due = p && p.year !== undefined ? p.year * 10000 + (p.month + 1) * 100 + p.day : 0;
+		const wanted = rule.tr === 'f' && due ? recurOccurrences({ ...rule, a: due }, due, 100) : [];
+		if (rule.tr === 'f' && wanted.length === 100) this.toast('Forward trail capped at 100 copies');
+		const wantedSet = new Set(wanted);
+		for (const ymd of Object.keys(rule.copies)) {
+			const occ = +ymd;
+			if (wantedSet.has(occ)) { wantedSet.delete(occ); continue; }
+			const copy = this.data.getRecord(rule.copies[ymd]);
+			if (copy) {
+				/* completed copies are history — never trashed */
+				let doneNow = false;
+				if (rule.sp && rule.dv) {
+					const sp2 = copy.prop(rule.sp);
+					doneNow = !!sp2 && this.pagePropValues(sp2).indexOf(rule.dv) >= 0;
+				}
+				if (!doneNow) { try { copy.trash(); } catch (e) {} }
+			}
+			delete rule.copies[ymd];
+		}
+		for (const occ of [...wantedSet].sort((a, b) => a - b)) {
+			const dst = await this.duplicateRecordShallow(rec);
+			if (!dst) continue;
+			const d = recurYmdToDate(occ);
+			const dt = p.hours === undefined
+				? DateTime.dateOnly(d.getFullYear(), d.getMonth(), d.getDate())
+				: DateTime.dateAndTime(d.getFullYear(), d.getMonth(), d.getDate(), p.hours, p.minutes || 0, 0);
+			const dp2 = dst.prop(rule.dp);
+			if (dp2) { try { dp2.set(dt.value()); } catch (e) {} }
+			rule.copies[String(occ)] = dst.guid || null;
+		}
+	}
+
+	/* FORWARD-TRAIL SERIES for a line (his spec 2026-08-09, incl. the
+	 * follow-up): every copy carries rs_series = the original's guid and
+	 * rs_occ = its occurrence day, so the series can be RECONCILED whenever
+	 * the rule is edited — shorten the until and the now-superfluous copies
+	 * are deleted (completed ones stay, they are history), extend it and the
+	 * missing occurrences are laid out from the right day. Runs on every rule
+	 * commit and on Clear; a rule without trail 'f' (or without an until, or
+	 * counted from completion — recurOccurrences returns [] for both) simply
+	 * reconciles to an empty set. Cap 100 copies, toasted when hit. */
+	async reconcileLineSeries(rec, li, rule, dueYmd) {
+		if (!rec || !li) return;
+		const wanted = rule && rule.tr === 'f' ? recurOccurrences({ ...rule, a: dueYmd }, dueYmd, 100) : [];
+		if (rule && rule.tr === 'f' && wanted.length === 100) this.toast('Forward trail capped at 100 copies');
+		const all = await rec.getLineItems(false).catch(() => null);
+		if (!all) return;
+		const mine = [];
+		let template = null;
+		for (const x of all) {
+			let raw = null;
+			try { raw = x._getItem ? x._getItem() : null; } catch (e) {}
+			if (!raw || raw.dlt) continue;
+			if (x.guid === li.guid) template = { li: x, raw };
+			if (raw.mp && raw.mp.rs_series === li.guid) mine.push({ li: x, occ: +raw.mp.rs_occ || 0 });
+		}
+		if (!template) return;
+		const wantedSet = new Set(wanted);
+		/* deletions first (fresh handles per delete — the stale-handle law) */
+		for (const m of mine) {
+			if (wantedSet.has(m.occ)) { wantedSet.delete(m.occ); continue; }
+			let s = null;
+			try { s = await m.li.getTaskStatus(); } catch (e) {}
+			if (s === 'done' || s === 'canceled') continue; /* completed copies are history */
+			const fresh = await this.freshLine(rec, m.li.guid);
+			if (fresh) { try { await fresh.delete(); } catch (e) {} }
+		}
+		if (!wantedSet.size) return;
+		/* creations: chronological, chained after the original (or after the
+		 * last existing series copy). Deletes above invalidated handles, so
+		 * take ONE fresh snapshot; creations do not invalidate. */
+		const a2 = await rec.getLineItems(false).catch(() => null);
+		if (!a2) return;
+		const orig = a2.find((x) => x.guid === li.guid);
+		if (!orig) return;
+		const origRaw = orig._getItem ? orig._getItem() : null;
+		const parentLi = origRaw && origRaw.pguid ? (a2.find((x) => x.guid === origRaw.pguid) || null) : null;
+		const segsBase = orig.segments.map((s) => ({ type: s.type, text: s.text }));
+		const di = segsBase.findIndex((s) => s.type === 'datetime');
+		if (di < 0) return;
+		const baseParts = new DateTime(segsBase[di].text).getParts();
+		let anchorLi = orig;
+		const kept = [];
+		for (const x of a2) {
+			let raw = null;
+			try { raw = x._getItem ? x._getItem() : null; } catch (e) {}
+			if (raw && !raw.dlt && raw.mp && raw.mp.rs_series === li.guid) kept.push({ li: x, occ: +raw.mp.rs_occ || 0 });
+		}
+		if (kept.length) anchorLi = kept[kept.length - 1].li; /* chain after the last existing copy */
+		for (const occ of [...wantedSet].sort((a, b) => a - b)) {
+			const d = recurYmdToDate(occ);
+			const dt = baseParts.hours === undefined
+				? DateTime.dateOnly(d.getFullYear(), d.getMonth(), d.getDate())
+				: DateTime.dateAndTime(d.getFullYear(), d.getMonth(), d.getDate(), baseParts.hours, baseParts.minutes || 0, 0);
+			const segs = segsBase.map((s) => ({ ...s }));
+			segs[di] = { type: 'datetime', text: dt.value() };
+			try {
+				const copy = await rec.createLineItem(parentLi, anchorLi, 'task');
+				if (!copy) continue;
+				await copy.setMetaProperty('rs_series', li.guid);
+				await copy.setMetaProperty('rs_occ', occ);
+				await copy.setSegments(segs);
+				anchorLi = copy;
+			} catch (e) {}
+		}
+	}
+
 	async writeRule(li, rule) {
 		try {
 			await li.setMetaProperty('rs_recur', rule ? JSON.stringify(rule) : null);
@@ -1797,6 +2212,9 @@ class Plugin extends AppPlugin {
 		try { if (await li.getTaskStatus() !== 'done') return; } catch (e) {}
 		const rule = this.readRule(li);
 		if (!rule || !rule.f) return;
+		/* forward trail: the whole series is laid out as real copies, so a
+		 * tick simply COMPLETES that occurrence — nothing advances */
+		if (rule.tr === 'f') return;
 
 		const segs = li.segments.map((x) => ({ type: x.type, text: x.text }));
 		const i = segs.findIndex((x) => x.type === 'datetime');
@@ -1873,6 +2291,27 @@ class Plugin extends AppPlugin {
 
 		this.recurBusy.add(guid);
 		try {
+			/* BACKWARDS TRAIL (his spec 2026-08-09): before the advance, a DONE
+			 * copy of this occurrence stays behind, right below the line — no
+			 * rule, no glyph, tagged with the series meta. The ordering sweep
+			 * then files it under Done on its own. Copy first, so a failure
+			 * here never leaves the advance half-done. */
+			if (rule.tr === 'b') {
+				try {
+					const rec = await ev.getRecord();
+					const all = rec ? await rec.getLineItems(false) : null;
+					const meLi = all && all.find((x) => x.guid === guid);
+					const meRaw = meLi && meLi._getItem ? meLi._getItem() : null;
+					const parentLi = meRaw && meRaw.pguid ? (all.find((x) => x.guid === meRaw.pguid) || null) : null;
+					const copy = rec && await rec.createLineItem(parentLi, meLi || null, 'task');
+					if (copy) {
+						await copy.setMetaProperty('rs_series', guid);
+						await copy.setMetaProperty('rs_occ', due);
+						await copy.setTaskStatus('done');
+						await copy.setSegments(segs.map((s) => ({ ...s })));
+					}
+				} catch (e2) {}
+			}
 			/* Status FIRST, segments LAST — the doctrine holds here too: two
 			 * writes to the same line and the one that must settle the render is
 			 * the segment write. The old order (segments, then status) left the
@@ -3195,6 +3634,10 @@ class Plugin extends AppPlugin {
 		 * render lands after the caret work */
 		await this.writeRule(li, null);
 		await li.setSegments(segs);
+		try {
+			const plc = await this.pageLines(t.line.pageGuid);
+			if (plc) this.reconcileLineSeries(plc.rec, li, null, 0).catch(() => {});
+		} catch (e2) {}
 		this.refreshRepeatStyle();
 		await this.restoreCaret(t.line.domGuid || t.line.lineGuid, t.line.caret);
 		this.toast('Date cleared');
@@ -3348,6 +3791,7 @@ class Plugin extends AppPlugin {
 				</div>
 				<label class="rs-fromrow" title="Day selections always repeat on schedule — Count from applies to plain intervals only"><span>Count from</span><span class="rs-sel rs-from" data-v="a"><span class="rs-sel-lbl">the due date</span><span class="ti ti-chevron-down"></span></span></label>
 				<label><span>Until</span><input class="rs-until" type="text" spellcheck="false" placeholder="never"></label>
+				<label class="rs-trailrow" title="Backwards keeps a completed copy each time you tick. Forward lays out every future occurrence up front (needs Until, schedule-based rules only)."><span>Leave a trail</span><span class="rs-sel rs-trail" data-v=""><span class="rs-sel-lbl">Off</span><span class="ti ti-chevron-down"></span></span></label>
 			</div>
 			<div class="rs-foot">
 				<span class="rs-result"></span>
@@ -3577,11 +4021,13 @@ class Plugin extends AppPlugin {
 		const repBtn = pop.querySelector('.rs-repbtn');
 		const custom = pop.querySelector('.rs-custom');
 		const freq = pop.querySelector('.rs-freq');
+		const trailSel = pop.querySelector('.rs-trail');
 		const intv = pop.querySelector('.rs-int');
 		const from = pop.querySelector('.rs-from');
 		const UNITS = { d: 'day', w: 'week', m: 'month', y: 'year' };
 		const FREQOPTS = [['d', 'Daily'], ['w', 'Weekly'], ['m', 'Monthly'], ['y', 'Yearly']];
 		const FROMOPTS = [['a', 'the due date'], ['c', 'when I tick it']];
+		const TRAILOPTS = [['', 'Off'], ['b', 'Completed copies stay'], ['f', 'Lay out all occurrences']];
 		const ORDOPTS = [['1', 'first'], ['2', 'second'], ['3', 'third'], ['4', 'fourth'], ['5', 'fifth'], ['-2', 'next to last'], ['-1', 'last']];
 		const ODOPTS = [['day', 'day'], ['weekday', 'weekday'], ['weekendday', 'weekend day'],
 			['0', 'Monday'], ['1', 'Tuesday'], ['2', 'Wednesday'], ['3', 'Thursday'], ['4', 'Friday'], ['5', 'Saturday'], ['6', 'Sunday']];
@@ -3598,12 +4044,14 @@ class Plugin extends AppPlugin {
 		for (let d2 = 1; d2 <= 31; d2++) mdHtml += '<div class="rs-cell" data-i="' + d2 + '">' + d2 + '</div>';
 		pop.querySelector('.rs-mdays').innerHTML = mdHtml;
 		pop.querySelector('.rs-months').innerHTML = RECUR_MONTHNAMES.map((m2, i) => '<div class="rs-cell" data-i="' + i + '">' + m2 + '</div>').join('');
-		this.rule = t.kind === 'line' ? this.readRule(t.line) : null;
+		this.rule = t.kind === 'line' ? this.readRule(t.line)
+			: (this.pageRules && this.pageRules[t.guid] ? { ...this.pageRules[t.guid] } : null);
 		/* Recurrence is scoped to LINES; a page's Due Date cannot repeat. With the
 		 * row visible on a record target, a rule could be set and was then thrown
 		 * away silently on commit — writeDate's record branch has nowhere to put
 		 * it. Hide the row instead of lying. */
-		if (t.kind === 'record') repBtn.style.display = 'none';
+		/* records repeat too since v1.2.0 — the panel gains the field pickers */
+		if (t.kind === 'record') this.wirePageRows(pop, t);
 
 		const paintRepeat = () => {
 			/* the value is ALWAYS shown, "Never" included, and styled as a button so
@@ -3724,6 +4172,11 @@ class Plugin extends AppPlugin {
 				if (upp && upp.year !== undefined) rule.u = upp.year * 10000 + (upp.month + 1) * 100 + upp.day;
 				else until.classList.add('rs-bad-date');
 			}
+			const tv = selVal(trailSel);
+			if (tv) rule.tr = tv;
+			/* forward needs an end date and a schedule-based rule; the engine
+			 * quietly refuses otherwise, so make the gap visible right here */
+			if (tv === 'f' && !rule.u) until.classList.add('rs-bad-date');
 			this.rule = rule;
 			paintRepeat();
 			updateGrammar();
@@ -3742,6 +4195,7 @@ class Plugin extends AppPlugin {
 			if (r.od !== undefined) { setSel(pop.querySelector('.rs-mod'), String(r.od), ODOPTS); setSel(pop.querySelector('.rs-yod'), String(r.od), ODOPTS); }
 			until.value = r.u ? (r.u % 100) + ' ' + RECUR_MONTHNAMES[Math.floor(r.u / 100) % 100 - 1] + ' ' + Math.floor(r.u / 10000) : '';
 			until.classList.remove('rs-bad-date');
+			setSel(trailSel, r.tr || '', TRAILOPTS);
 			updateGrammar();
 		};
 
@@ -3755,6 +4209,7 @@ class Plugin extends AppPlugin {
 			this.openSelMenu(el, opts, selVal(el), (v) => { setSel(el, v, opts); syncCustom(); }));
 		wireSel(freq, FREQOPTS);
 		wireSel(from, FROMOPTS);
+		wireSel(trailSel, TRAILOPTS);
 		wireSel(pop.querySelector('.rs-mord'), ORDOPTS);
 		wireSel(pop.querySelector('.rs-mod'), ODOPTS);
 		wireSel(pop.querySelector('.rs-yordsel'), ORDOPTS);
