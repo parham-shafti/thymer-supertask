@@ -2,7 +2,7 @@
 
 Supercharged tasks for [Thymer](https://thymer.com) — dates, statuses, timeblock hashtags, repeating tasks and self-organizing sections, all without leaving the keyboard.
 
-![Group by Status](assets/group-by-status.png)
+![Ordering and grouping in action](assets/demo-ordering.gif)
 
 ## Shortcuts
 
@@ -23,8 +23,6 @@ Every heading can organize its own tasks — open the `⋯` menu that appears ne
 
 - **Group by Status** — flagged tasks collect under status roofs (Starred, Alert, Important, Billable, In Progress, Discuss, Blocked), with **Done** last, starting collapsed, done on top and canceled at the bottom. Untriaged tasks can gather under a **Todo** roof just above Done.
 - **Group by Hashtags** — roofs named after your `⌘`-digit hashtags, in `⌘`-digit order. Only the hashtags you configured count. Done always wins: a finished task files under Done, never lingers in the day plan.
-
-![Group by Hashtags](assets/group-by-hashtags.png)
 
 - **Order by Status** — no roofs (except an optional Done group): a flat list sorted by status rank, untriaged at the bottom of the actives.
 
@@ -54,7 +52,7 @@ Rule 4 is deliberately strict: a prose todo that merely mentions `[[Some Project
 
 The date box's **Repeat** row does Never, Every Day / Week / Month / Year, or **Custom**: any interval, weekday sets, month-day sets, ordinals ("the last Friday"), yearly months, and an end date.
 
-![Repeat rule](assets/repeat.png)
+![Repeating tasks in action](assets/demo-repeats.gif)
 
 Tick a repeating task and it un-ticks itself and moves to the next occurrence. Two ways to count, chosen in Custom:
 
@@ -64,8 +62,6 @@ Tick a repeating task and it un-ticks itself and moves to the next occurrence. T
 The rule rides on the line as an invisible property, so an existing todo can be made repeating without retyping it, and the visible text stays yours. Repeating lines carry a small repeat glyph in front of their date chip, and date ranges move as a block, so "Mon–Fri every week" stays five days long.
 
 ## Settings
-
-![Settings](assets/settings.png)
 
 `Supertask: Settings` in the command palette. **Task Status Settings** lists the `⌃`-digit shortcuts and the global grouping choices; **Hashtags Settings** defines your `⌘`-digit hashtags — the row is the key, and each row takes a title (shown on roofs and in menus) plus the hashtag that lands on the line.
 
