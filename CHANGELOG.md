@@ -21,3 +21,13 @@ First public release.
 - **Leave a trail**, for todos and pages alike, chosen in the Custom panel:
   - **Completed copies stay** — ticking leaves a done copy on the old date right where the task stood (it files itself under a Done roof when the section is grouped) and the original moves on.
   - **Lay out all occurrences** — with an Until date, every future occurrence is created up front as a real todo or page (Expenses with a repeat become visible months ahead for budgeting). The series is remembered: shorten the Until and superfluous copies are removed, extend it and the missing ones are laid out — completed copies are history and are never touched. Ticking an occurrence just completes it; nothing advances. Capped at 100 copies.
+
+## v1.1.0 – v1.3.9 — 2026-08-09 (unreleased batch)
+
+- **Windows and Linux key commands** with platform-aware labels (Ctrl+1..9 hashtags, Alt+1..9 statuses, Alt+plus/minus nudges, Ctrl+Shift+S date box).
+- **Task statuses from the keyboard** in a settings-defined shortcut order.
+- **Repeating pages**: the date box on a page carries the full Repeat rule, driven by a chosen date field with a chosen status field + value as the done trigger (advance + reset). Per-collection defaults remember your last choices.
+- **Leave a Trail**: completed copies stay behind on tick (the original stays done, a fresh copy carries the rule), or lay out every occurrence up front with a remembered, reconciling series.
+- **End Repeat**: Never / After n times / On Date with a compact month picker.
+- **The Tasks view** is a first-class surface for every command.
+- Dozens of UI refinements across the date box, menus and settings.
