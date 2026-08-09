@@ -459,6 +459,8 @@ const CSS = `
 	border: 1px solid rgba(127,127,127,.4); border-radius: 4px;
 	box-shadow: 0 10px 30px rgba(0,0,0,.5); padding: 4px; overflow: hidden;
 	font-size: 13px;
+	/* a touch off pure fg — full white popped too hard (his call) */
+	color: color-mix(in srgb, var(--cmdpal-fg-color, var(--text-color, #dadadb)) 88%, transparent);
 }
 .rs-repmenu div { padding: 5px 10px; border-radius: 5px; cursor: pointer; white-space: nowrap; }
 .rs-repmenu div:hover { background: rgba(127,127,127,.2); }
@@ -1611,7 +1613,8 @@ class Plugin extends AppPlugin {
 					if (t.collGuid) {
 						this.pageDefaults[t.collGuid] = { dp: dpId, sp: rule.sp, dv: rule.dv, dvl: rule.dvl, rv: rule.rv, rvl: rule.rvl };
 					}
-					if (rule.tr === 'f' && !rule.u) this.toast('Forward trail needs an Until date — no copies laid out yet.');
+					if (rule.tr === 'f' && !rule.u) this.toast('Forward trail needs an End repeat date — no copies laid out yet.');
+					else if (!rule.sp) this.toast('No “Done when” field picked — nothing can advance this repeat; it only lays out copies.');
 					try { await this.reconcilePageSeries(rec, rule); } catch (e) {}
 					this.toast(recurLabel(rule) + ' on ' + (rec.getName() || 'page'));
 					await this.savePrefs();
@@ -1921,7 +1924,7 @@ class Plugin extends AppPlugin {
 		const lbl = (el, s2) => { el.querySelector('.rs-sel-lbl').textContent = s2 || '—'; };
 		const paint = () => {
 			lbl(dSel, t.pageCtx.dpl || t.pageCtx.dp);
-			lbl(sSel, t.pageCtx.spl || (t.pageCtx.sp ? t.pageCtx.sp : 'None (only lays out copies)'));
+			lbl(sSel, t.pageCtx.spl || (t.pageCtx.sp ? t.pageCtx.sp : 'pick a field'));
 			vRow.style.display = t.pageCtx.sp ? '' : 'none';
 			rRow.style.display = t.pageCtx.sp ? '' : 'none';
 			lbl(vSel, t.pageCtx.dvl || (t.pageCtx.dv ? t.pageCtx.dv : 'pick a value'));
@@ -1961,11 +1964,10 @@ class Plugin extends AppPlugin {
 			});
 		});
 		sSel.addEventListener('click', () => {
-			const items = [['', 'None (only lays out copies)']].concat(statusFields.map((f) => [f.id, f.label || f.id]));
+			const items = statusFields.map((f) => [f.id, f.label || f.id]);
 			this.openSelMenu(sSel, items, t.pageCtx.sp || '', (v) => {
 				const f = statusFields.find((x) => x.id === v);
 				t.pageCtx.sp = v || null; t.pageCtx.spl = f && f.label;
-				if (!v) { t.pageCtx.dv = t.pageCtx.dvl = t.pageCtx.rv = t.pageCtx.rvl = null; }
 				paint();
 			});
 		});
