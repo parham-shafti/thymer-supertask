@@ -495,21 +495,27 @@ const CSS = `
 	width: 46px; background: transparent; color: inherit; font-family: inherit; font-size: 13px;
 	border: 1px solid rgba(127,127,127,.35); border-radius: 4px; padding: 1px 4px;
 }
-/* HIS DRAWN SPEC (2026-08-09): a near-square box, the SAME padding on all
- * four sides, month/year nudged right, arrows top right. The grids are
- * forced to a 7×1fr layout stretched edge to edge, so leftover width has
- * nowhere to pile up — symmetric by construction, not by tuning. */
-.rs-minical { width: 264px; padding: 16px; }
-.rs-minical .datepicker-wrapper { width: 100%; }
-.rs-minical .datepicker-calendar { width: 100%; }
-.rs-minical .datepicker-header { display: flex; align-items: center; padding-left: 6px; margin-bottom: 12px; }
+/* HIS DRAWN SPEC (2026-08-09), with the plugin owning EVERY dimension —
+ * the app's compact-picker cells carry fixed sizes and a fixed grid height
+ * that overflowed and clipped anything responsive. Exact arithmetic:
+ * 7×30px columns + 6×2px gaps = 222; box = 16 + 222 + 16 = 254. Equal
+ * padding on all sides by construction; month nudged right; near-square. */
+.rs-minical { width: 254px; padding: 16px; }
+.rs-minical .datepicker-wrapper { width: auto; }
+.rs-minical .datepicker-calendar { width: auto; }
+.rs-minical .datepicker-header { display: flex; align-items: center; padding-left: 4px; margin-bottom: 12px; }
 .rs-minical .datepicker-weekdays,
 .rs-minical .datepicker-days {
-	display: grid; grid-template-columns: repeat(7, 1fr);
-	width: 100%; justify-items: center;
+	display: grid; grid-template-columns: repeat(7, 30px);
+	gap: 4px 2px; width: max-content; height: auto; min-height: 0;
+	margin: 0 auto;
 }
 .rs-minical .datepicker-weekdays { margin-bottom: 8px; }
-.rs-minical .datepicker-days { row-gap: 6px; }
+.rs-minical .weekday { width: 30px; text-align: center; padding: 0; }
+.rs-minical .day {
+	width: 30px; height: 26px; margin: 0; padding: 0;
+	display: flex; align-items: center; justify-content: center;
+}
 .rs-mc-nav { cursor: pointer; padding: 0 6px; opacity: .55; user-select: none; }
 .rs-mc-nav:hover { opacity: 1; }
 .rs-custom input[type="radio"], .rs-custom input[type="checkbox"] {
