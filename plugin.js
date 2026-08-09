@@ -1679,7 +1679,15 @@ class Plugin extends AppPlugin {
 		if (t.kind === 'record') {
 			const rec = this.data.getRecord(t.guid);
 			if (!rec) { this.toast('Could not read that page.'); return false; }
-			const ctx = t.pageCtx || {};
+			const prev = this.pageRules[t.guid] || null;
+			/* wirePageRows fills t.pageCtx ASYNC (it awaits getAllCollections) —
+			 * a fast Enter can beat it, and committing with an empty ctx used to
+			 * rewrite an existing rule with its field wiring stripped (dp fell
+			 * back to the NAME, sp/dv/rv went null, the repeat died silently).
+			 * The stored rule's own wiring is the fallback. */
+			const ctx = t.pageCtx || (prev
+				? { dp: prev.dp, sp: prev.sp, dv: prev.dv, dvl: prev.dvl, rv: prev.rv, rvl: prev.rvl }
+				: {});
 			const dpId = ctx.dp || DUE_DATE_FIELD;
 			const prop = rec.prop(dpId);
 			if (!prop) { this.toast('“' + (rec.getName() || 'That page') + '” has no ' + (ctx.dpl || dpId) + ' field.'); return false; }
@@ -1691,12 +1699,15 @@ class Plugin extends AppPlugin {
 				t.ruleTouched = false;
 				const rp = dt.getParts();
 				const ymd = rp.year * 10000 + (rp.month + 1) * 100 + rp.day;
-				const prev = this.pageRules[t.guid];
 				if (t.pendingRule) {
+					/* reset value == done value would re-trigger the advance on
+					 * every later record edit (the status never leaves the done
+					 * state) — refuse the combination, fall back to clearing */
+					const rvSafe = ctx.rv && ctx.rv !== (ctx.dv || null) ? ctx.rv : null;
 					const rule = {
 						...this.finalizeRule(t.pendingRule, ymd), dp: dpId,
 						sp: ctx.sp || null, dv: ctx.dv || null, dvl: ctx.dvl || null,
-						rv: ctx.rv || null, rvl: ctx.rvl || null,
+						rv: rvSafe, rvl: rvSafe ? ctx.rvl || null : null,
 						copies: (prev && prev.copies) || {},
 					};
 					this.pageRules[t.guid] = rule;
@@ -2070,12 +2081,16 @@ class Plugin extends AppPlugin {
 			this.openSelMenu(vSel, items, t.pageCtx.dv || '', (v) => {
 				const it = items.find((x) => x[0] === v);
 				t.pageCtx.dv = v; t.pageCtx.dvl = it && it[1];
+				/* reset-to must never equal done-when (self-retrigger) */
+				if (t.pageCtx.rv === v) { t.pageCtx.rv = null; t.pageCtx.rvl = null; }
 				paint();
 			});
 		});
 		rSel.addEventListener('click', async () => {
 			const fdef = statusFields.find((x) => x.id === t.pageCtx.sp);
-			const items = [['', 'cleared']].concat(await valueItems(fdef));
+			/* the done-when value is excluded: resetting INTO the done state
+			 * would re-trigger the advance on every later record edit */
+			const items = [['', 'cleared']].concat((await valueItems(fdef)).filter((x) => x[0] !== t.pageCtx.dv));
 			this.openSelMenu(rSel, items, t.pageCtx.rv || '', (v) => {
 				const it = items.find((x) => x[0] === v);
 				t.pageCtx.rv = v || null; t.pageCtx.rvl = v ? (it && it[1]) : null;
@@ -2134,7 +2149,10 @@ class Plugin extends AppPlugin {
 		const spId = rule.sp;
 		const dvVal = rule.dv;
 		const dpId = rule.dp;
-		const rvVal = rule.rv || null;
+		/* legacy rules could store reset == done-when; honouring that would
+		 * re-advance on EVERY later record edit (the status never leaves the
+		 * done state) — treat it as clear */
+		const rvVal = rule.rv && rule.rv !== dvVal ? rule.rv : null;
 		if (!spId || !dvVal) return; /* advancing is ALWAYS status-driven */
 		/* LIVE read, never the event payload: a replayed event against an
 		 * already-reset record bails right here */
@@ -2164,12 +2182,32 @@ class Plugin extends AppPlugin {
 				}
 				return;
 			}
-			/* backwards trail: a completed copy stays behind on the old date */
-			if (rule.tr === 'b') { try { await this.duplicateRecordShallow(rec); } catch (e2) {} }
 			const nd = recurYmdToDate(next);
 			const dt = p.hours === undefined
 				? DateTime.dateOnly(nd.getFullYear(), nd.getMonth(), nd.getDate())
 				: DateTime.dateAndTime(nd.getFullYear(), nd.getMonth(), nd.getDate(), p.hours, p.minutes || 0, 0);
+			/* BACKWARDS TRAIL, same model as lines (his call 2026-08-10): the
+			 * ticked ORIGINAL stays done on its old date — it IS the history,
+			 * with its backlinks — and a fresh DUPLICATE carries the rule
+			 * forward on the next date. The rule is keyed by record guid, so it
+			 * is RE-KEYED to the duplicate, which costs one savePrefs (config
+			 * write + plugin reload) per tick on this trail type. Echo safety:
+			 * the original's pageRules entry is gone, so replays bail at the
+			 * top; the duplicate is reset to rvVal (never the done value), so
+			 * events from our own writes bail on the status check. */
+			if (rule.tr === 'b') {
+				const dst = await this.duplicateRecordShallow(rec);
+				if (!dst) { this.toast('Could not create the next copy — repeat unchanged.'); return; }
+				const dp2 = dst.prop(dpId);
+				if (dp2) { try { dp2.set(dt.value()); } catch (e2) {} }
+				const sp2 = dst.prop(spId);
+				if (sp2) { try { await this.setPagePropValue(sp2, sdef.type, rvVal); } catch (e2) {} }
+				delete this.pageRules[guid];
+				if (dst.guid) this.pageRules[dst.guid] = { ...rule };
+				this.toast('Done stays · next: ' + this.label(dt) + '  ·  ' + recurLabel(rule));
+				await this.savePrefs(); /* LAST — reloads the plugin */
+				return;
+			}
 			dprop.set(dt.value());
 			await this.setPagePropValue(sprop, sdef.type, rvVal);
 			if (this.lastAdvance) this.lastAdvance.set(guid, { to: next, at: Date.now() });
@@ -3720,13 +3758,25 @@ class Plugin extends AppPlugin {
 		const has = new Set();
 		for (const g in byGuid) {
 			const st = byGuid[g];
-			if (st && st.props && (st.props.rs_recur || st.props.rs_series)) has.add(g);
+			if (st && st.props && st.props.rs_recur) has.add(g);
 		}
 		/* The session cache overrides the scan in both directions: props can
 		 * transiently lose rs_recur on the client that just WROTE to the line
 		 * (his desktop-loses-the-glyph-after-ticking report; mobile kept it). */
 		if (this.recurKnown) {
 			for (const [g, r] of this.recurKnown) { if (r) has.add(g); else has.delete(g); }
+		}
+		/* Forward-series COPIES carry the glyph only while their ORIGINAL is
+		 * still around with a live rule — copies live on the same page, so the
+		 * original's state is loaded whenever the copy's is. Without this
+		 * check a deleted original left its orphans glyphed forever. */
+		for (const g in byGuid) {
+			const st = byGuid[g];
+			if (!st || st.is_trashed || st.is_deleted || has.has(g)) continue;
+			const sid = st.props && st.props.rs_series;
+			if (!sid || !has.has(sid)) continue;
+			const o = byGuid[sid];
+			if (o && !o.is_trashed && !o.is_deleted) has.add(g);
 		}
 		const guids = [...has];
 		/* EMBEDS: a transclusion / block-ref is a REAL line whose props.itemref
