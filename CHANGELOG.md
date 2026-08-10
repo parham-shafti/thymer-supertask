@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.6.0 — 2026-08-10
+
+- **Progress bars follow the line everywhere it is rendered.** A bar switched on for a heading or a parent task now also shows on that line's **live search results**, on **transclusions** of it, and in Thymer's **Tasks view** — same bar, same count, no extra setup.
+- **…and they survive a reload.** A bar can only be counted from the line's sub-tasks, and those load with the page they live on — so on the surfaces above, where the line's home page is usually closed, there was nothing to count and no bar appeared until you opened that page. The last known count is now remembered, so the bar is there the moment the app opens, and refreshes itself as soon as the page is loaded.
+- In the Tasks view the bar sits **tight under the line's location** instead of a row's height below it.
+- **Two switches instead of one**, in a new *Progress Bar Toggles* section at the top of Settings: **On every heading** and **On every todo with sub-tasks**. The old single switch only ever lit headings; parent todos can now have their own default. A section's `⋯` menu or **Supertask: Progress Bar** still overrides both.
+- The Settings heading shows the **running version**.
+- Switching theme no longer rescans the workspace on every keystroke. The watcher was listening to a class attribute Thymer rewrites constantly while you type and select; it now watches the theme itself, debounced.
+
 ## v1.5.2 — 2026-08-10
 
 - Progress bars: the unfilled part of the bar is readable again on dark themes. v1.5.1 darkened both halves; only the filled half was meant to change.

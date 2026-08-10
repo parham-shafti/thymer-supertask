@@ -684,6 +684,13 @@ html.is-dark {
 	color: var(--cmdpal-fg-color, var(--text-color, inherit));
 }
 .rs-panel h1 { font-size: var(--text-size-large, 1.0625rem); font-weight: 700; margin: 0 0 16px; }
+/* the running version, trailing the title on the same line so it costs no
+ * vertical space: quiet weight and opacity, it is a fact to look up, not a
+ * thing to read. Rendered only when the config actually carried a version. */
+.rs-panel h1 .rs-ver {
+	margin-left: 8px; font-size: var(--text-size-smaller, .8125rem);
+	font-weight: 400; opacity: .45; letter-spacing: 0;
+}
 /* each section in its own quiet frame — boundaries read at a glance; radius
  * 4px everywhere (his call) */
 .rs-p-secbox {
@@ -850,6 +857,9 @@ class Plugin extends AppPlugin {
 		this.recurKnown = new Map();
 		this.progKnown = new Map();
 		this.progOffsets = new Map();
+		/* last known bar counts, per client, so the other surfaces can paint
+		 * before the source page is loaded — see loadProgCache */
+		this.loadProgCache();
 		/* guid → {to, at}: the last advance we performed. Third layer of the
 		 * no-double-advance defence (with the recurBusy burst guard and the
 		 * status re-check): a replayed done-event whose line already sits on
@@ -876,6 +886,11 @@ class Plugin extends AppPlugin {
 		this.globalBins = [];
 		/* global default for the per-heading progress bar (rs_prefs.progress) */
 		this.progressGlobal = false;
+		/* the same switch for parent TODOS, kept separate (his call): a bar on
+		 * every heading and a bar on every sub-checklist are different appetites */
+		this.progressTodos = false;
+		/* filled from the plugin's own config on load; '' until then */
+		this.pluginVersion = '';
 		/* PAGE RECURRENCE rules, keyed by record guid — records have no meta-
 		 * property API in the sandbox (bundle-verified), so the rules live in
 		 * the plugin's synced config (custom.rs_prefs.pageRules) with the
@@ -947,7 +962,17 @@ class Plugin extends AppPlugin {
 		 * swap always restamps html[data-theme]. Every popover ALSO refreshes
 		 * on open, so even if both signals were missed the surface is right
 		 * at the moment it is drawn. */
+		/* DEBOUNCED, and never on a bare class change: Thymer toggles classes
+		 * on <html> constantly (is-keyboard-editing, is-pointer-selecting,
+		 * is-alt-key-down), so watching `class` ran a full workspace rescan on
+		 * every keystroke and wedged the plugin — no glyphs, no bars at all.
+		 * The theme itself lands on data-theme, which is the only attribute
+		 * worth watching. */
 		this.themeHandler = () => {
+			if (this.themeTimer) clearTimeout(this.themeTimer);
+			this.themeTimer = setTimeout(() => { this.themeTimer = null; this.themeApply(); }, 120);
+		};
+		this.themeApply = () => {
 			this.refreshMenuColors();
 			/* a theme swap changes font metrics, so every measured position is
 			 * stale: the ⋯ chips are position:fixed against a measured anchor
@@ -959,7 +984,7 @@ class Plugin extends AppPlugin {
 		try { document.addEventListener('themecsschange', this.themeHandler); } catch (e) {}
 		try {
 			this.themeObserver = new MutationObserver(this.themeHandler);
-			this.themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class'] });
+			this.themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 		} catch (e) {}
 
 		this.hotkeyHandler = (e) => {
@@ -1122,6 +1147,9 @@ class Plugin extends AppPlugin {
 		try { if (this.recordHandler) this.events.off(this.recordHandler); } catch (e) {}
 		try { if (this.themeHandler) document.removeEventListener('themecsschange', this.themeHandler); } catch (e) {}
 		this.themeHandler = null;
+		this.themeApply = null;
+		try { if (this.themeTimer) clearTimeout(this.themeTimer); } catch (e) {}
+		this.themeTimer = null;
 		try { if (this.themeObserver) this.themeObserver.disconnect(); } catch (e) {}
 		this.themeObserver = null;
 		try { if (this.domObserver) this.domObserver.disconnect(); } catch (e) {}
@@ -1129,6 +1157,7 @@ class Plugin extends AppPlugin {
 		this.recurKnown = null;
 		this.progKnown = null;
 		this.progOffsets = null;
+		this.progRemembered = null;
 		this.lastAdvance = null;
 		this.orderKnown = null;
 		this.binKnown = null;
@@ -1271,6 +1300,7 @@ class Plugin extends AppPlugin {
 		/* older prefs carried a `sweep` field — obsolete since ordering moved
 		 * to per-heading rs_order meta; ignored on read */
 		if (typeof p.progress === 'boolean') this.progressGlobal = p.progress;
+		if (typeof p.progressTodos === 'boolean') this.progressTodos = p.progressTodos;
 		if (Array.isArray(p.globalBins)) {
 			this.globalBins = p.globalBins.filter((k) => ORDER_BINS.some((b) => b.key === k));
 		}
@@ -1289,6 +1319,10 @@ class Plugin extends AppPlugin {
 			const me = (all || []).find((g) => g && g.getGuid && g.getGuid() === this.getGuid());
 			this.selfPluginApi = me || null;
 			const conf = me && me.getConfiguration && me.getConfiguration();
+			/* the deployed version, straight from the config Thymer is running —
+			 * the settings heading shows it, and reading it here means there is
+			 * no second copy of the number in the code to drift from plugin.json */
+			if (conf && typeof conf.version === 'string') this.pluginVersion = conf.version;
 			const p = conf && conf.custom && conf.custom.rs_prefs;
 			if (p && (p.rev || 0) > (this.prefsRev || 0)) this.applyPrefs(p);
 		} catch (e) {}
@@ -1298,7 +1332,7 @@ class Plugin extends AppPlugin {
 	 * write-through to config for other devices. NOTE: saveConfiguration
 	 * reloads the plugin, so this is always the LAST thing an interaction does. */
 	async savePrefs() {
-		const p = { rev: Date.now(), slots: this.tbSlots, globalBins: (this.globalBins || []).slice(), progress: !!this.progressGlobal, pageRules: this.pageRules || {}, pageDefaults: this.pageDefaults || {} };
+		const p = { rev: Date.now(), slots: this.tbSlots, globalBins: (this.globalBins || []).slice(), progress: !!this.progressGlobal, progressTodos: !!this.progressTodos, pageRules: this.pageRules || {}, pageDefaults: this.pageDefaults || {} };
 		this.prefsRev = p.rev;
 		try { localStorage.setItem('rs_prefs', JSON.stringify(p)); } catch (e) {}
 		try {
@@ -1372,7 +1406,7 @@ class Plugin extends AppPlugin {
 
 		/* both sections ALWAYS start collapsed (his call) — fold state lives
 		 * only for the life of the open modal, nothing persisted */
-		const fold = { ordering: true, hashtags: true };
+		const fold = { progress: true, ordering: true, hashtags: true };
 		const sec = (id, label, extra) =>
 			'<div class="rs-p-sec rs-p-fold" data-sec="' + id + '">'
 			+ '<span class="rs-p-chev ti ' + (fold[id] ? 'ti-chevron-right' : 'ti-chevron-down') + '"></span>'
@@ -1397,19 +1431,26 @@ class Plugin extends AppPlugin {
 				}).join('')
 				+ '</div>';
 			panel.innerHTML = '<button type="button" class="rs-p-close ti ti-x"></button>'
-				+ '<h1>Supertask Settings</h1>'
-				/* its own frame, first — it belongs to no other section and was
-				 * unfindable buried under Task Status Settings (his report).
-				 * No keycap column here: there is no shortcut to show, and the
-				 * empty chip read as a stray rule. The copy says HEADING only:
-				 * this switch never lights todos, those stay per-item (he
-				 * caught the earlier wording promising both). */
-				+ '<div class="rs-p-secbox rs-p-secbox-plain">'
-				+ '<label class="rs-p-row rs-p-switch">'
-				+ '<input type="checkbox" class="rs-pg"' + (this.progressGlobal ? ' checked' : '') + '>'
-				+ '<span class="rs-p-name">Global Progress bar</span></label>'
-				+ '<p class="rs-p-sub rs-p-secsub">A bar under every heading, counting the tasks below it. '
-				+ 'A section’s ⋯ menu, or “Supertask: Progress Bar” on the caret’s section, always overrides this.</p>'
+				+ '<h1>Supertask Settings'
+				+ (this.pluginVersion ? '<span class="rs-ver">v' + this.pluginVersion + '</span>' : '')
+				+ '</h1>'
+				/* Its own FOLDABLE section, first (his ask) — two switches, one
+				 * for headings and one for parent todos, because those are
+				 * different appetites: a bar on every heading is calm, a bar
+				 * on every sub-checklist is not. Either switch is overridden
+				 * per section by the ⋯ menu or the palette command. */
+				+ '<div class="rs-p-secbox">' + sec('progress', 'Progress Bar Toggles')
+				+ (fold.progress ? '' :
+					'<p class="rs-p-sub rs-p-secsub">A bar counting the tasks below a line. '
+					+ 'A section’s ⋯ menu, or “Supertask: Progress Bar” on the caret’s line, always overrides these.</p>'
+					+ '<div class="rs-p-list">'
+					+ '<label class="rs-p-row rs-p-switch">'
+					+ '<input type="checkbox" class="rs-pg"' + (this.progressGlobal ? ' checked' : '') + '>'
+					+ '<span class="rs-p-name">On every heading</span></label>'
+					+ '<label class="rs-p-row rs-p-switch">'
+					+ '<input type="checkbox" class="rs-pgt"' + (this.progressTodos ? ' checked' : '') + '>'
+					+ '<span class="rs-p-name">On every todo with sub-tasks</span></label>'
+					+ '</div>')
 				+ '</div>'
 				+ '<div class="rs-p-secbox">' + sec('ordering', 'Task Status Settings') + orderingBody + '</div>'
 				+ '<div class="rs-p-secbox">'
@@ -1460,6 +1501,11 @@ class Plugin extends AppPlugin {
 			const cl = e.target.classList;
 			if (cl && cl.contains('rs-pg')) {
 				this.progressGlobal = !!e.target.checked;
+				this.refreshProgressStyle();
+				dirty = true;
+			}
+			if (cl && cl.contains('rs-pgt')) {
+				this.progressTodos = !!e.target.checked;
 				this.refreshProgressStyle();
 				dirty = true;
 			}
@@ -3509,7 +3555,7 @@ class Plugin extends AppPlugin {
 		if (!this.canHaveProgress(st)) return false;
 		const explicit = this.progConfOf(st);
 		if (explicit !== undefined) return explicit;
-		return st.type === 'heading' ? !!this.progressGlobal : false;
+		return st.type === 'heading' ? !!this.progressGlobal : !!this.progressTodos;
 	}
 
 	/* DIRECT children only (his 2026-08-10 correction) — a nested checklist
@@ -3554,6 +3600,63 @@ class Plugin extends AppPlugin {
 		return { total, done };
 	}
 
+	/* THE COUNTS HAVE TO OUTLIVE A RELOAD.
+	 * A bar belongs to a LINE, but it can only be COMPUTED from that line's
+	 * children — and children live in `g_universe.itemsByGuid`, which holds
+	 * LOADED PAGES ONLY. Every other surface (live search hit, transclusion,
+	 * Tasks-view row) renders a line whose home page is usually shut, so right
+	 * after a reload there is nothing to count and the bar is simply absent
+	 * there. That is exactly what Parham reported on 2026-08-10, and it is why
+	 * the first verification round "passed": the test page had been opened
+	 * first, which loaded it. Verified with the page shut — itemsByGuid empty,
+	 * zero rules emitted.
+	 * So the last known count for every barred line is kept in localStorage and
+	 * used whenever the line itself is not loaded. It is a DISPLAY cache, never
+	 * an input to anything: a loaded page always wins and immediately refreshes
+	 * the entry, and a line that no longer qualifies has its entry retired the
+	 * next time its page is open. Per client on purpose — offsets and fold
+	 * state already are, and a count is cheap to re-derive. */
+	loadProgCache() {
+		this.progRemembered = new Map();
+		try {
+			const raw = JSON.parse(localStorage.getItem('rs_progcache') || '{}');
+			for (const g in raw) {
+				const v = raw[g];
+				if (v && typeof v.l === 'string' && typeof v.p === 'number') this.progRemembered.set(g, { pct: v.p, label: v.l });
+			}
+		} catch (e) {}
+	}
+
+	saveProgCache() {
+		if (!this.progRemembered) return;
+		const out = {};
+		/* bounded: a workspace has few barred lines, but never let a stale
+		 * cache grow without limit */
+		let n = 0;
+		for (const [g, c] of this.progRemembered) {
+			if (n++ >= 500) break;
+			out[g] = { p: c.pct, l: c.label };
+		}
+		const s = JSON.stringify(out);
+		if (s === this.progCacheRaw) return; /* nothing changed: no write */
+		this.progCacheRaw = s;
+		try { localStorage.setItem('rs_progcache', s); } catch (e) {}
+	}
+
+	progRemember(counts) {
+		if (!this.progRemembered) this.loadProgCache();
+		for (const [g, c] of counts) {
+			const old = this.progRemembered.get(g);
+			if (!old || old.pct !== c.pct || old.label !== c.label) this.progRemembered.set(g, { pct: c.pct, label: c.label });
+		}
+		this.saveProgCache();
+	}
+
+	progForget(g) {
+		if (!this.progRemembered) return;
+		if (this.progRemembered.delete(g)) this.saveProgCache();
+	}
+
 	/* One stylesheet, guid-keyed, no nodes in lines (golden rule 2). The
 	 * heading row is in NORMAL FLOW — measured live 2026-08-10: padding on it
 	 * pushes the following rows down by exactly that much — so the bar gets
@@ -3562,6 +3665,7 @@ class Plugin extends AppPlugin {
 		if (!this.progStyle) return;
 		const byGuid = (window.g_universe && window.g_universe.itemsByGuid) || {};
 		const rows = [];
+		const counts = new Map(); /* real guid → the numbers, reused by every other surface */
 		for (const g in byGuid) {
 			const st = byGuid[g];
 			if (!st || st.is_trashed || st.is_deleted || st.is_virtual) continue;
@@ -3591,9 +3695,156 @@ class Plugin extends AppPlugin {
 				const d = Math.round(tx.getBoundingClientRect().left - el.getBoundingClientRect().left);
 				if (d >= 0 && d < 600) { off = d; if (this.progOffsets) this.progOffsets.set(g, d); }
 			}
+			counts.set(g, { pct: Math.round((done / total) * 100), label: done + '/' + total });
 			rows.push({ sel: '.listitem[data-guid="' + g + '"]', pct: Math.round((done / total) * 100), label: done + '/' + total, off: off });
 		}
+		/* Remember every count across reloads — see progRemember — and retire
+		 * an entry whose line has STOPPED qualifying (bar switched off, last
+		 * task gone). ONLY on positive evidence: children load lazily, so an
+		 * empty `children` array means either "no sub-tasks" or "this page
+		 * isn't loaded yet", and retiring on the second would wipe the very
+		 * entry the other surfaces are painting from. So a line is only
+		 * forgotten while its children are demonstrably present. */
+		for (const g in byGuid) {
+			const st = byGuid[g];
+			if (!st || st.is_virtual || counts.has(g)) continue;
+			if (!this.progRemembered || !this.progRemembered.has(g)) continue;
+			if (!((st.children || []).length)) continue;
+			if (!this.effectiveProgress(st) || !this.countSection(st, 0).total) this.progForget(g);
+		}
+		this.progRemember(counts);
+		/* THE SAME BAR ON EVERY OTHER SURFACE THAT RENDERS THE LINE.
+		 * A live-search hit and a transclusion draw the line under a DIFFERENT
+		 * data-guid, so a stylesheet keyed on the real guid misses them (his
+		 * report: the bar was on the page but not on the search row). Both are
+		 * reached exactly like the repeat glyph: embeds through itemsByGuid,
+		 * virtual rows through each listview's containers[].items_by_guid,
+		 * mapping props.itemref back to the real line. Search rows fold open
+		 * (Reference Extravaganza), so the children ARE visible there and a
+		 * bar means the same thing it does in the document — his correction.
+		 * Each surface measures its OWN offset: a search row has no indent
+		 * guide, so it falls back to the text span. */
+		/* countOf: the live count when the line's page is open, otherwise the
+		 * remembered one. THIS is what makes the other surfaces work at all
+		 * after a reload (his report, 2026-08-10): a search hit or a Tasks-view
+		 * row shows a line whose HOME PAGE is closed, and a closed page is not
+		 * in itemsByGuid — so there was nothing to count and no rule was ever
+		 * emitted. Reproduced with the page shut: itemsByGuid empty, zero rules. */
+		const countOf = (g) => counts.get(g) || (this.progRemembered && this.progRemembered.get(g)) || null;
+		const alias = [];
+		for (const g in byGuid) {
+			const st = byGuid[g];
+			if (!st || st.is_trashed || st.is_deleted) continue;
+			const ref = st.props && st.props.itemref;
+			if (ref && countOf(ref)) alias.push([g, ref]);
+		}
+		try {
+			for (const lv of (window.g_universe && window.g_universe.listviews) || []) {
+				const containers = lv.containers || (lv.container ? [lv.container] : []);
+				for (const cont of containers) {
+					const map = cont.items_by_guid || {};
+					for (const vg in map) {
+						const st = map[vg] && map[vg].state;
+						const ref = st && st.props && st.props.itemref;
+						if (ref && countOf(ref)) alias.push([vg, ref]);
+					}
+				}
+			}
+		} catch (e) {}
+		/* …AND THE SAME THING READ OFF THE DOM, because the two routes above
+		 * both go through `g_universe`, and g_universe is NULL until the user
+		 * first clicks into an editor (measured 2026-08-10: null right after
+		 * every app start, an object the moment a listview is touched, and
+		 * non-null from then on). Reload and merely LOOK at a journal full of
+		 * live-search rows and there is no universe to enumerate, so no search
+		 * row could ever be found — the other half of his report.
+		 * Every rendered search row carries its target on its own "open" chip
+		 * (`line-button.lineitem-lineref[data-guid]`, the LAST one — an inline
+		 * page reference inside the text renders one too, earlier in the row),
+		 * so the DOM alone is enough. Guarded three ways so a prose line that
+		 * merely MENTIONS a barred line never sprouts its progress: the row
+		 * must be a reference/virtual row, the target must differ from the row,
+		 * and it must be a line we actually hold a count for. */
+		const seenAlias = new Set(alias.map((a) => a[0]));
+		try {
+			for (const el of document.querySelectorAll('.listitem.listitem-virtual[data-guid], .listitem.listitem-ref[data-guid]')) {
+				const dg = el.getAttribute('data-guid');
+				if (!dg || seenAlias.has(dg) || counts.has(dg)) continue;
+				const chips = el.querySelectorAll('line-button.lineitem-lineref[data-guid]');
+				const ref = chips.length ? chips[chips.length - 1].getAttribute('data-guid') : null;
+				if (!ref || ref === dg || !countOf(ref)) continue;
+				seenAlias.add(dg);
+				alias.push([dg, ref]);
+			}
+		} catch (e) {}
+		for (const [dg, ref] of alias) {
+			const c2 = countOf(ref);
+			let off = this.progOffsets && this.progOffsets.has(dg) ? this.progOffsets.get(dg) : 0;
+			const el = document.querySelector('.listitem[data-guid="' + dg + '"]');
+			const tx = el && (el.querySelector('.listitem-indentline') || el.querySelector('span.lineitem-text, .line-div'));
+			if (el && tx) {
+				const d = Math.round(tx.getBoundingClientRect().left - el.getBoundingClientRect().left);
+				if (d >= 0 && d < 600) { off = d; if (this.progOffsets) this.progOffsets.set(dg, d); }
+			}
+			rows.push({ sel: '.listitem[data-guid="' + dg + '"]', pct: c2.pct, label: c2.label, off: off });
+		}
+		/* THYMER'S TASKS VIEW renders the same line as `.tasks-view-row` with
+		 * the REAL guid on it, so it needs its own selector (measured live:
+		 * normal flow like the document, title cell at +48, no indent guide,
+		 * and the row is position:static — hence the explicit relative below,
+		 * or the absolutely positioned bar would escape to the list). */
+		const tvRows = [];
+		/* the live counts PLUS every remembered one, so a Tasks-view row whose
+		 * page is closed still gets its rule */
+		const tvGuids = new Set(counts.keys());
+		if (this.progRemembered) for (const g of this.progRemembered.keys()) tvGuids.add(g);
+		for (const g of tvGuids) {
+			const c3 = countOf(g);
+			if (!c3) continue;
+			/* Emit for EVERY counted line, whether or not a Tasks-view row is
+			 * on screen right now. The rule is inert without a matching row,
+			 * and skipping absent rows is what made the bar VANISH there and
+			 * never come back (his report): the document rules are derived
+			 * from state and survive, but a DOM-derived rule is dropped by any
+			 * refresh that happens while the row is unrendered, and nothing
+			 * re-triggers when it returns. Same reason the offset is cached. */
+			const el = document.querySelector('.tasks-view-row[data-guid="' + g + '"]');
+			const key = 'tv:' + g;
+			let off = this.progOffsets && this.progOffsets.has(key) ? this.progOffsets.get(key) : 54;
+			const tx = el && el.querySelector('.tasks-view-title, .tasks-view-title-cell');
+			if (tx) {
+				const d = Math.round(tx.getBoundingClientRect().left - el.getBoundingClientRect().left);
+				if (d >= 0 && d < 600) { off = d; if (this.progOffsets) this.progOffsets.set(key, d); }
+			}
+			tvRows.push({ sel: '.tasks-view-row[data-guid="' + g + '"]', pct: c3.pct, label: c3.label, off: off });
+		}
 		let css = '';
+		if (tvRows.length) {
+			/* a Tasks-view row stacks title over location, so the same 15px
+			 * strip put the bar a whole line away from the title (his "för
+			 * långt off"). MEASURED 2026-08-10 on a real row: content box 50px
+			 * (location text ends at 40, the title cell's own padding runs to
+			 * 49), and a 10px strip with the bar 3px off the bottom left a
+			 * 12px gap under the location line — still too far (his second
+			 * report, with a screenshot). The bar now sits INSIDE the title
+			 * cell's own bottom padding: a 7px strip with the bar 5px up puts
+			 * its top at 47, i.e. 7px under the location text, and the label
+			 * is centred on it (bottom 2 + 11px tall → centre 49.5, same as
+			 * the bar's). Row 57px instead of 60. 4px was tried first and came
+			 * back "one step too close" — 7 is the landing point between that
+			 * and the original 12. */
+			css += tvRows.map((r) => r.sel).join(',') + '{position:relative;padding-bottom:7px}\n'
+				+ tvRows.map((r) => r.sel + '::before').join(',')
+				+ '{content:"";position:absolute;bottom:5px;width:200px;height:5px;border-radius:3px;pointer-events:none}\n'
+				+ tvRows.map((r) => r.sel + '::after').join(',')
+				+ '{position:absolute;bottom:2px;height:11px;line-height:11px;letter-spacing:-.04em;font-size:var(--text-size-smaller,11px);opacity:.45;pointer-events:none;font-weight:400}\n';
+			for (const r of tvRows) {
+				css += r.sel + '::before{left:' + (r.off + 2) + 'px;background:linear-gradient(to right,'
+					+ 'var(--rs-prog-fill) 0 ' + r.pct + '%,'
+					+ 'var(--rs-prog-track) ' + r.pct + '% 100%)}\n'
+					+ r.sel + '::after{left:' + (r.off + 208) + 'px;content:"' + r.label + '"}\n';
+			}
+		}
 		if (rows.length) {
 			/* shape shared by all of them — ::before/::after appended to EVERY
 			 * selector, never to the joined string (the v0.9.5 trap) */

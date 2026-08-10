@@ -36,9 +36,13 @@ Grouping can also be enabled **globally** in Settings: pick the statuses, and ev
 
 ## Progress bars
 
-A heading can show how far its list has got, as a thin bar under the title with the count beside it. Switch it on for one section from its `⋯` menu, or with **Supertask: Progress Bar** on the caret's section — or for every heading at once in Settings.
+A heading can show how far its list has got, as a thin bar under the title with the count beside it. Switch it on for one section from its `⋯` menu, or with **Supertask: Progress Bar** on the caret's section.
 
 A heading counts its **direct** tasks, so a nested checklist stays its own business and does not inflate the number above it. Give that parent task its own bar (same command, caret on the task) and it starts counting its sub-tasks — and its numbers then roll up into the heading too. Canceled tasks count as resolved, so a section with nothing left to do reaches the end of the bar.
+
+**Everywhere the line appears.** A bar belongs to the line, not to the page it happens to sit on, so it follows that line into a **live search result**, onto a **transclusion**, and into Thymer's **Tasks view** — the same count, wherever you meet it. Nothing to switch on: turn the bar on once and it shows up on every surface.
+
+**Two switches in Settings**, under *Progress Bar Toggles*: **On every heading**, and **On every todo with sub-tasks**. They are separate on purpose — a bar on every heading is calm, a bar on every sub-checklist is a different appetite. Either way, a section's `⋯` menu or the palette command always overrides the switch for that one line.
 
 ## Which date moves
 
