@@ -516,9 +516,15 @@ const CSS = `
 .rs-custom label { display: flex; align-items: center; gap: 8px; padding: 4px 0; min-width: 0; }
 .rs-custom label span:first-child { opacity: .6; min-width: 118px; flex: 0 0 auto; }
 /* long chip values ("Lay Out All Occurrences") must ellipsize INSIDE the
- * box, never poke out of it — the full text is always visible in the menu */
-.rs-custom .rs-sel { min-width: 0; }
-.rs-custom .rs-sel .rs-sel-lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+ * box, never poke out of it — the full text is always visible in the menu.
+ * min-width:0 must sit on the LABEL SPAN too: it is itself a flex item of
+ * the inline-flex chip, and its default min-width:auto blocked the shrink
+ * (his second overflow report — the chip-level rule alone was not enough) */
+.rs-custom .rs-sel { min-width: 0; max-width: 100%; }
+/* the HARD CAP is what actually truncates: flex min-width alone let the
+ * label keep its full width and the text ran to the box edge (his two
+ * reports; live-measured — scrollWidth==clientWidth, no ellipsis) */
+.rs-custom .rs-sel .rs-sel-lbl { min-width: 0; max-width: 148px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rs-custom input {
 	background: transparent; color: inherit; font-family: inherit; font-size: 13px;
 	border: 1px solid rgba(127,127,127,.35); border-radius: 4px; padding: 3px 7px;
@@ -532,7 +538,7 @@ const CSS = `
 	border: 1px solid rgba(127,127,127,.35); border-radius: 4px; padding: 1px 4px;
 }
 /* the Name Copies popover: template field + token hint + live preview */
-.rs-namepop { padding: 9px 10px; width: 276px; }
+.rs-namepop { padding: 11px 12px; width: 318px; }
 .rs-namepop input {
 	width: 100%; box-sizing: border-box;
 	background: transparent; color: inherit; font-family: inherit; font-size: 13px;
@@ -541,14 +547,22 @@ const CSS = `
 /* neutralize the menu-row styling the popover's divs inherit from
  * .rs-repmenu div (nowrap was clipping the preview text) */
 .rs-namepop div { padding: 0; border-radius: 0; cursor: default; white-space: normal; }
-/* the token legend, CleanShot-style but LABELS ONLY (his call — the raw
- * tokens next to them were noise); clicking a chip inserts its token */
-.rs-name-hint { display: flex; flex-wrap: wrap; gap: 4px; font-size: 11px; margin-top: 8px; }
+/* the token legend, rebuilt to HIS mock (2026-08-10): bordered chips in a
+ * two-column grid, token first + a muted example after, hairline under the
+ * field, 4px radius everywhere; hovering lights the chip in the accent */
+.rs-name-sep { border-top: 1px solid rgba(127,127,127,.22); margin: 9px 0; }
+.rs-name-hint { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; font-size: 12px; }
 .rs-namepop .rs-tokrow {
+	display: flex; align-items: baseline; gap: 6px; min-width: 0;
 	border: 1px solid rgba(127,127,127,.3); border-radius: 4px;
-	padding: 1px 6px; cursor: pointer; opacity: .75; white-space: nowrap;
+	padding: 4px 9px; cursor: pointer; white-space: nowrap;
 }
-.rs-namepop .rs-tokrow:hover { background: rgba(127,127,127,.16); opacity: 1; }
+.rs-namepop .rs-tokrow:hover {
+	border-color: color-mix(in srgb, var(--color-primary-500, #3aa37f) 60%, var(--text-color, currentColor));
+}
+.rs-namepop .rs-tokrow:hover .rs-tok-t { color: color-mix(in srgb, var(--color-primary-500, #3aa37f) 60%, var(--text-color, currentColor)); }
+.rs-tok-t { flex: 0 0 auto; }
+.rs-tok-l { opacity: .5; overflow: hidden; text-overflow: ellipsis; }
 .rs-name-prev { font-size: 12px; opacity: .8; margin-top: 7px; }
 .rs-name .rs-sel-lbl { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* HIS DRAWN SPEC (2026-08-09), with the plugin owning EVERY dimension —
@@ -4163,6 +4177,7 @@ class Plugin extends AppPlugin {
 			</div>`;
 		pop.querySelector('.rs-head').textContent = this.targetLabel(t);
 		document.body.appendChild(pop);
+		this.shieldKeys(pop);
 		this.pop = pop;
 
 		const input = pop.querySelector('.rs-input');
@@ -4416,7 +4431,10 @@ class Plugin extends AppPlugin {
 		const UNITS = { d: 'day', w: 'week', m: 'month', y: 'year' };
 		const FREQOPTS = [['d', 'Daily'], ['w', 'Weekly'], ['m', 'Monthly'], ['y', 'Yearly']];
 		const FROMOPTS = [['a', 'The Due Date'], ['c', 'When I Tick It']];
-		const TRAILOPTS = [['', 'Off'], ['b', 'Completed Copies Stay'], ['f', 'Lay Out All Occurrences']];
+		/* short labels by design (his 2026-08-10 fit call): the row title
+		 * "Leave a Trail" carries the context, and anything over ~17 chars
+		 * ellipsizes in the chip — "Lay Out Occurrences" would still clip */
+		const TRAILOPTS = [['', 'Off'], ['b', 'Keep Done Copies'], ['f', 'All Occurrences']];
 		const ORDOPTS = [['1', 'first'], ['2', 'second'], ['3', 'third'], ['4', 'fourth'], ['5', 'fifth'], ['-2', 'next to last'], ['-1', 'last']];
 		const ODOPTS = [['day', 'day'], ['weekday', 'weekday'], ['weekendday', 'weekend day'],
 			['0', 'Monday'], ['1', 'Tuesday'], ['2', 'Wednesday'], ['3', 'Thursday'], ['4', 'Friday'], ['5', 'Saturday'], ['6', 'Sunday']];
@@ -4894,12 +4912,14 @@ class Plugin extends AppPlugin {
 		box.className = 'rs-repmenu rs-countpop';
 		box.innerHTML = '<label style="display:flex;align-items:center;gap:6px;padding:4px 8px;">After <input class="rs-cnt" type="number" min="1" max="100" value="' + (current || 3) + '"> times</label>';
 		document.body.appendChild(box);
+		this.shieldKeys(box);
 		const r = anchorEl.getBoundingClientRect();
 		const top = r.bottom + 4 + box.offsetHeight > window.innerHeight - 8 ? r.top - box.offsetHeight - 4 : r.bottom + 4;
 		box.style.top = Math.max(8, top) + 'px';
 		box.style.left = Math.max(8, Math.min(r.left, window.innerWidth - box.offsetWidth - 8)) + 'px';
 		this.repMenu = box;
 		const input = box.querySelector('input');
+		this.reclaimFocus(input, box);
 		input.focus();
 		input.select();
 		input.addEventListener('input', () => onSet(Math.max(1, Math.min(100, parseInt(input.value, 10) || 1))));
@@ -4922,20 +4942,24 @@ class Plugin extends AppPlugin {
 		document.querySelectorAll('.rs-repmenu').forEach((m) => m.remove());
 		const box = document.createElement('div');
 		box.className = 'rs-repmenu rs-namepop';
-		/* CleanShot's format-field idiom (his screenshot 2026-08-10), labels
-		 * only per his follow-up — the raw tokens next to them were noise.
-		 * Clicking a chip inserts its token at the caret. */
+		/* HIS mock (2026-08-10): token first, muted example after, chips in a
+		 * two-column grid under a hairline. Date examples come from today so
+		 * the chips double as a live legend. Clicking one inserts its token. */
+		const nowD = new Date();
 		const TOKENS = [
-			['{title}', 'Title'], ['{n}', 'Number'],
-			['{month}', 'Month'], ['{mon}', 'Short month'],
-			['{date}', 'Date'], ['{day}', 'Day'],
-			['{week}', 'Week'], ['{year}', 'Year'],
+			['{title}', 'Title'], ['{week}', 'Week no.'],
+			['{n}', 'Number'], ['{month}', RECUR_MONTHNAMES_FULL[nowD.getMonth()]],
+			['{date}', nowD.getDate() + ' ' + RECUR_MONTHNAMES[nowD.getMonth()]], ['{mon}', RECUR_MONTHNAMES[nowD.getMonth()]],
+			['{day}', String(nowD.getDate())], ['{year}', String(nowD.getFullYear())],
 		];
-		box.innerHTML = '<input type="text" spellcheck="false" placeholder="{title} {month}">'
+		box.innerHTML = '<input type="text" spellcheck="false" placeholder="{title} – {month}">'
+			+ '<div class="rs-name-sep"></div>'
 			+ '<div class="rs-name-hint">' + TOKENS.map(([t2, l2]) =>
-				'<div class="rs-tokrow" data-t="' + t2 + '">' + l2 + '</div>').join('') + '</div>'
+				'<div class="rs-tokrow" data-t="' + t2 + '"><span class="rs-tok-t">' + t2 + '</span><span class="rs-tok-l">' + l2 + '</span></div>').join('') + '</div>'
+			+ '<div class="rs-name-sep"></div>'
 			+ '<div class="rs-name-prev"></div>';
 		document.body.appendChild(box);
+		this.shieldKeys(box);
 		const r = anchorEl.getBoundingClientRect();
 		const top = r.bottom + 4 + box.offsetHeight > window.innerHeight - 8 ? r.top - box.offsetHeight - 4 : r.bottom + 4;
 		box.style.top = Math.max(8, top) + 'px';
@@ -4943,6 +4967,7 @@ class Plugin extends AppPlugin {
 		this.repMenu = box;
 		const input = box.querySelector('input');
 		input.value = this.nameTpl || '';
+		this.reclaimFocus(input, box);
 		const prev = box.querySelector('.rs-name-prev');
 		const preview = () => {
 			const tpl = input.value.trim();
@@ -5135,6 +5160,40 @@ class Plugin extends AppPlugin {
 		const r = pop.getBoundingClientRect();
 		if (r.bottom <= window.innerHeight - 8) return;
 		pop.style.top = Math.max(8, window.innerHeight - 8 - r.height) + 'px';
+	}
+
+	/* THE FREEZE FIX, from the bundle this time, not a guess: Thymer's key
+	 * dispatcher (EL) is registered on WINDOW BUBBLE — its only registration
+	 * — and forwards every unmatched key to g_focusedComponent.onKeyDown.
+	 * Clicks in plugin UI map to NO Thymer component (Li returns null), so
+	 * the component focus stays parked on e.g. the collection TABLE VIEW,
+	 * whose handler eats Space and letters even while a plugin input holds
+	 * DOM focus. That is why the template field froze in collection views
+	 * but never on lines. Stopping propagation at our own surface starves
+	 * the bubble dispatcher; the browser default still runs (text lands in
+	 * the field), and popKeys is window CAPTURE so Enter/Escape handling is
+	 * unaffected. CDP typing bypassed all of this, which is how two rounds
+	 * shipped "verified" — the v0.7.1 testing trap, honored at last. */
+	shieldKeys(el) {
+		for (const t of ['keydown', 'keypress', 'keyup']) {
+			el.addEventListener(t, (e) => {
+				const n = e.target;
+				if (n && (n.tagName === 'INPUT' || n.tagName === 'TEXTAREA')) e.stopPropagation();
+			});
+		}
+	}
+
+	/* belt-and-braces for the popover fields: if something yanks DOM focus
+	 * to <body> or Thymer's virtual input while the popover is open, take
+	 * it back — but never from a legitimate focus move into other UI */
+	reclaimFocus(input, box) {
+		input.addEventListener('blur', () => {
+			setTimeout(() => {
+				if (!document.body.contains(box)) return;
+				const ae = document.activeElement;
+				if (!ae || ae === document.body || ae.id === 'virtualinput-wrapper') input.focus();
+			}, 0);
+		});
 	}
 
 	closePicker() {

@@ -22,6 +22,14 @@ First public release.
   - **Completed copies stay** — the ticked task stays done right where it stood (it is the history, backlinks intact) and a fresh copy carries the repeat forward on the next date.
   - **Lay out all occurrences** — with an Until date, every future occurrence is created up front as a real todo or page (Expenses with a repeat become visible months ahead for budgeting). The series is remembered: shorten the Until and superfluous copies are removed, extend it and the missing ones are laid out — completed copies are history and are never touched. Ticking an occurrence just completes it; nothing advances. Capped at 100 copies.
 
+## v1.4.2 — 2026-08-10 (unreleased)
+
+Second test-round on the Name Copies surface, verified live in the app:
+
+- **The frozen template field, actually fixed.** The real culprit was found in the app bundle: Thymer's key dispatcher forwards every unmatched key to its own focused component — in collection views, the table view — which ate Space and letters even while a plugin field held focus. All of Supertask's inputs (the date box and its popovers) now stop key events from reaching that dispatcher, so typing, spaces included (`{title} – {n}`), lands in the field everywhere. Verified with zero key events escaping past the shield while typing in a collection view.
+- **Name Copies popover rebuilt to the new design**: template field on top, hairline, two-column chips with the token first and a live example after ({month} August, {day} 10, …), hover in the accent, live preview at the bottom, 4px radii.
+- **Chip values that are too long now truncate for real** (hard cap; the flex-only rule measurably never truncated), and the trail options got labels that fit without truncating: "Keep Done Copies" and "All Occurrences" — "Lay Out Occurrences" would still have clipped, and the row title "Leave a Trail" carries the context.
+
 ## v1.4.1 — 2026-08-10 (unreleased)
 
 Test-round fixes on v1.4.0, all verified live in the app:
