@@ -542,6 +542,21 @@ const CSS = `
 }
 /* the Name Copies popover: template field + token hint + live preview */
 .rs-namepop { padding: 11px 12px; width: 318px; }
+/* PROGRESS BAR COLOURS, theme-scoped so no JS is involved. The fill no
+ * longer mixes with --text-color: that mix BRIGHTENED the accent on dark
+ * themes and darkened it on light ones (measured: fill luma 180 in dark),
+ * which is why the bar read minty. Dark themes get his pick, "variant D" —
+ * accent knocked 15% toward black against an almost-black track (fill 151,
+ * track 22). Light themes keep the plain accent, where a black mix would
+ * read heavy. */
+:root {
+	--rs-prog-fill: var(--color-primary-500, #3aa37f);
+	--rs-prog-track: color-mix(in srgb, var(--text-color) 16%, transparent);
+}
+html.is-dark {
+	--rs-prog-fill: color-mix(in srgb, var(--color-primary-500, #3aa37f) 85%, #000);
+	--rs-prog-track: color-mix(in srgb, var(--text-color) 7%, transparent);
+}
 .rs-namepop input {
 	width: 100%; box-sizing: border-box;
 	background: transparent; color: inherit; font-family: inherit; font-size: 13px;
@@ -925,7 +940,15 @@ class Plugin extends AppPlugin {
 		 * swap always restamps html[data-theme]. Every popover ALSO refreshes
 		 * on open, so even if both signals were missed the surface is right
 		 * at the moment it is drawn. */
-		this.themeHandler = () => this.refreshMenuColors();
+		this.themeHandler = () => {
+			this.refreshMenuColors();
+			/* a theme swap changes font metrics, so every measured position is
+			 * stale: the ⋯ chips are position:fixed against a measured anchor
+			 * and the progress bars carry a measured indent (his report: the
+			 * chip on a line jumped once the theme changed). Re-measure both. */
+			if (!this.dead) { try { this.refreshOrderButtons(true); } catch (e) {} }
+			if (!this.dead) { try { this.refreshProgressStyle(); } catch (e) {} }
+		};
 		try { document.addEventListener('themecsschange', this.themeHandler); } catch (e) {}
 		try {
 			this.themeObserver = new MutationObserver(this.themeHandler);
@@ -3577,8 +3600,8 @@ class Plugin extends AppPlugin {
 				+ '{position:absolute;bottom:0;height:15px;line-height:15px;letter-spacing:-.04em;font-size:var(--text-size-smaller,11px);opacity:.45;pointer-events:none;font-weight:400}\n';
 			for (const r of rows) {
 				css += r.sel + '::before{left:' + (r.off + 2) + 'px;background:linear-gradient(to right,'
-					+ 'color-mix(in srgb, var(--color-primary-500, #3aa37f) 80%, var(--text-color)) 0 ' + r.pct + '%,'
-					+ 'color-mix(in srgb, var(--text-color) 16%, transparent) ' + r.pct + '% 100%)}\n'
+					+ 'var(--rs-prog-fill) 0 ' + r.pct + '%,'
+					+ 'var(--rs-prog-track) ' + r.pct + '% 100%)}\n'
 					+ r.sel + '::after{left:' + (r.off + 208) + 'px;content:"' + r.label + '"}\n';
 			}
 		}
@@ -3934,7 +3957,14 @@ class Plugin extends AppPlugin {
 			this.orderGuidCache = [];
 			for (const g in byGuid) {
 				const st = byGuid[g];
-				if (!st || st.is_trashed || st.is_deleted || !this.orderConfOf(st)) continue;
+				if (!st || st.is_trashed || st.is_deleted) continue;
+				/* the chip shows for an EXPLICIT ordering conf, and — since
+				 * v1.5.1 — for a heading whose progress bar was switched on
+				 * explicitly: without it, turning the bar on from the palette
+				 * left no way back into the menu to turn it off (his report).
+				 * Still never for headings that merely inherit the global
+				 * switches, or a chip would sprout on every heading. */
+				if (!this.orderConfOf(st) && this.progConfOf(st) !== true) continue;
 				this.orderGuidCache.push(g);
 			}
 		}
@@ -4053,7 +4083,12 @@ class Plugin extends AppPlugin {
 		let conf = this.orderConfOf(headSt) || { m: 'g', k: [] };
 		let progOn = this.effectiveProgress(headSt);
 		const paint = () => {
-			let html = row('data-m="g"', conf.m === 'g' ? 'rs-om-cur' : '', null, 'Group by Status')
+			/* Progress bar sits FIRST, above a divider (his layout call), with
+			 * no icon so it lines up with the mode rows below it, and it wears
+			 * the same active fill as the current mode when it is on. */
+			let html = row('data-k="__prog"', progOn ? 'rs-om-cur' : '', null, 'Progress bar')
+				+ '<div class="rs-om-sep"></div>'
+				+ row('data-m="g"', conf.m === 'g' ? 'rs-om-cur' : '', null, 'Group by Status')
 				+ row('data-m="h"', conf.m === 'h' ? 'rs-om-cur' : '', null, 'Group by Hashtags')
 				+ row('data-m="s"', conf.m === 's' ? 'rs-om-cur' : '', null, 'Order by Status')
 				+ '<div class="rs-om-sep"></div>';
@@ -4071,9 +4106,7 @@ class Plugin extends AppPlugin {
 				 * group-mode sibling (his call) */
 				html += row('data-k="done"', conf.k.indexOf('done') >= 0 ? 'rs-on' : '', 'ti-check', 'Done group at the bottom');
 			}
-			html += '<div class="rs-om-sep"></div>'
-				+ row('data-k="__prog"', progOn ? 'rs-on' : '', 'ti-progress', 'Progress bar')
-				+ row('data-k="__off"', '', null, 'Turn off ordering');
+			html += '<div class="rs-om-sep"></div>' + row('data-k="__off"', '', null, 'Turn off ordering');
 			menu.innerHTML = html;
 		};
 		paint();
