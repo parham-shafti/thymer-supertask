@@ -34,6 +34,12 @@ Grouping can also be enabled **globally** in Settings: pick the statuses, and ev
 
 ![Group Done Tasks](assets/demo-done.gif)
 
+## Progress bars
+
+A heading can show how far its list has got, as a thin bar under the title with the count beside it. Switch it on for one section from its `⋯` menu, or with **Supertask: Progress Bar** on the caret's section — or for every heading at once in Settings.
+
+A heading counts its **direct** tasks, so a nested checklist stays its own business and does not inflate the number above it. Give that parent task its own bar (same command, caret on the task) and it starts counting its sub-tasks — and its numbers then roll up into the heading too. Canceled tasks count as resolved, so a section with nothing left to do reaches the end of the bar.
+
 ## Which date moves
 
 One set of chords covers both halves of a GTD system. The target resolves in this order:
