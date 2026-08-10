@@ -513,8 +513,12 @@ const CSS = `
 .rs-repmenu > .rs-om-row:hover { background: rgba(127,127,127,.2); } /* real menu ROWS only — never the datepicker wrapper or its cells */
 .rs-repmenu div.rs-on { color: color-mix(in srgb, var(--color-primary-500, #3aa37f) 60%, var(--text-color, currentColor)); font-weight: 600; }
 .rs-custom { padding: 8px 12px 10px; border-top: 1px solid rgba(127,127,127,.18); }
-.rs-custom label { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.rs-custom label { display: flex; align-items: center; gap: 8px; padding: 4px 0; min-width: 0; }
 .rs-custom label span:first-child { opacity: .6; min-width: 118px; flex: 0 0 auto; }
+/* long chip values ("Lay Out All Occurrences") must ellipsize INSIDE the
+ * box, never poke out of it — the full text is always visible in the menu */
+.rs-custom .rs-sel { min-width: 0; }
+.rs-custom .rs-sel .rs-sel-lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rs-custom input {
 	background: transparent; color: inherit; font-family: inherit; font-size: 13px;
 	border: 1px solid rgba(127,127,127,.35); border-radius: 4px; padding: 3px 7px;
@@ -534,22 +538,17 @@ const CSS = `
 	background: transparent; color: inherit; font-family: inherit; font-size: 13px;
 	border: 1px solid rgba(127,127,127,.35); border-radius: 4px; padding: 3px 7px;
 }
-/* the token legend, CleanShot-style: label + chip per row, two columns,
- * click anywhere on a row to insert its token at the caret */
-.rs-name-hint {
-	display: grid; grid-template-columns: 1fr 1fr; gap: 2px 10px;
-	font-size: 11px; margin-top: 8px;
-}
-.rs-tokrow {
-	display: flex; align-items: center; justify-content: space-between; gap: 6px;
-	padding: 1px 3px; border-radius: 4px; cursor: pointer;
-}
-.rs-tokrow:hover { background: rgba(127,127,127,.16); }
-.rs-toklbl { opacity: .5; white-space: nowrap; }
-.rs-tok {
+/* neutralize the menu-row styling the popover's divs inherit from
+ * .rs-repmenu div (nowrap was clipping the preview text) */
+.rs-namepop div { padding: 0; border-radius: 0; cursor: default; white-space: normal; }
+/* the token legend, CleanShot-style but LABELS ONLY (his call — the raw
+ * tokens next to them were noise); clicking a chip inserts its token */
+.rs-name-hint { display: flex; flex-wrap: wrap; gap: 4px; font-size: 11px; margin-top: 8px; }
+.rs-namepop .rs-tokrow {
 	border: 1px solid rgba(127,127,127,.3); border-radius: 4px;
-	padding: 0 4px; opacity: .8; white-space: nowrap;
+	padding: 1px 6px; cursor: pointer; opacity: .75; white-space: nowrap;
 }
+.rs-namepop .rs-tokrow:hover { background: rgba(127,127,127,.16); opacity: 1; }
 .rs-name-prev { font-size: 12px; opacity: .8; margin-top: 7px; }
 .rs-name .rs-sel-lbl { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* HIS DRAWN SPEC (2026-08-09), with the plugin owning EVERY dimension —
@@ -1736,7 +1735,13 @@ class Plugin extends AppPlugin {
 		if (t.kind === 'record') {
 			const rec = this.data.getRecord(t.guid);
 			if (!rec) { this.toast('Could not read that page.'); return false; }
-			const prev = this.pageRules[t.guid] || null;
+			/* a series COPY edits the ORIGINAL's rule (his report: the series
+			 * must be cancelable/changeable from ANY copy, like lines) — the
+			 * date write below still lands on the copy itself */
+			const pr = this.pageRuleFor(t.guid);
+			const prev = (pr && pr.rule) || null;
+			const originGuid = (pr && pr.origin) || t.guid;
+			const originRec = originGuid === t.guid ? rec : (this.data.getRecord(originGuid) || rec);
 			/* wirePageRows fills t.pageCtx ASYNC (it awaits getAllCollections) —
 			 * a fast Enter can beat it, and committing with an empty ctx used to
 			 * rewrite an existing rule with its field wiring stripped (dp fell
@@ -1755,7 +1760,18 @@ class Plugin extends AppPlugin {
 			if (t.ruleTouched) {
 				t.ruleTouched = false;
 				const rp = dt.getParts();
-				const ymd = rp.year * 10000 + (rp.month + 1) * 100 + rp.day;
+				let ymd = rp.year * 10000 + (rp.month + 1) * 100 + rp.day;
+				/* editing from a COPY: the rule stays anchored on the ORIGINAL's
+				 * own date (the lines' oymd lesson) — the copy's date is just
+				 * this occurrence, not the series' phase */
+				if (originGuid !== t.guid) {
+					try {
+						const op = originRec.prop(prev && prev.dp ? prev.dp : dpId);
+						const od = op && op.datetime();
+						const opp = od && od.getParts();
+						if (opp && opp.year !== undefined) ymd = opp.year * 10000 + (opp.month + 1) * 100 + opp.day;
+					} catch (e) {}
+				}
 				if (t.pendingRule) {
 					/* reset value == done value would re-trigger the advance on
 					 * every later record edit (the status never leaves the done
@@ -1770,19 +1786,18 @@ class Plugin extends AppPlugin {
 					/* {title} resolves against a SNAPSHOT of the name taken when
 					 * the rule is committed (his ask: renaming the original later
 					 * must not ripple into the series) */
-					if (rule.nt) rule.nb = (prev && prev.nb) || rec.getName() || '';
-					this.pageRules[t.guid] = rule;
+					if (rule.nt) rule.nb = (prev && prev.nb) || originRec.getName() || '';
+					this.pageRules[originGuid] = rule;
 					if (t.collGuid) {
 						this.pageDefaults[t.collGuid] = { dp: dpId, sp: rule.sp, dv: rule.dv, dvl: rule.dvl, rv: rule.rv, rvl: rule.rvl };
 					}
-					if (rule.tr === 'f' && !rule.u) this.toast('Forward trail needs an End repeat date — no copies laid out yet.');
-					else if (!rule.sp) this.toast('No “Done when” field picked — nothing can advance this repeat; it only lays out copies.');
-					try { await this.reconcilePageSeries(rec, rule); } catch (e) {}
-					this.toast(recurLabel(rule) + ' on ' + (rec.getName() || 'page'));
+					if (!rule.sp) this.toast('No “Done when” field picked — nothing can advance this repeat; it only lays out copies.');
+					try { await this.reconcilePageSeries(originRec, rule); } catch (e) {}
+					this.toast(recurLabel(rule) + ' on ' + (originRec.getName() || 'page'));
 					await this.savePrefs();
 				} else if (prev) {
-					try { await this.reconcilePageSeries(rec, { ...prev, tr: null }); } catch (e) {}
-					delete this.pageRules[t.guid];
+					try { await this.reconcilePageSeries(originRec, { ...prev, tr: null }); } catch (e) {}
+					delete this.pageRules[originGuid];
 					this.toast('Repeat removed');
 					await this.savePrefs();
 				}
@@ -2056,7 +2071,8 @@ class Plugin extends AppPlugin {
 		t.collGuid = collGuid;
 		const dateFields = fields.filter((f) => (f.type === 'datetime' || f.type === 'date') && f.active !== false && f.id !== 'created_at' && f.id !== 'updated_at');
 		const statusFields = fields.filter((f) => (f.type === 'record' || f.type === 'choice') && f.active !== false && f.id !== 'parent_page');
-		const prev = (this.pageRules && this.pageRules[t.guid]) || null;
+		const prevPr = this.pageRuleFor(t.guid);
+		const prev = (prevPr && prevPr.rule) || null; /* a series copy seeds from the ORIGINAL's rule */
 		const defDate = (prev && dateFields.find((f) => f.id === prev.dp))
 			|| (remembered && dateFields.find((f) => f.id === remembered.dp))
 			|| dateFields.find((f) => (f.label || '') === DUE_DATE_FIELD)
@@ -2200,6 +2216,25 @@ class Plugin extends AppPlugin {
 		} catch (e) { return { coll: null, collGuid: null, fields: [] }; }
 	}
 
+	/* The rule GOVERNING a record: its own, or — when the record is a
+	 * forward-series COPY — the ORIGINAL's, found through rule.copies. The
+	 * line series has exactly this via rs_series (his 1.2.1 ask: standing on
+	 * a future occurrence, the setting is right there); pages lacked it, so
+	 * a copy's date box showed Never and the series could only be changed
+	 * from the original (his 2026-08-10 report). */
+	pageRuleFor(guid) {
+		if (!guid || !this.pageRules) return null;
+		if (this.pageRules[guid]) return { origin: guid, rule: this.pageRules[guid] };
+		for (const og in this.pageRules) {
+			const copies = this.pageRules[og] && this.pageRules[og].copies;
+			if (!copies) continue;
+			for (const y in copies) {
+				if (copies[y] === guid) return { origin: og, rule: this.pageRules[og] };
+			}
+		}
+		return null;
+	}
+
 	async onRecordUpdated(ev) {
 		const guid = ev && ev.recordGuid;
 		const rule = guid && this.pageRules && this.pageRules[guid];
@@ -2317,7 +2352,12 @@ class Plugin extends AppPlugin {
 		const dprop = rec.prop(rule.dp);
 		const cur = dprop && dprop.datetime();
 		const p = cur && cur.getParts();
-		const due = p && p.year !== undefined ? p.year * 10000 + (p.month + 1) * 100 + p.day : 0;
+		let due = p && p.year !== undefined ? p.year * 10000 + (p.month + 1) * 100 + p.day : 0;
+		/* the dp value was written a breath ago and can read back EMPTY
+		 * (live-caught 2026-08-10: first commit laid out zero copies) — the
+		 * rule was just anchored on the committed date, so the anchor is the
+		 * authoritative fallback */
+		if (!due) due = rule.a || 0;
 		const wanted = rule.tr === 'f' && due ? recurOccurrences({ ...rule, a: due }, due, 100) : [];
 		if (rule.tr === 'f' && wanted.length === 100) this.toast('Forward trail capped at 100 copies');
 		const wantedSet = new Set(wanted);
@@ -2346,9 +2386,9 @@ class Plugin extends AppPlugin {
 			const dst = await this.duplicateRecordShallow(rec, name);
 			if (!dst) continue;
 			const d = recurYmdToDate(occ);
-			const dt = p.hours === undefined
-				? DateTime.dateOnly(d.getFullYear(), d.getMonth(), d.getDate())
-				: DateTime.dateAndTime(d.getFullYear(), d.getMonth(), d.getDate(), p.hours, p.minutes || 0, 0);
+			const dt = p && p.hours !== undefined
+				? DateTime.dateAndTime(d.getFullYear(), d.getMonth(), d.getDate(), p.hours, p.minutes || 0, 0)
+				: DateTime.dateOnly(d.getFullYear(), d.getMonth(), d.getDate());
 			const dp2 = dst.prop(rule.dp);
 			if (dp2) { try { dp2.set(dt.value()); } catch (e) {} }
 			rule.copies[String(occ)] = dst.guid || null;
@@ -4257,6 +4297,20 @@ class Plugin extends AppPlugin {
 			if (!this.pop) return;
 			if (e.key !== 'Enter' && e.key !== 'Escape') return;
 			e.stopPropagation();
+			/* an OPEN POPOVER (repeat menu, After-count, Name Copies) is a
+			 * sub-state exactly like endMode: Enter and Escape close just the
+			 * popover, never commit or close the box. The close must happen
+			 * HERE — the stopPropagation above kills the event before the
+			 * popover input's own handler would see it (live-verified: Enter
+			 * in the count popover did nothing at all before this). */
+			if (this.repMenu && this.repMenu.isConnected) {
+				e.preventDefault();
+				try { this.repMenu.remove(); } catch (e2) {}
+				this.repMenu = null;
+				input.focus({ preventScroll: true });
+				return;
+			}
+			this.repMenu = null; /* a closed menu must not eat the next key (live-caught) */
 			if (e.key === 'Escape') {
 				e.preventDefault();
 				/* an armed end-date mode is a sub-state: Escape backs out of IT
@@ -4379,8 +4433,9 @@ class Plugin extends AppPlugin {
 		for (let d2 = 1; d2 <= 31; d2++) mdHtml += '<div class="rs-cell" data-i="' + d2 + '">' + d2 + '</div>';
 		pop.querySelector('.rs-mdays').innerHTML = mdHtml;
 		pop.querySelector('.rs-months').innerHTML = RECUR_MONTHNAMES.map((m2, i) => '<div class="rs-cell" data-i="' + i + '">' + m2 + '</div>').join('');
+		const pageSeries = t.kind === 'record' ? this.pageRuleFor(t.guid) : null;
 		this.rule = t.kind === 'line' ? this.readRule(t.line)
-			: (this.pageRules && this.pageRules[t.guid] ? { ...this.pageRules[t.guid] } : null);
+			: (pageSeries ? { ...pageSeries.rule } : null);
 		/* Name Copies: the template survives syncCustom's from-controls rebuild
 		 * as picker state, not as a control value. nameBase feeds the popover's
 		 * live preview (the {title} stand-in). */
@@ -4451,6 +4506,7 @@ class Plugin extends AppPlugin {
 					custom.style.display = 'none';
 				}
 				menu.remove();
+				if (this.repMenu === menu) this.repMenu = null;
 				paintRepeat();
 				/* deliberately NOT re-placing the box: place() re-anchors to the
 				 * caret, and by now the caret element has moved or gone, so the box
@@ -4587,7 +4643,8 @@ class Plugin extends AppPlugin {
 			this.openSelMenu(el, opts, selVal(el), (v) => { setSel(el, v, opts); syncCustom(); }));
 		wireSel(freq, FREQOPTS);
 		wireSel(from, FROMOPTS);
-		wireSel(trailSel, TRAILOPTS);
+		/* trailSel is wired below, after End Repeat exists — picking the
+		 * forward trail must arm an End Repeat with it */
 		/* End Repeat is Apple's shape (his screenshots): Never / After n times /
 		 * On Date with a real date picker. After compiles to a date at COMMIT
 		 * (occurrence #n from the committed anchor, engine-computed) so no
@@ -4636,6 +4693,24 @@ class Plugin extends AppPlugin {
 			const opts = selVal(from) === 'c' ? ENDOPTS_ALL.filter((o) => o[0] !== 'n') : ENDOPTS_ALL;
 			this.openSelMenu(endSel, opts, selVal(endSel), endApply);
 		});
+		/* the forward trail is NEVER unbounded (his call): picking it with
+		 * End Repeat on Never arms "After 3 times" and opens the count
+		 * popover so the bound is visible and adjustable in the same beat */
+		trailSel.addEventListener('click', () =>
+			this.openSelMenu(trailSel, TRAILOPTS, selVal(trailSel), (v) => {
+				setSel(trailSel, v, TRAILOPTS);
+				if (v === 'f' && !selVal(endSel)) {
+					setSel(endSel, 'n', ENDOPTS_ALL);
+					cnt.value = cnt.value || 3;
+					syncCustom();
+					this.openCountPop(endSel, parseInt(cnt.value, 10) || 3, (n2) => {
+						cnt.value = n2;
+						syncCustom();
+					});
+					return;
+				}
+				syncCustom();
+			}));
 		/* Name Copies: a conditional row (forward trail only) whose chip
 		 * carries the whole template, edited in a popover — the End Repeat
 		 * idiom, so the panel never grows */
@@ -4847,18 +4922,18 @@ class Plugin extends AppPlugin {
 		document.querySelectorAll('.rs-repmenu').forEach((m) => m.remove());
 		const box = document.createElement('div');
 		box.className = 'rs-repmenu rs-namepop';
-		/* CleanShot's format-field idiom (his screenshot 2026-08-10): every
-		 * token carries a LABEL in the legend, and clicking one inserts it.
-		 * Bare tokens read as line noise without the label column. */
+		/* CleanShot's format-field idiom (his screenshot 2026-08-10), labels
+		 * only per his follow-up — the raw tokens next to them were noise.
+		 * Clicking a chip inserts its token at the caret. */
 		const TOKENS = [
 			['{title}', 'Title'], ['{n}', 'Number'],
-			['{month}', 'August'], ['{mon}', 'Aug'],
-			['{date}', '10 Aug'], ['{day}', '10'],
-			['{week}', 'Week no.'], ['{year}', '2026'],
+			['{month}', 'Month'], ['{mon}', 'Short month'],
+			['{date}', 'Date'], ['{day}', 'Day'],
+			['{week}', 'Week'], ['{year}', 'Year'],
 		];
 		box.innerHTML = '<input type="text" spellcheck="false" placeholder="{title} {month}">'
 			+ '<div class="rs-name-hint">' + TOKENS.map(([t2, l2]) =>
-				'<div class="rs-tokrow" data-t="' + t2 + '"><span class="rs-toklbl">' + l2 + '</span><span class="rs-tok">' + t2 + '</span></div>').join('') + '</div>'
+				'<div class="rs-tokrow" data-t="' + t2 + '">' + l2 + '</div>').join('') + '</div>'
 			+ '<div class="rs-name-prev"></div>';
 		document.body.appendChild(box);
 		const r = anchorEl.getBoundingClientRect();
@@ -4890,8 +4965,15 @@ class Plugin extends AppPlugin {
 			preview();
 			onChange();
 		});
-		/* clicking a legend row inserts its token at the caret */
-		box.querySelector('.rs-name-hint').addEventListener('click', (e) => {
+		/* clicking a legend chip inserts its token at the caret. pointerdown
+		 * is prevented so the click never BLURS the input — the blur/refocus
+		 * dance is what left the field caret-dead after an insert (his
+		 * freeze report): focus bounced through <body>, where Thymer's own
+		 * capture dispatcher owns the keys. */
+		const hint = box.querySelector('.rs-name-hint');
+		hint.addEventListener('pointerdown', (e) => e.preventDefault());
+		hint.addEventListener('mousedown', (e) => e.preventDefault());
+		hint.addEventListener('click', (e) => {
 			const row = e.target.closest('.rs-tokrow');
 			if (!row) return;
 			const tok = row.getAttribute('data-t');
@@ -4901,6 +4983,8 @@ class Plugin extends AppPlugin {
 			input.focus();
 			input.setSelectionRange(a + tok.length, a + tok.length);
 			input.dispatchEvent(new Event('input'));
+			/* re-assert on the next frame — syncCustom's repaint can steal it */
+			requestAnimationFrame(() => { if (document.body.contains(box)) input.focus(); });
 		});
 		input.addEventListener('keydown', (e) => {
 			if (e.key === 'Enter') {
@@ -4922,6 +5006,14 @@ class Plugin extends AppPlugin {
 		if (rule.aftN) {
 			const nth = recurNthOccurrence(rule, anchorYmd, rule.aftN);
 			if (nth) rule.u = nth;
+		}
+		/* an UNBOUNDED forward trail must never be stored (his call
+		 * 2026-08-10: without an End Repeat it would lay out forever) — the
+		 * UI auto-arms an End Repeat when the trail is picked, so this is
+		 * the belt-and-braces layer for typed-empty Until and old rules */
+		if (rule.tr === 'f' && !rule.u) {
+			delete rule.tr;
+			this.toast('Forward trail needs an End Repeat — trail dropped.');
 		}
 		return rule;
 	}
