@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.5.1 — 2026-08-10
+
+- Progress bars sit **darker in dark themes**, against an almost-black track. The fill now follows your accent colour directly; it used to be mixed with the text colour, which brightened it on dark themes and darkened it on light ones.
+- **Progress bar** moved to the top of a section's `⋯` menu, above a divider, and is highlighted while it is on.
+- The `⋯` button now also appears on a heading that only has a progress bar, so you can always get back in to switch it off. Turning ordering off leaves the button in place while the bar is still on.
+- Switching theme re-measures the `⋯` button and the bars instead of leaving them at their old positions.
+
 ## v1.5.0 — 2026-08-10
 
 - **Progress bars.** A heading can show a bar for the tasks beneath it, with the count beside it. Opt in per section from its `⋯` menu or with **Supertask: Progress Bar** on the caret's section, or switch it on for every heading in Settings.
