@@ -530,7 +530,10 @@ const CSS = `
 	border: 1px solid rgba(127,127,127,.35); border-radius: 4px; padding: 3px 7px;
 }
 .rs-custom .rs-int { width: 52px; }
-.rs-unit { color: var(--rs-menu-fg, #D5D4D4); }
+/* the unit label sits in the BOX, not in a menu — using the menu foreground
+ * made it near-invisible on light themes (his report: "day" barely readable
+ * on white). Box text colour, quietened by opacity, works in both. */
+.rs-unit { color: inherit; opacity: .55; }
 .rs-custom .rs-until { width: 132px; }
 .rs-until.rs-bad-date { border-color: rgba(220,90,90,.7); }
 .rs-cnt {
@@ -908,18 +911,21 @@ class Plugin extends AppPlugin {
 		this.style = document.createElement('style');
 		this.style.textContent = CSS;
 		document.head.appendChild(this.style);
-		/* menu surface: his exact #2A2A31 on dark themes; on light ones a mix
-		 * a touch darker than the surface (the hex would be a black slab) */
+		this.refreshMenuColors();
+		/* THEME SWITCHES AT RUNTIME (his 2026-08-10 report: the box went light
+		 * but its menus stayed dark). The colours below are computed from the
+		 * live background, so they MUST be recomputed whenever the theme
+		 * changes — a value sampled once at load is stale the moment he
+		 * switches. Thymer fires `themecsschange` on document (bundle-read);
+		 * the attribute observer is the belt-and-braces half, since a theme
+		 * swap always restamps html[data-theme]. Every popover ALSO refreshes
+		 * on open, so even if both signals were missed the surface is right
+		 * at the moment it is drawn. */
+		this.themeHandler = () => this.refreshMenuColors();
+		try { document.addEventListener('themecsschange', this.themeHandler); } catch (e) {}
 		try {
-			const bg = getComputedStyle(document.body).backgroundColor;
-			const m = bg && bg.match(/\d+/g);
-			const lum = m ? (0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2]) : 0;
-			document.documentElement.style.setProperty('--rs-menu-bg', lum < 128
-				? '#2A2A31'
-				: 'color-mix(in srgb, var(--cmdpal-bg-color, #fff) 94%, var(--cmdpal-fg-color, #000))');
-			document.documentElement.style.setProperty('--rs-menu-fg', lum < 128
-				? '#D5D4D4'
-				: 'var(--cmdpal-fg-color, var(--text-color, #333))');
+			this.themeObserver = new MutationObserver(this.themeHandler);
+			this.themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class'] });
 		} catch (e) {}
 
 		this.hotkeyHandler = (e) => {
@@ -1070,6 +1076,10 @@ class Plugin extends AppPlugin {
 		try { if (this.createHandler) this.events.off(this.createHandler); } catch (e) {}
 		try { if (this.deleteHandler) this.events.off(this.deleteHandler); } catch (e) {}
 		try { if (this.recordHandler) this.events.off(this.recordHandler); } catch (e) {}
+		try { if (this.themeHandler) document.removeEventListener('themecsschange', this.themeHandler); } catch (e) {}
+		this.themeHandler = null;
+		try { if (this.themeObserver) this.themeObserver.disconnect(); } catch (e) {}
+		this.themeObserver = null;
 		try { if (this.domObserver) this.domObserver.disconnect(); } catch (e) {}
 		this.domObserver = null;
 		this.recurKnown = null;
@@ -1458,6 +1468,7 @@ class Plugin extends AppPlugin {
 		const pendingSave = this.settingsEls ? this.settingsSave : null;
 		if (this.settingsKeys) { window.removeEventListener('keydown', this.settingsKeys, true); this.settingsKeys = null; }
 		if (this.settingsEls) { for (const el of this.settingsEls) { try { el.remove(); } catch (e) {} } this.settingsEls = null; }
+		this.refreshMenuColors();
 		document.querySelectorAll('.rs-repmenu').forEach((m) => m.remove());
 		this.repMenu = null;
 		this.settingsSave = null;
@@ -2258,6 +2269,19 @@ class Plugin extends AppPlugin {
 		const guid = ev && ev.recordGuid;
 		const rule = guid && this.pageRules && this.pageRules[guid];
 		if (!rule) return;
+		/* TRASHING a page retires its rule (his 2026-08-10 ask: the plugin
+		 * should clean up after itself). This is the only PROVABLE deletion
+		 * signal available — there is no record.deleted event, and "getRecord
+		 * returned null" is NOT proof: an unloaded page reads exactly the
+		 * same, so sweeping on that would delete live rules for pages he
+		 * simply had not opened. Series copies are retired with the origin. */
+		if (ev.trashed === true) {
+			const copies = rule.copies || {};
+			for (const y in copies) { if (copies[y]) delete this.pageRules[copies[y]]; }
+			delete this.pageRules[guid];
+			await this.savePrefs(); /* LAST — reloads the plugin */
+			return;
+		}
 		if (this.recurBusy.has(guid)) return;
 		const rec = this.data.getRecord(guid);
 		if (!rec) return;
@@ -3794,6 +3818,7 @@ class Plugin extends AppPlugin {
 		if (!headLi) return;
 		const t = { headSt, headLi, pl };
 
+		this.refreshMenuColors();
 		document.querySelectorAll('.rs-repmenu').forEach((m) => m.remove());
 		const menu = document.createElement('div');
 		menu.className = 'rs-repmenu rs-ordmenu';
@@ -4495,7 +4520,8 @@ class Plugin extends AppPlugin {
 			pop.querySelector('.rs-unit').textContent = UNITS[(this.rule && this.rule.f) || 'd'] + (n === 1 ? '' : 's');
 		};
 		const openRepeatMenu = () => {
-			document.querySelectorAll('.rs-repmenu').forEach((m) => m.remove());
+			this.refreshMenuColors();
+		document.querySelectorAll('.rs-repmenu').forEach((m) => m.remove());
 			const menu = document.createElement('div');
 			menu.className = 'rs-repmenu';
 			const presets = [['', 'Never'], ['d', 'Every Day'], ['w', 'Every Week'], ['m', 'Every Month'], ['y', 'Every Year']];
@@ -4795,6 +4821,7 @@ class Plugin extends AppPlugin {
 	 * (body-parented and fixed for the same overflow:hidden reason). Used by the
 	 * Frequency and Count-from controls in place of a native <select>. */
 	openSelMenu(anchor, items, cur, onPick) {
+		this.refreshMenuColors();
 		document.querySelectorAll('.rs-repmenu').forEach((m) => m.remove());
 		const menu = document.createElement('div');
 		menu.className = 'rs-repmenu';
@@ -4824,6 +4851,7 @@ class Plugin extends AppPlugin {
 	 * themes it. Carries .rs-repmenu so the box's outside-click handler
 	 * treats it as one of ours. */
 	openMiniCal(anchorEl, startParts, onPick) {
+		this.refreshMenuColors();
 		document.querySelectorAll('.rs-minical').forEach((m) => m.remove());
 		const box = document.createElement('div');
 		box.className = 'rs-repmenu rs-minical';
@@ -4915,6 +4943,7 @@ class Plugin extends AppPlugin {
 	/* the After-count popover: writes through live, Enter or an outside
 	 * click closes — the chip label always mirrors the value */
 	openCountPop(anchorEl, current, onSet) {
+		this.refreshMenuColors();
 		document.querySelectorAll('.rs-repmenu').forEach((m) => m.remove());
 		const box = document.createElement('div');
 		box.className = 'rs-repmenu rs-countpop';
@@ -4947,6 +4976,7 @@ class Plugin extends AppPlugin {
 	 * keystroke (this.nameTpl + onChange → syncCustom); Enter or an outside
 	 * click closes. */
 	openNamePop(anchorEl, onChange) {
+		this.refreshMenuColors();
 		document.querySelectorAll('.rs-repmenu').forEach((m) => m.remove());
 		const box = document.createElement('div');
 		box.className = 'rs-repmenu rs-namepop';
@@ -5205,6 +5235,25 @@ class Plugin extends AppPlugin {
 	 * the field), and popKeys is window CAPTURE so Enter/Escape handling is
 	 * unaffected. CDP typing bypassed all of this, which is how two rounds
 	 * shipped "verified" — the v0.7.1 testing trap, honored at last. */
+	/* Menu surface colours, recomputed from the LIVE background: his exact
+	 * #2A2A31 / #D5D4D4 on dark themes, and on light ones a surface a touch
+	 * darker than the page with the theme's own foreground (the hex would be
+	 * a black slab on white). Cheap enough to call on every popover open. */
+	refreshMenuColors() {
+		try {
+			const bg = getComputedStyle(document.body).backgroundColor;
+			const m = bg && bg.match(/\d+/g);
+			const lum = m ? (0.2126 * +m[0] + 0.7152 * +m[1] + 0.0722 * +m[2]) : 0;
+			const dark = lum < 128;
+			document.documentElement.style.setProperty('--rs-menu-bg', dark
+				? '#2A2A31'
+				: 'color-mix(in srgb, var(--cmdpal-bg-color, #fff) 94%, var(--cmdpal-fg-color, #000))');
+			document.documentElement.style.setProperty('--rs-menu-fg', dark
+				? '#D5D4D4'
+				: 'var(--cmdpal-fg-color, var(--text-color, #333))');
+		} catch (e) {}
+	}
+
 	shieldKeys(el) {
 		for (const t of ['keydown', 'keypress', 'keyup']) {
 			el.addEventListener(t, (e) => {
@@ -5231,6 +5280,7 @@ class Plugin extends AppPlugin {
 		if (this.popKeys) { window.removeEventListener('keydown', this.popKeys, true); this.popKeys = null; }
 		if (this.outside) { document.removeEventListener('pointerdown', this.outside, true); this.outside = null; }
 		if (this.pop) { try { this.pop.remove(); } catch (e) {} this.pop = null; }
+		this.refreshMenuColors();
 		document.querySelectorAll('.rs-repmenu').forEach((m) => m.remove());
 		this.repMenu = null;
 		this.sel = this.view = this.rangeEnd = this.showPicker = this.cancelPicker = null;

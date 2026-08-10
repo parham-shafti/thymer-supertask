@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.4.5 — 2026-08-10
+
+- **Menus follow the theme.** The date box's dropdowns kept their dark surface after a switch to a light theme, because their colours were sampled once when the plugin loaded. They are now recomputed whenever the theme changes and again every time a menu opens.
+- The **unit label** next to the interval ("day", "week") was nearly invisible on light themes; it now takes the box's own text colour.
+- **Repeat rules clean up after themselves.** Trashing a repeating page retires its rule, and its laid-out copies with it, instead of leaving dead entries behind forever.
+
 ## v1.4.4 — 2026-08-10
 
 Everything below is new since v1.0.0.
