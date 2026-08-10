@@ -3543,10 +3543,14 @@ class Plugin extends AppPlugin {
 			 * currently rendered keep the last known offset. */
 			let off = this.progOffsets && this.progOffsets.has(g) ? this.progOffsets.get(g) : 0;
 			const el = document.querySelector('.listitem[data-guid="' + g + '"]');
-			/* the row's VISUAL start: a task begins at its checkbox, a heading
-			 * at its text (his call — the bar lines up with the line itself,
-			 * not with the words after the box) */
-			const tx = el && (el.querySelector('.line-check-div') || el.querySelector('span.lineitem-text, .line-div'));
+			/* Anchor on the line's OWN INDENT GUIDE — the vertical rule that
+			 * drops from it to its children. A heading's guide happens to sit
+			 * at its text (both +2), which is why the heading looked right
+			 * while a task's bar floated 19px off its guide (+57 vs +38): his
+			 * "line-progressbaren är inte alignad". Same axis for both now.
+			 * The guide is clipped behind the bar strip below, so nothing
+			 * crosses. Falls back to the text when a row has no guide. */
+			const tx = el && (el.querySelector('.listitem-indentline') || el.querySelector('span.lineitem-text, .line-div'));
 			if (el && tx) {
 				const d = Math.round(tx.getBoundingClientRect().left - el.getBoundingClientRect().left);
 				if (d >= 0 && d < 600) { off = d; if (this.progOffsets) this.progOffsets.set(g, d); }
@@ -3558,6 +3562,15 @@ class Plugin extends AppPlugin {
 			/* shape shared by all of them — ::before/::after appended to EVERY
 			 * selector, never to the joined string (the v0.9.5 trap) */
 			css += rows.map((r) => r.sel).join(',') + '{padding-bottom:15px}\n'
+				/* the indent guide starts right under the line's text and would
+				 * run straight through the bar strip (his screenshots: on the
+				 * heading, whose guide shares the bar's x). Clip its top 15px —
+				 * exactly the strip we added — so the guide resumes BELOW the
+				 * bar. clip-path hides without moving it, so the guide's own
+				 * length stays whatever the editor computed, however many
+				 * children it spans. */
+				+ rows.map((r) => r.sel + ' .listitem-indentline').join(',')
+				+ '{clip-path:inset(21px 0 0 0)}\n'
 				+ rows.map((r) => r.sel + '::before').join(',')
 				+ '{content:"";position:absolute;bottom:5px;width:200px;height:5px;border-radius:3px;pointer-events:none}\n'
 				+ rows.map((r) => r.sel + '::after').join(',')
