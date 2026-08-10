@@ -77,7 +77,7 @@ Pages repeat too. Open the date box on a page — from a collection view, a page
 
 When that value lands on the page, the date advances and the status resets. Your last choices are remembered per collection, so the second page in a collection opens pre-filled.
 
-![A repeating page laying out its occurrences](assets/trail-pages.gif)
+![A repeating page laying out its occurrences](assets/repeating-pages.gif)
 
 ## Leave a trail
 
