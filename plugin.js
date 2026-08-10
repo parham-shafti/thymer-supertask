@@ -857,6 +857,8 @@ class Plugin extends AppPlugin {
 		this.recurKnown = new Map();
 		this.progKnown = new Map();
 		this.progOffsets = new Map();
+		/* guids that currently show a progress bar; drives the ⋯ chip */
+		this.progLit = new Set();
 		/* last known bar counts, per client, so the other surfaces can paint
 		 * before the source page is loaded — see loadProgCache */
 		this.loadProgCache();
@@ -1158,6 +1160,9 @@ class Plugin extends AppPlugin {
 		this.progKnown = null;
 		this.progOffsets = null;
 		this.progRemembered = null;
+		this.progLit = null;
+		this.progTried = null;
+		this.progQueue = null;
 		this.lastAdvance = null;
 		this.orderKnown = null;
 		this.binKnown = null;
@@ -1324,7 +1329,18 @@ class Plugin extends AppPlugin {
 			 * no second copy of the number in the code to drift from plugin.json */
 			if (conf && typeof conf.version === 'string') this.pluginVersion = conf.version;
 			const p = conf && conf.custom && conf.custom.rs_prefs;
-			if (p && (p.rev || 0) > (this.prefsRev || 0)) this.applyPrefs(p);
+			/* `>=`, not `>`. The localStorage mirror is applied first and sets
+			 * prefsRev, so a STRICT compare made the synced config lose every
+			 * tie — and a tie is the normal case, since savePrefs stamps both
+			 * copies with the same rev. That matters whenever a NEW pref is
+			 * added: a mirror written by an older build simply lacks the key,
+			 * applyPrefs leaves the field at its constructor default (false),
+			 * and the config copy that does carry it is then discarded. The
+			 * switch reads as on in Settings on one device and does nothing on
+			 * another. Config is the synced, most complete copy: let it win
+			 * ties. (A LOWER rev still loses, so localStorage still rescues a
+			 * clobbered config.) */
+			if (p && (p.rev || 0) >= (this.prefsRev || 0)) this.applyPrefs(p);
 		} catch (e) {}
 	}
 
@@ -1501,11 +1517,13 @@ class Plugin extends AppPlugin {
 			const cl = e.target.classList;
 			if (cl && cl.contains('rs-pg')) {
 				this.progressGlobal = !!e.target.checked;
+				this.progRecheck();
 				this.refreshProgressStyle();
 				dirty = true;
 			}
 			if (cl && cl.contains('rs-pgt')) {
 				this.progressTodos = !!e.target.checked;
+				this.progRecheck();
 				this.refreshProgressStyle();
 				dirty = true;
 			}
@@ -3657,6 +3675,135 @@ class Plugin extends AppPlugin {
 		if (this.progRemembered.delete(g)) this.saveProgCache();
 	}
 
+	/* BACKFILL: count a line whose page nobody has opened.
+	 * The remembered cache only knows lines this device has already counted,
+	 * which is fine for a bar switched on by hand (you were on the page) but
+	 * useless for the GLOBAL switches, where every todo with sub-tasks in the
+	 * workspace is supposed to have one. His report: a query block full of
+	 * tasks that plainly have children, none of them barred, because their
+	 * pages were closed (it looked like the blocked status was to blame; it
+	 * was not).
+	 * So: for every line rendered on a foreign surface that we hold no count
+	 * for, load ITS page through the SDK and count it there. `rec.getLineItems`
+	 * fetches a closed page, and the flat list carries parents on the raw row
+	 * (`_getItem().pguid`), so the counting rule is reproduced against
+	 * PluginLineItems. Bounded hard: at most a handful per cycle, one attempt
+	 * per guid per session, and pages deduped within a run. */
+	/* Either global switch changes who QUALIFIES for a bar, so every earlier
+	 * "nothing to count here" verdict is stale. Forget what we tried and let
+	 * the next refresh queue it all up again. */
+	progRecheck() {
+		this.progTried = null;
+		this.progQueue = null;
+	}
+
+	progBackfill(wanted) {
+		if (!this.progTried) this.progTried = new Set();
+		if (!this.progQueue) this.progQueue = [];
+		for (const g of wanted) {
+			if (!g || this.progTried.has(g)) continue;
+			this.progTried.add(g);
+			this.progQueue.push(g);
+		}
+		/* DRAIN ON OUR OWN CLOCK, not on the refresh cycle. A journal of query
+		 * results is 150+ rows, and a batch-per-refresh only advances when
+		 * something mutates the DOM, so the rows further down never got their
+		 * turn (measured: 6 of 149 barred, with his own examples among the
+		 * missing). Small batches, chained, until the queue is empty. */
+		if (!this.progDraining) this.progDrain();
+	}
+
+	async progDrain() {
+		this.progDraining = true;
+		try {
+			while (!this.dead && this.progQueue && this.progQueue.length) {
+				await this.progBackfillRun(this.progQueue.splice(0, 8));
+				await new Promise((r) => setTimeout(r, 120));
+			}
+		} catch (e) {}
+		this.progDraining = false;
+	}
+
+	async progBackfillRun(guids) {
+		const pages = new Map();
+		let changed = false;
+		for (const g of guids) {
+			if (this.dead) return;
+			const by = (window.g_universe && window.g_universe.itemsByGuid) || {};
+			const st = by[g];
+			/* a rendered foreign row means the REAL line is in the universe (the
+			 * search loaded it) even though its siblings and children are not —
+			 * so its rguid is the way to its page */
+			const pageGuid = st && st.rguid;
+			if (!pageGuid) continue;
+			if (!pages.has(pageGuid)) pages.set(pageGuid, await this.pageLines(pageGuid).catch(() => null));
+			const pl = pages.get(pageGuid);
+			if (!pl || !pl.byG.has(g)) continue;
+			const c = this.countFromLineItems(pl, g);
+			if (!c) continue;
+			const old = this.progRemembered && this.progRemembered.get(g);
+			if (!old || old.pct !== c.pct || old.label !== c.label) {
+				if (!this.progRemembered) this.loadProgCache();
+				this.progRemembered.set(g, c);
+				changed = true;
+			}
+		}
+		if (changed && !this.dead) { this.saveProgCache(); this.refreshProgressStyle(); }
+	}
+
+	/* countSection's rule, reproduced against PluginLineItems for a page that
+	 * is not in the universe. Returns null when the line should carry no bar. */
+	countFromLineItems(pl, guid) {
+		const rawOf = (x) => { try { return x._getItem ? x._getItem() : null; } catch (e) { return null; } };
+		const kidsOf = new Map();
+		for (const x of pl.all) {
+			const raw = rawOf(x);
+			if (!raw || raw.dlt) continue;
+			const p = raw.pguid;
+			if (!p) continue;
+			if (!kidsOf.has(p)) kidsOf.set(p, []);
+			kidsOf.get(p).push(x);
+		}
+		/* getType() comes back EMPTY on handles from getLineItems (measured
+		 * 2026-08-10 — it silently made every child count as a non-task, so
+		 * every backfilled count was 0 and no bar was ever produced). The raw
+		 * row carries the real type. */
+		const typeOf = (x) => {
+			const raw = rawOf(x);
+			if (raw && typeof raw.type === 'string' && raw.type) return raw.type;
+			try { return x.getType ? x.getType() : ''; } catch (e) { return ''; }
+		};
+		const barOn = (x) => {
+			const raw = rawOf(x);
+			const v = raw && raw.mp && raw.mp.rs_prog;
+			if (v === '1' || v === 1 || v === true) return true;
+			if (v === '' || v === 0 || v === false) return false;
+			if (!(kidsOf.get(x.guid) || []).length) return false;
+			return typeOf(x) === 'heading' ? !!this.progressGlobal : (typeOf(x) === 'task' ? !!this.progressTodos : false);
+		};
+		const walk = (g, depth) => {
+			let total = 0; let done = 0;
+			for (const k of (kidsOf.get(g) || [])) {
+				if (typeOf(k) === 'task') {
+					total++;
+					let s = null;
+					try { s = k.getTaskStatus ? k.getTaskStatus() : null; } catch (e) {}
+					if (s === 'done' || s === 'canceled') done++;
+				}
+				if (depth < 12 && barOn(k)) {
+					const sub = walk(k.guid, depth + 1);
+					total += sub.total; done += sub.done;
+				}
+			}
+			return { total, done };
+		};
+		const me = pl.byG.get(guid);
+		if (!me || !barOn(me)) return null;
+		const { total, done } = walk(guid, 0);
+		if (!total) return null;
+		return { pct: Math.round((done / total) * 100), label: done + '/' + total };
+	}
+
 	/* One stylesheet, guid-keyed, no nodes in lines (golden rule 2). The
 	 * heading row is in NORMAL FLOW — measured live 2026-08-10: padding on it
 	 * pushes the following rows down by exactly that much — so the bar gets
@@ -3713,6 +3860,9 @@ class Plugin extends AppPlugin {
 			if (!this.effectiveProgress(st) || !this.countSection(st, 0).total) this.progForget(g);
 		}
 		this.progRemember(counts);
+		/* the lines that actually DREW a bar this pass — the ⋯ chip follows
+		 * this set, so a bar always has a menu behind it (see refreshOrderButtons) */
+		this.progLit = new Set(counts.keys());
 		/* THE SAME BAR ON EVERY OTHER SURFACE THAT RENDERS THE LINE.
 		 * A live-search hit and a transclusion draw the line under a DIFFERENT
 		 * data-guid, so a stylesheet keyed on the real guid misses them (his
@@ -3731,12 +3881,16 @@ class Plugin extends AppPlugin {
 		 * in itemsByGuid — so there was nothing to count and no rule was ever
 		 * emitted. Reproduced with the page shut: itemsByGuid empty, zero rules. */
 		const countOf = (g) => counts.get(g) || (this.progRemembered && this.progRemembered.get(g)) || null;
+		/* targets rendered on a foreign surface that we hold NO count for: their
+		 * page is closed, so they get counted through the SDK — see progBackfill */
+		const unknown = new Set();
 		const alias = [];
 		for (const g in byGuid) {
 			const st = byGuid[g];
 			if (!st || st.is_trashed || st.is_deleted) continue;
 			const ref = st.props && st.props.itemref;
-			if (ref && countOf(ref)) alias.push([g, ref]);
+			if (!ref) continue;
+			if (countOf(ref)) alias.push([g, ref]); else unknown.add(ref);
 		}
 		try {
 			for (const lv of (window.g_universe && window.g_universe.listviews) || []) {
@@ -3746,7 +3900,8 @@ class Plugin extends AppPlugin {
 					for (const vg in map) {
 						const st = map[vg] && map[vg].state;
 						const ref = st && st.props && st.props.itemref;
-						if (ref && countOf(ref)) alias.push([vg, ref]);
+						if (!ref) continue;
+						if (countOf(ref)) alias.push([vg, ref]); else unknown.add(ref);
 					}
 				}
 			}
@@ -3772,11 +3927,21 @@ class Plugin extends AppPlugin {
 				if (!dg || seenAlias.has(dg) || counts.has(dg)) continue;
 				const chips = el.querySelectorAll('line-button.lineitem-lineref[data-guid]');
 				const ref = chips.length ? chips[chips.length - 1].getAttribute('data-guid') : null;
-				if (!ref || ref === dg || !countOf(ref)) continue;
+				if (!ref || ref === dg) continue;
+				if (!countOf(ref)) { unknown.add(ref); continue; }
 				seenAlias.add(dg);
 				alias.push([dg, ref]);
 			}
 		} catch (e) {}
+		/* the Tasks view names its lines directly, so an unbarred row there is
+		 * another line whose page is shut */
+		try {
+			for (const el of document.querySelectorAll('.tasks-view-row[data-guid]')) {
+				const g = el.getAttribute('data-guid');
+				if (g && !countOf(g)) unknown.add(g);
+			}
+		} catch (e) {}
+		if (unknown.size) this.progBackfill(unknown);
 		for (const [dg, ref] of alias) {
 			const c2 = countOf(ref);
 			let off = this.progOffsets && this.progOffsets.has(dg) ? this.progOffsets.get(dg) : 0;
@@ -4222,13 +4387,15 @@ class Plugin extends AppPlugin {
 			for (const g in byGuid) {
 				const st = byGuid[g];
 				if (!st || st.is_trashed || st.is_deleted) continue;
-				/* the chip shows for an EXPLICIT ordering conf, and — since
-				 * v1.5.1 — for a heading whose progress bar was switched on
-				 * explicitly: without it, turning the bar on from the palette
-				 * left no way back into the menu to turn it off (his report).
-				 * Still never for headings that merely inherit the global
-				 * switches, or a chip would sprout on every heading. */
-				if (!this.orderConfOf(st) && this.progConfOf(st) !== true) continue;
+				/* The chip shows for an EXPLICIT ordering conf, and for any line
+				 * that is actually SHOWING a progress bar — however the bar got
+				 * there. It used to require an explicit `rs_prog`, so the moment
+				 * the global switches lit a line there was no way into its menu
+				 * to switch that one off (his report, 2026-08-10). `progLit` is
+				 * the set refreshProgressStyle actually drew, so the chip
+				 * follows the bar exactly: a heading with no tasks under it has
+				 * no bar and still gets no chip. */
+				if (!this.orderConfOf(st) && !(this.progLit && this.progLit.has(g))) continue;
 				this.orderGuidCache.push(g);
 			}
 		}
