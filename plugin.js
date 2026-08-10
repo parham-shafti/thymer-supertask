@@ -1401,12 +1401,14 @@ class Plugin extends AppPlugin {
 				/* its own frame, first — it belongs to no other section and was
 				 * unfindable buried under Task Status Settings (his report).
 				 * No keycap column here: there is no shortcut to show, and the
-				 * empty chip read as a stray rule. */
+				 * empty chip read as a stray rule. The copy says HEADING only:
+				 * this switch never lights todos, those stay per-item (he
+				 * caught the earlier wording promising both). */
 				+ '<div class="rs-p-secbox rs-p-secbox-plain">'
 				+ '<label class="rs-p-row rs-p-switch">'
 				+ '<input type="checkbox" class="rs-pg"' + (this.progressGlobal ? ' checked' : '') + '>'
 				+ '<span class="rs-p-name">Global Progress bar</span></label>'
-				+ '<p class="rs-p-sub rs-p-secsub">A bar under every heading or todo, counting the tasks below it. '
+				+ '<p class="rs-p-sub rs-p-secsub">A bar under every heading, counting the tasks below it. '
 				+ 'A section’s ⋯ menu, or “Supertask: Progress Bar” on the caret’s section, always overrides this.</p>'
 				+ '</div>'
 				+ '<div class="rs-p-secbox">' + sec('ordering', 'Task Status Settings') + orderingBody + '</div>'
