@@ -3543,7 +3543,10 @@ class Plugin extends AppPlugin {
 			 * currently rendered keep the last known offset. */
 			let off = this.progOffsets && this.progOffsets.has(g) ? this.progOffsets.get(g) : 0;
 			const el = document.querySelector('.listitem[data-guid="' + g + '"]');
-			const tx = el && el.querySelector('span.lineitem-text, .line-div');
+			/* the row's VISUAL start: a task begins at its checkbox, a heading
+			 * at its text (his call — the bar lines up with the line itself,
+			 * not with the words after the box) */
+			const tx = el && (el.querySelector('.line-check-div') || el.querySelector('span.lineitem-text, .line-div'));
 			if (el && tx) {
 				const d = Math.round(tx.getBoundingClientRect().left - el.getBoundingClientRect().left);
 				if (d >= 0 && d < 600) { off = d; if (this.progOffsets) this.progOffsets.set(g, d); }
@@ -3558,7 +3561,7 @@ class Plugin extends AppPlugin {
 				+ rows.map((r) => r.sel + '::before').join(',')
 				+ '{content:"";position:absolute;bottom:5px;width:200px;height:5px;border-radius:3px;pointer-events:none}\n'
 				+ rows.map((r) => r.sel + '::after').join(',')
-				+ '{position:absolute;bottom:1px;letter-spacing:-.04em;font-size:var(--text-size-smaller,11px);opacity:.45;pointer-events:none;font-weight:400}\n';
+				+ '{position:absolute;bottom:0;height:15px;line-height:15px;letter-spacing:-.04em;font-size:var(--text-size-smaller,11px);opacity:.45;pointer-events:none;font-weight:400}\n';
 			for (const r of rows) {
 				css += r.sel + '::before{left:' + (r.off + 2) + 'px;background:linear-gradient(to right,'
 					+ 'color-mix(in srgb, var(--color-primary-500, #3aa37f) 80%, var(--text-color)) 0 ' + r.pct + '%,'
