@@ -4741,7 +4741,10 @@ class Plugin extends AppPlugin {
 		const nameSel = pop.querySelector('.rs-name');
 		const paintName = () => {
 			nameRow.style.display = selVal(trailSel) === 'f' ? '' : 'none';
-			nameSel.querySelector('.rs-sel-lbl').textContent = this.nameTpl || 'Off';
+			/* the chip says "Custom", never the raw template (his call — the
+			 * template is token soup in a chip this small; the popover shows
+			 * the real thing). A bare {title} is Off. */
+			nameSel.querySelector('.rs-sel-lbl').textContent = this.nameTpl ? 'Custom' : 'Off';
 			this.fit(pop);
 		};
 		nameSel.addEventListener('click', () => {
@@ -5017,11 +5020,24 @@ class Plugin extends AppPlugin {
 			const row = e.target.closest('.rs-tokrow');
 			if (!row) return;
 			const tok = row.getAttribute('data-t');
-			const a = input.selectionStart == null ? input.value.length : input.selectionStart;
-			const b = input.selectionEnd == null ? a : input.selectionEnd;
-			input.value = input.value.slice(0, a) + tok + input.value.slice(b);
+			let caret;
+			if (input.value.indexOf(tok) >= 0) {
+				/* the chips are TOGGLES (his call): a token already in the
+				 * template is REMOVED on click — every occurrence, so a
+				 * hand-typed {week}{week}{week} heals in one click — and a
+				 * dangling separator left at the end is tidied away */
+				input.value = input.value.split(tok).join('')
+					.replace(/\s{2,}/g, ' ')
+					.replace(/[\s\-–—·:,.]+$/, '');
+				caret = input.value.length;
+			} else {
+				const a = input.selectionStart == null ? input.value.length : input.selectionStart;
+				const b = input.selectionEnd == null ? a : input.selectionEnd;
+				input.value = input.value.slice(0, a) + tok + input.value.slice(b);
+				caret = a + tok.length;
+			}
 			input.focus();
-			input.setSelectionRange(a + tok.length, a + tok.length);
+			input.setSelectionRange(caret, caret);
 			input.dispatchEvent(new Event('input'));
 			/* re-assert on the next frame — syncCustom's repaint can steal it */
 			requestAnimationFrame(() => { if (document.body.contains(box)) input.focus(); });

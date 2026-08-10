@@ -22,6 +22,11 @@ First public release.
   - **Completed copies stay** — the ticked task stays done right where it stood (it is the history, backlinks intact) and a fresh copy carries the repeat forward on the next date.
   - **Lay out all occurrences** — with an Until date, every future occurrence is created up front as a real todo or page (Expenses with a repeat become visible months ahead for budgeting). The series is remembered: shorten the Until and superfluous copies are removed, extend it and the missing ones are laid out — completed copies are history and are never touched. Ticking an occurrence just completes it; nothing advances. Capped at 100 copies.
 
+## v1.4.4 — 2026-08-10 (unreleased)
+
+- **The token chips are toggles**: clicking a token already in the template removes it (every occurrence, so a hand-typed `{week}{week}{week}` heals in one click) and tidies a dangling separator; clicking an unused one inserts it at the caret. No duplicates possible from the chips.
+- The Name Copies chip in the box reads **"Custom"** when a template is set — the raw token string never squeezes into the chip.
+
 ## v1.4.3 — 2026-08-10 (unreleased)
 
 - **Name Copies opens ready to go**: the field starts with `{title}` pre-picked (its chip lit in the accent), so you only add your suffix — a bare `{title}` still counts as Off. Every token used in the template keeps its chip lit.
