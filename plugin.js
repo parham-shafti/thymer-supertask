@@ -542,6 +542,10 @@ const CSS = `
 }
 /* the Name Copies popover: template field + token hint + live preview */
 .rs-namepop { padding: 11px 12px; width: 318px; }
+/* the standalone switch frame: no fold header, so it needs its own inset */
+.rs-p-secbox-plain { padding: 4px 12px 2px; }
+.rs-p-secbox-plain .rs-p-row { border: 0; }
+.rs-p-secbox-plain .rs-p-secsub { margin: 0 0 8px; }
 /* PROGRESS BAR COLOURS, theme-scoped so no JS is involved. The fill no
  * longer mixes with --text-color: that mix BRIGHTENED the accent on dark
  * themes and darkened it on light ones (measured: fill luma 180 in dark),
@@ -555,7 +559,10 @@ const CSS = `
 }
 html.is-dark {
 	--rs-prog-fill: color-mix(in srgb, var(--color-primary-500, #3aa37f) 85%, #000);
-	--rs-prog-track: color-mix(in srgb, var(--text-color) 7%, transparent);
+	/* the track stays at the original 16%: variant D's 7% took the unfilled
+	 * half almost down to the page background and it stopped reading as a
+	 * bar at all (his report). Only the FILL was meant to get darker. */
+	--rs-prog-track: color-mix(in srgb, var(--text-color) 16%, transparent);
 }
 .rs-namepop input {
 	width: 100%; box-sizing: border-box;
@@ -1388,16 +1395,20 @@ class Plugin extends AppPlugin {
 						+ '<span class="rs-p-ic ti ' + b.icon + '"></span>'
 						+ '<span class="rs-p-name">' + b.label + '</span></label>';
 				}).join('')
-				+ '</div>'
-				+ '<p class="rs-p-sub rs-p-secsub">A progress bar under every heading, counting the tasks below it at any depth. '
-				+ 'A section’s ⋯ menu, or “Supertask: Progress Bar” on the caret’s section, always overrides this.</p>'
-				+ '<div class="rs-p-list">'
-				+ '<label class="rs-p-row rs-p-switch"><span class="rs-p-key"><span class="ti ti-progress"></span></span>'
-				+ '<input type="checkbox" class="rs-pg"' + (this.progressGlobal ? ' checked' : '') + '>'
-				+ '<span class="rs-p-name">Progress bars on every heading</span></label>'
 				+ '</div>';
 			panel.innerHTML = '<button type="button" class="rs-p-close ti ti-x"></button>'
 				+ '<h1>Supertask Settings</h1>'
+				/* its own frame, first — it belongs to no other section and was
+				 * unfindable buried under Task Status Settings (his report).
+				 * No keycap column here: there is no shortcut to show, and the
+				 * empty chip read as a stray rule. */
+				+ '<div class="rs-p-secbox rs-p-secbox-plain">'
+				+ '<label class="rs-p-row rs-p-switch">'
+				+ '<input type="checkbox" class="rs-pg"' + (this.progressGlobal ? ' checked' : '') + '>'
+				+ '<span class="rs-p-name">Global Progress bar</span></label>'
+				+ '<p class="rs-p-sub rs-p-secsub">A bar under every heading or todo, counting the tasks below it. '
+				+ 'A section’s ⋯ menu, or “Supertask: Progress Bar” on the caret’s section, always overrides this.</p>'
+				+ '</div>'
 				+ '<div class="rs-p-secbox">' + sec('ordering', 'Task Status Settings') + orderingBody + '</div>'
 				+ '<div class="rs-p-secbox">'
 				+ sec('hashtags', 'Hashtags Settings',

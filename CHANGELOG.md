@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.5.2 — 2026-08-10
+
+- Progress bars: the unfilled part of the bar is readable again on dark themes. v1.5.1 darkened both halves; only the filled half was meant to change.
+- The global progress-bar switch has its own box at the top of Settings, named **Global Progress bar** — it was buried inside Task Status Settings.
+
 ## v1.5.1 — 2026-08-10
 
 - Progress bars sit **darker in dark themes**, against an almost-black track. The fill now follows your accent colour directly; it used to be mixed with the text colour, which brightened it on dark themes and darkened it on light ones.
