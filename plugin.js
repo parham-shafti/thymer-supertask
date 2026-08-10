@@ -557,13 +557,18 @@ const CSS = `
 	border: 1px solid rgba(127,127,127,.3); border-radius: 4px;
 	padding: 4px 9px; cursor: pointer; white-space: nowrap;
 }
-.rs-namepop .rs-tokrow:hover {
+.rs-namepop .rs-tokrow:hover,
+.rs-namepop .rs-tokrow.is-on {
 	border-color: color-mix(in srgb, var(--color-primary-500, #3aa37f) 60%, var(--text-color, currentColor));
 }
-.rs-namepop .rs-tokrow:hover .rs-tok-t { color: color-mix(in srgb, var(--color-primary-500, #3aa37f) 60%, var(--text-color, currentColor)); }
+.rs-namepop .rs-tokrow:hover .rs-tok-t,
+.rs-namepop .rs-tokrow.is-on .rs-tok-t { color: color-mix(in srgb, var(--color-primary-500, #3aa37f) 60%, var(--text-color, currentColor)); }
 .rs-tok-t { flex: 0 0 auto; }
 .rs-tok-l { opacity: .5; overflow: hidden; text-overflow: ellipsis; }
-.rs-name-prev { font-size: 12px; opacity: .8; margin-top: 7px; }
+.rs-name-off { font-size: 11px; opacity: .45; margin-top: 9px; }
+/* the live preview sits UNDER THE FIELD (his mock), one example on the
+ * generic "Title of Page" stand-in; the chips grid follows it */
+.rs-name-prev { font-size: 12px; opacity: .7; margin-bottom: 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rs-name .rs-sel-lbl { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* HIS DRAWN SPEC (2026-08-09), with the plugin owning EVERY dimension —
  * the app's compact-picker cells carry fixed sizes and a fixed grid height
@@ -4954,10 +4959,10 @@ class Plugin extends AppPlugin {
 		];
 		box.innerHTML = '<input type="text" spellcheck="false" placeholder="{title} – {month}">'
 			+ '<div class="rs-name-sep"></div>'
+			+ '<div class="rs-name-prev"></div>'
 			+ '<div class="rs-name-hint">' + TOKENS.map(([t2, l2]) =>
 				'<div class="rs-tokrow" data-t="' + t2 + '"><span class="rs-tok-t">' + t2 + '</span><span class="rs-tok-l">' + l2 + '</span></div>').join('') + '</div>'
-			+ '<div class="rs-name-sep"></div>'
-			+ '<div class="rs-name-prev"></div>';
+			+ '<div class="rs-name-off">Off - copies keep the original’s name</div>';
 		document.body.appendChild(box);
 		this.shieldKeys(box);
 		const r = anchorEl.getBoundingClientRect();
@@ -4966,27 +4971,37 @@ class Plugin extends AppPlugin {
 		box.style.left = Math.max(8, Math.min(r.left, window.innerWidth - box.offsetWidth - 8)) + 'px';
 		this.repMenu = box;
 		const input = box.querySelector('input');
-		input.value = this.nameTpl || '';
+		/* {title} starts pre-picked (his mock): the field opens with it so the
+		 * user only adds their suffix. A bare {title} still MEANS Off — copies
+		 * named exactly like the original are no template at all. */
+		input.value = this.nameTpl || '{title}';
 		this.reclaimFocus(input, box);
 		const prev = box.querySelector('.rs-name-prev');
 		const preview = () => {
 			const tpl = input.value.trim();
-			if (!tpl) { prev.textContent = 'Off — copies keep the original’s name'; return; }
+			/* active chips keep the accent (his call): every token present in
+			 * the template stays lit */
+			box.querySelectorAll('.rs-tokrow').forEach((row) => {
+				row.classList.toggle('is-on', !!row.getAttribute('data-t') && tpl.indexOf(row.getAttribute('data-t')) >= 0);
+			});
+			if (!tpl) { prev.textContent = '—'; return; }
 			const rule = this.rule || { f: 'd', n: 1 };
 			const sp2 = (this.sel || new DateTime(new Date())).getParts();
 			let anchor;
 			if (sp2.year !== undefined) anchor = sp2.year * 10000 + (sp2.month + 1) * 100 + sp2.day;
 			else { const nd = new Date(); anchor = nd.getFullYear() * 10000 + (nd.getMonth() + 1) * 100 + nd.getDate(); }
-			const base = this.nameBase || 'Title';
-			let o2 = 0, o3 = 0;
+			let o2 = 0;
 			try {
-				if (rule.from !== 'c') { o2 = recurNext({ ...rule, a: anchor }, anchor); o3 = o2 ? recurNext({ ...rule, a: anchor }, o2) : 0; }
+				if (rule.from !== 'c') o2 = recurNext({ ...rule, a: anchor }, anchor);
 			} catch (e) {}
-			if (!o2 || !o3) { o2 = recurAddInterval(anchor, rule.f || 'd', rule.n || 1); o3 = recurAddInterval(o2, rule.f || 'd', rule.n || 1); }
-			prev.textContent = recurCopyName(tpl, base, o2, 2) + ',  ' + recurCopyName(tpl, base, o3, 3) + ', …';
+			if (!o2) o2 = recurAddInterval(anchor, rule.f || 'd', rule.n || 1);
+			/* ONE example, on a GENERIC stand-in title (his call: real titles
+			 * can be long and would break the popover again) */
+			prev.textContent = recurCopyName(tpl, 'Title of Page', o2, 2);
 		};
 		input.addEventListener('input', () => {
-			this.nameTpl = input.value.trim() || null;
+			const v = input.value.trim();
+			this.nameTpl = !v || v === '{title}' ? null : v;
 			preview();
 			onChange();
 		});
