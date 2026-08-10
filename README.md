@@ -77,7 +77,7 @@ Pages repeat too. Open the date box on a page — from a collection view, a page
 
 When that value lands on the page, the date advances and the status resets. Your last choices are remembered per collection, so the second page in a collection opens pre-filled.
 
-![A repeating page laying out its occurrences](assets/repeating-pages.gif)
+![Setting a repeat on a page and marking it done](assets/pages-repeat.gif)
 
 ## Leave a trail
 
@@ -90,6 +90,10 @@ A repeating task normally moves forward and leaves nothing behind. Two other sha
 - **All Occurrences** — the whole series is laid out up front as real tasks or real pages, so twelve months of rent are visible (and summable) today. Needs an End Repeat, and is capped at 100. The series stays reconciled: shorten the end date and the surplus copies go, extend it and the missing ones appear. Completed copies are history and are never touched. Editing the rule from *any* copy edits the whole series, so you never have to hunt for the original.
 
 ![Laying out every occurrence of a task](assets/trail-tasks.gif)
+
+The same on pages — a year of a repeating expense, laid out and summed up front:
+
+![Laying out every occurrence of a page](assets/trail-pages-all.gif)
 
 ### Name Copies
 
