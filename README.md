@@ -65,6 +65,46 @@ Tick a repeating task and it un-ticks itself and moves to the next occurrence. T
 
 The rule rides on the line as an invisible property, so an existing todo can be made repeating without retyping it, and the visible text stays yours. Repeating lines carry a small repeat glyph in front of their date chip, and date ranges move as a block, so "Mon–Fri every week" stays five days long.
 
+**End Repeat** bounds the series: never, after *n* times, or on a date you pick from a small calendar.
+
+## Repeating pages
+
+Pages repeat too. Open the date box on a page — from a collection view, a page reference or a live search — and the Custom panel gains the wiring a page needs, because every collection names its fields differently:
+
+- **Date Field** — which date the rule drives (`Due Date`, `Deadline`, whatever yours is called)
+- **Done When … Is Set To** — the status field and the value that means finished
+- **Then Reset To** — what that status becomes after the page moves on, or cleared
+
+When that value lands on the page, the date advances and the status resets. Your last choices are remembered per collection, so the second page in a collection opens pre-filled.
+
+![A repeating page laying out its occurrences](assets/trail-pages.gif)
+
+## Leave a trail
+
+A repeating task normally moves forward and leaves nothing behind. Two other shapes, chosen in Custom:
+
+- **Keep Done Copies** — tick it and the finished task stays put with its date, backlinks and history intact, while a fresh copy carries the repeat to the next occurrence. Your log writes itself.
+
+![Keeping a trail of completed copies](assets/trail-keep-done.gif)
+
+- **All Occurrences** — the whole series is laid out up front as real tasks or real pages, so twelve months of rent are visible (and summable) today. Needs an End Repeat, and is capped at 100. The series stays reconciled: shorten the end date and the surplus copies go, extend it and the missing ones appear. Completed copies are history and are never touched. Editing the rule from *any* copy edits the whole series, so you never have to hunt for the original.
+
+![Laying out every occurrence of a task](assets/trail-tasks.gif)
+
+### Name Copies
+
+Identical copies are hard to tell apart, so laid-out occurrences can name themselves from a template. `{title}` starts pre-picked; click a token to add it, click it again to remove it.
+
+| Token | Renders |
+|---|---|
+| `{title}` | the original's name |
+| `{n}` | occurrence number (the original is #1) |
+| `{month}` / `{mon}` | `August` / `Aug` |
+| `{date}` / `{day}` | `14 Aug` / `14` |
+| `{week}` / `{year}` | ISO week / `2026` |
+
+Everything else in the template is literal text, so the separator is yours: `{title} – {month}` gives *Rent – September*, *Rent – October*; `{title} v.{n}` gives *Rent v.2*, *Rent v.3*. The original always keeps its own name — that is how you spot it — and renaming it later never ripples into the series.
+
 ## Settings
 
 `Supertask: Settings` in the command palette. **Task Status Settings** lists the `⌃`-digit shortcuts and the global grouping choices; **Hashtags Settings** defines your `⌘`-digit hashtags — the row is the key, and each row takes a title (shown on roofs and in menus) plus the hashtag that lands on the line.
@@ -80,7 +120,7 @@ thymer plugin update code <plugin-guid> --file plugin.js -w <workspace-guid>
 ## Notes
 
 - Statuses, dates and moves go through Thymer's own APIs, so everything syncs and collaborates like hand-made edits.
-- The recurrence and hashtag engines are covered by offline test suites (`node test-recurrence.mjs`, 38 cases; `node test-timeblock.mjs`, 14 cases) that extract the shipped code verbatim, so tests and plugin cannot drift.
+- The recurrence and hashtag engines are covered by offline test suites (`node test-recurrence.mjs`, 60 cases; `node test-timeblock.mjs`, 14 cases) that extract the shipped code verbatim, so tests and plugin cannot drift.
 
 ## License
 
