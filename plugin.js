@@ -826,6 +826,8 @@ class Plugin extends AppPlugin {
 		 * and backs readRule so the picker cannot show "Never" for a line we
 		 * KNOW carries a rule — committing from that lie would wipe the rule. */
 		this.recurKnown = new Map();
+		this.progKnown = new Map();
+		this.progOffsets = new Map();
 		/* guid → {to, at}: the last advance we performed. Third layer of the
 		 * no-double-advance defence (with the recurBusy burst guard and the
 		 * status re-check): a replayed done-event whose line already sits on
@@ -850,6 +852,8 @@ class Plugin extends AppPlugin {
 		 * the ticked statuses ARE the switch; a separate master toggle read
 		 * as "select all" and was dropped (his 0.16.3 report). */
 		this.globalBins = [];
+		/* global default for the per-heading progress bar (rs_prefs.progress) */
+		this.progressGlobal = false;
 		/* PAGE RECURRENCE rules, keyed by record guid — records have no meta-
 		 * property API in the sandbox (bundle-verified), so the rules live in
 		 * the plugin's synced config (custom.rs_prefs.pageRules) with the
@@ -956,6 +960,11 @@ class Plugin extends AppPlugin {
 		document.head.appendChild(this.binStyle);
 		this.refreshBinStyle();
 
+		/* per-heading progress bars, same guid-keyed stylesheet discipline */
+		this.progStyle = document.createElement('style');
+		document.head.appendChild(this.progStyle);
+		this.refreshProgressStyle();
+
 		/* Rows appearing OUTSIDE lineitem.updated — a live search rendering its
 		 * virtual rows, a page opening — need a repeat-style rebuild too, or the
 		 * glyph never shows there. The observer only ever regenerates our own
@@ -1043,6 +1052,11 @@ class Plugin extends AppPlugin {
 			icon: 'ti-tags',
 			onSelected: () => this.openSettings(),
 		});
+		this.cmdProg = this.ui.addCommandPaletteCommand({
+			label: 'Supertask: Progress Bar',
+			icon: 'ti-progress',
+			onSelected: () => this.toggleProgress().catch(() => {}),
+		});
 		this.cmd5 = this.ui.addCommandPaletteCommand({
 			label: 'Supertask: Group by Status',
 			icon: 'ti-list-search',
@@ -1083,6 +1097,8 @@ class Plugin extends AppPlugin {
 		try { if (this.domObserver) this.domObserver.disconnect(); } catch (e) {}
 		this.domObserver = null;
 		this.recurKnown = null;
+		this.progKnown = null;
+		this.progOffsets = null;
 		this.lastAdvance = null;
 		this.orderKnown = null;
 		this.binKnown = null;
@@ -1090,6 +1106,8 @@ class Plugin extends AppPlugin {
 		this.repStyle = null;
 		try { if (this.binStyle) this.binStyle.remove(); } catch (e) {}
 		this.binStyle = null;
+		try { if (this.progStyle) this.progStyle.remove(); } catch (e) {}
+		this.progStyle = null;
 		if (this.hotkeyHandler) {
 			window.removeEventListener('keydown', this.hotkeyHandler, true);
 			this.hotkeyHandler = null;
@@ -1222,6 +1240,7 @@ class Plugin extends AppPlugin {
 		if (Array.isArray(p.slots)) this.applySlots(p.slots);
 		/* older prefs carried a `sweep` field — obsolete since ordering moved
 		 * to per-heading rs_order meta; ignored on read */
+		if (typeof p.progress === 'boolean') this.progressGlobal = p.progress;
 		if (Array.isArray(p.globalBins)) {
 			this.globalBins = p.globalBins.filter((k) => ORDER_BINS.some((b) => b.key === k));
 		}
@@ -1249,7 +1268,7 @@ class Plugin extends AppPlugin {
 	 * write-through to config for other devices. NOTE: saveConfiguration
 	 * reloads the plugin, so this is always the LAST thing an interaction does. */
 	async savePrefs() {
-		const p = { rev: Date.now(), slots: this.tbSlots, globalBins: (this.globalBins || []).slice(), pageRules: this.pageRules || {}, pageDefaults: this.pageDefaults || {} };
+		const p = { rev: Date.now(), slots: this.tbSlots, globalBins: (this.globalBins || []).slice(), progress: !!this.progressGlobal, pageRules: this.pageRules || {}, pageDefaults: this.pageDefaults || {} };
 		this.prefsRev = p.rev;
 		try { localStorage.setItem('rs_prefs', JSON.stringify(p)); } catch (e) {}
 		try {
@@ -1346,6 +1365,13 @@ class Plugin extends AppPlugin {
 						+ '<span class="rs-p-ic ti ' + b.icon + '"></span>'
 						+ '<span class="rs-p-name">' + b.label + '</span></label>';
 				}).join('')
+				+ '</div>'
+				+ '<p class="rs-p-sub rs-p-secsub">A progress bar under every heading, counting the tasks below it at any depth. '
+				+ 'A section’s ⋯ menu, or “Supertask: Progress Bar” on the caret’s section, always overrides this.</p>'
+				+ '<div class="rs-p-list">'
+				+ '<label class="rs-p-row rs-p-switch"><span class="rs-p-key"><span class="ti ti-progress"></span></span>'
+				+ '<input type="checkbox" class="rs-pg"' + (this.progressGlobal ? ' checked' : '') + '>'
+				+ '<span class="rs-p-name">Progress bars on every heading</span></label>'
 				+ '</div>';
 			panel.innerHTML = '<button type="button" class="rs-p-close ti ti-x"></button>'
 				+ '<h1>Supertask Settings</h1>'
@@ -1396,6 +1422,11 @@ class Plugin extends AppPlugin {
 		});
 		panel.addEventListener('change', (e) => {
 			const cl = e.target.classList;
+			if (cl && cl.contains('rs-pg')) {
+				this.progressGlobal = !!e.target.checked;
+				this.refreshProgressStyle();
+				dirty = true;
+			}
 			if (cl && cl.contains('rs-gb')) {
 				const key = e.target.getAttribute('data-k');
 				const cur = (this.globalBins || []).slice();
@@ -2733,6 +2764,7 @@ class Plugin extends AppPlugin {
 			if (this.dead) return;
 			this.refreshRepeatStyle();
 			this.refreshBinStyle();
+			this.refreshProgressStyle();
 			this.refreshOrderButtons(); /* same cycle: rows just (re)rendered */
 			this.arrivalScan();
 			this.drainDeferredArrivals();
@@ -3410,6 +3442,142 @@ class Plugin extends AppPlugin {
 	 * `top: 0.13em` (= 2px there, scales with the heading size) zeroed the
 	 * icon-vs-text ink centres to the pixel. Guid-keyed rules in a plugin-
 	 * owned stylesheet — never a touched line. */
+	// ---- progress bars --------------------------------------------------------
+	/* A heading can carry a progress bar for the tasks beneath it (his ask
+	 * 2026-08-10). Opt-in per section via `rs_prog` meta on the heading, or
+	 * globally via rs_prefs.progress; an explicit '' tombstone beats the
+	 * global switch, exactly like rs_order. Session cache for the documented
+	 * transient props loss on the writing client. */
+	progConfOf(st) {
+		const raw = st && st.props && st.props.rs_prog;
+		if (raw === undefined || raw === null) {
+			return st && st.guid && this.progKnown && this.progKnown.has(st.guid) ? this.progKnown.get(st.guid) : undefined;
+		}
+		const on = raw === '1' || raw === 1 || raw === true;
+		if (st.guid && this.progKnown) this.progKnown.set(st.guid, on);
+		return on;
+	}
+
+	/* A bar can sit on a HEADING or on a TASK that has children (his 2026-08-10
+	 * refinement: a sub-task list gets its own bar and the parent then rolls it
+	 * up). Our own collector roofs never qualify. The global switch only ever
+	 * lights up HEADINGS — a bar on every parent task would be noise, so task
+	 * bars stay explicit opt-in. */
+	canHaveProgress(st) {
+		if (!st || st.is_trashed || st.is_deleted || st.is_virtual) return false;
+		if (st.type === 'heading') return !this.binKeyOf(st);
+		return st.type === 'task' && !!(st.children || []).length;
+	}
+
+	effectiveProgress(st) {
+		if (!this.canHaveProgress(st)) return false;
+		const explicit = this.progConfOf(st);
+		if (explicit !== undefined) return explicit;
+		return st.type === 'heading' ? !!this.progressGlobal : false;
+	}
+
+	/* DIRECT children only (his 2026-08-10 correction) — a nested checklist
+	 * is its own business and must not inflate the parent. The exception is a
+	 * child that carries its OWN bar: that one is a declared group, so its
+	 * numbers accumulate upward. Our collector roofs always fold in, since
+	 * they hold the section's own tasks, just re-filed. Status is
+	 * read from `props.done`, the completion_state number — VERIFIED live
+	 * 2026-08-10: 0 none, 1 started, 2 blocked, 3 billable, 4 important,
+	 * 5 discuss, 6 alert, 7 starred, 8 done, 9 canceled. (The v1.4.1 note
+	 * that props.done "reads 0 in practice" was about the writing client's
+	 * transient props loss, not about the field being wrong; a stale count
+	 * self-heals on the next refresh, which is why a bar may read one behind
+	 * for a moment but never stays wrong.) Canceled counts as RESOLVED, so a
+	 * section of nothing-left-to-do reaches 100% — flagged to him. */
+	countSection(st, depth) {
+		let total = 0; let done = 0;
+		for (const k of ((st && st.children) || [])) {
+			if (!k || k.is_trashed || k.is_deleted || k.is_virtual) continue;
+			if (k.type === 'task') {
+				total++;
+				const d = k.props && k.props.done;
+				if (d === 8 || d === 9) done++;
+			}
+			/* a child that carries its OWN bar is a group: roll its numbers up
+			 * into this one. Without a bar of its own its subtree stays its own
+			 * business, so a plain nested checklist does not inflate the parent. */
+			if ((depth || 0) < 12 && this.effectiveProgress(k)) {
+				const sub = this.countSection(k, (depth || 0) + 1);
+				total += sub.total; done += sub.done;
+			}
+		}
+		/* our own collector roofs are not groups the user made — their tasks
+		 * belong to the section, so always fold them in */
+		for (const k of ((st && st.children) || [])) {
+			if (!k || k.is_trashed || k.is_deleted || k.is_virtual) continue;
+			if (k.type === 'heading' && this.binKeyOf(k) && (depth || 0) < 12) {
+				const sub = this.countSection(k, (depth || 0) + 1);
+				total += sub.total; done += sub.done;
+			}
+		}
+		return { total, done };
+	}
+
+	/* One stylesheet, guid-keyed, no nodes in lines (golden rule 2). The
+	 * heading row is in NORMAL FLOW — measured live 2026-08-10: padding on it
+	 * pushes the following rows down by exactly that much — so the bar gets
+	 * its own strip under the title instead of overlapping the first task. */
+	refreshProgressStyle() {
+		if (!this.progStyle) return;
+		const byGuid = (window.g_universe && window.g_universe.itemsByGuid) || {};
+		const rows = [];
+		for (const g in byGuid) {
+			const st = byGuid[g];
+			if (!st || st.is_trashed || st.is_deleted || st.is_virtual) continue;
+			/* headings AND parent tasks; collector roofs are excluded inside
+			 * canHaveProgress (caught live: the Done roof sprouted its own
+			 * "2 / 2" bar right under the section's real one) */
+			if (!this.effectiveProgress(st)) continue;
+			const { total, done } = this.countSection(st, 0);
+			if (!total) continue; /* a heading with no tasks shows nothing */
+			/* INDENT: every row starts at the same x and carries its nesting
+			 * inside (measured live — a level-1 task's text sits +55px, a
+			 * level-2 one +85px), so a bar at a fixed left would run out to
+			 * the far margin under a sub-task. His report. Measure the line's
+			 * own text start and put the bar there; rows that are not
+			 * currently rendered keep the last known offset. */
+			let off = this.progOffsets && this.progOffsets.has(g) ? this.progOffsets.get(g) : 0;
+			const el = document.querySelector('.listitem[data-guid="' + g + '"]');
+			const tx = el && el.querySelector('span.lineitem-text, .line-div');
+			if (el && tx) {
+				const d = Math.round(tx.getBoundingClientRect().left - el.getBoundingClientRect().left);
+				if (d >= 0 && d < 600) { off = d; if (this.progOffsets) this.progOffsets.set(g, d); }
+			}
+			rows.push({ sel: '.listitem[data-guid="' + g + '"]', pct: Math.round((done / total) * 100), label: done + '/' + total, off: off });
+		}
+		let css = '';
+		if (rows.length) {
+			/* shape shared by all of them — ::before/::after appended to EVERY
+			 * selector, never to the joined string (the v0.9.5 trap) */
+			css += rows.map((r) => r.sel).join(',') + '{padding-bottom:15px}\n'
+				+ rows.map((r) => r.sel + '::before').join(',')
+				+ '{content:"";position:absolute;bottom:5px;width:200px;height:5px;border-radius:3px;pointer-events:none}\n'
+				+ rows.map((r) => r.sel + '::after').join(',')
+				+ '{position:absolute;bottom:1px;letter-spacing:-.04em;font-size:var(--text-size-smaller,11px);opacity:.45;pointer-events:none;font-weight:400}\n';
+			for (const r of rows) {
+				css += r.sel + '::before{left:' + (r.off + 2) + 'px;background:linear-gradient(to right,'
+					+ 'color-mix(in srgb, var(--color-primary-500, #3aa37f) 80%, var(--text-color)) 0 ' + r.pct + '%,'
+					+ 'color-mix(in srgb, var(--text-color) 16%, transparent) ' + r.pct + '% 100%)}\n'
+					+ r.sel + '::after{left:' + (r.off + 208) + 'px;content:"' + r.label + '"}\n';
+			}
+		}
+		if (this.progStyle.textContent !== css) this.progStyle.textContent = css;
+	}
+
+	/* Turn the bar on/off for one heading. Meta write only — no line content
+	 * is touched — then repaint. '' is the explicit-off tombstone so the
+	 * global switch cannot switch it back on. */
+	async setProgress(headSt, headLi, on) {
+		if (this.progKnown) this.progKnown.set(headSt.guid, !!on);
+		try { await headLi.setMetaProperty('rs_prog', on ? '1' : ''); } catch (e) {}
+		this.refreshProgressStyle();
+	}
+
 	refreshBinStyle() {
 		if (!this.binStyle) return;
 		const byGuid = (window.g_universe && window.g_universe.itemsByGuid) || {};
@@ -3537,6 +3705,38 @@ class Plugin extends AppPlugin {
 			cur = cur.parent;
 		}
 		return null;
+	}
+
+	/* Palette route to the bar, for headings that carry no ⋯ chip (the chip
+	 * only appears on sections with an explicit ordering conf, so it cannot
+	 * be the only way in). Acts on the caret's section, like the ordering
+	 * commands. */
+	async toggleProgress() {
+		/* The caret's OWN line wins when it is a parent task: that is the only
+		 * way to give a sub-checklist its own bar — and the section above it
+		 * then accumulates those numbers. Otherwise act on the section's
+		 * heading, like the ordering commands. */
+		let st = null; let li = null;
+		const sel = this.lineSelection();
+		if (sel && sel.lineGuid && sel.pageGuid) {
+			const cand = ((window.g_universe && window.g_universe.itemsByGuid) || {})[sel.lineGuid];
+			if (cand && cand.type === 'task' && (cand.children || []).length) {
+				const pl = await this.pageLines(sel.pageGuid);
+				const cli = pl && pl.byG.get(sel.lineGuid);
+				if (cli) { st = cand; li = cli; }
+			}
+		}
+		if (!st) {
+			const t = await this.currentHeading();
+			if (!t) { this.toast('Put the caret under a heading, or on a task with sub-tasks.'); return; }
+			st = t.headSt; li = t.headLi;
+		}
+		const on = !this.effectiveProgress(st);
+		await this.setProgress(st, li, on);
+		const { total, done } = this.countSection(st, 0);
+		this.toast(on
+			? (total ? 'Progress bar on · ' + done + '/' + total : 'Progress bar on — nothing to count yet')
+			: 'Progress bar off');
 	}
 
 	/* The palette commands: presets on the caret's section. Toggling the same
@@ -3835,6 +4035,7 @@ class Plugin extends AppPlugin {
 		 * re-read from props right after our own write can serve the OLD value
 		 * (the transient-props story), which repainted stale state */
 		let conf = this.orderConfOf(headSt) || { m: 'g', k: [] };
+		let progOn = this.effectiveProgress(headSt);
 		const paint = () => {
 			let html = row('data-m="g"', conf.m === 'g' ? 'rs-om-cur' : '', null, 'Group by Status')
 				+ row('data-m="h"', conf.m === 'h' ? 'rs-om-cur' : '', null, 'Group by Hashtags')
@@ -3854,7 +4055,9 @@ class Plugin extends AppPlugin {
 				 * group-mode sibling (his call) */
 				html += row('data-k="done"', conf.k.indexOf('done') >= 0 ? 'rs-on' : '', 'ti-check', 'Done group at the bottom');
 			}
-			html += '<div class="rs-om-sep"></div>' + row('data-k="__off"', '', null, 'Turn off ordering');
+			html += '<div class="rs-om-sep"></div>'
+				+ row('data-k="__prog"', progOn ? 'rs-on' : '', 'ti-progress', 'Progress bar')
+				+ row('data-k="__off"', '', null, 'Turn off ordering');
 			menu.innerHTML = html;
 		};
 		paint();
@@ -3899,6 +4102,13 @@ class Plugin extends AppPlugin {
 			if (!r) return;
 			const m = r.getAttribute('data-m');
 			const k = r.getAttribute('data-k');
+			if (k === '__prog') {
+				progOn = !progOn;
+				paint();
+				const want = progOn;
+				applying = applying.then(() => this.setProgress(headSt, headLi, want)).catch(() => {});
+				return;
+			}
 			if (k === '__off') {
 				close();
 				applying = applying.then(() => this.setOrderConf(t, null)).catch(() => {});
@@ -5241,10 +5451,16 @@ class Plugin extends AppPlugin {
 	 * a black slab on white). Cheap enough to call on every popover open. */
 	refreshMenuColors() {
 		try {
-			const bg = getComputedStyle(document.body).backgroundColor;
-			const m = bg && bg.match(/\d+/g);
-			const lum = m ? (0.2126 * +m[0] + 0.7152 * +m[1] + 0.0722 * +m[2]) : 0;
-			const dark = lum < 128;
+			/* THE DISCRIMINATOR IS THE CLASS, not a sampled colour (live-read
+			 * 2026-08-10). Two traps killed the first attempt: `document.body`
+			 * has NO background at all (`rgba(0,0,0,0)`), so a luminance test
+			 * on it always answered "dark" and the menus stayed dark on light
+			 * themes; and `--cmdpal-bg-color` is `color(display-p3 .129 …)` on
+			 * his dark theme, which no naive digit-parse survives either. The
+			 * app stamps `is-dark` / `is-light` on <html> and reruns it on
+			 * every theme change — that is the signal. */
+			const cl = document.documentElement.classList;
+			const dark = cl.contains('is-dark') || (!cl.contains('is-light') && !!(window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches));
 			document.documentElement.style.setProperty('--rs-menu-bg', dark
 				? '#2A2A31'
 				: 'color-mix(in srgb, var(--cmdpal-bg-color, #fff) 94%, var(--cmdpal-fg-color, #000))');

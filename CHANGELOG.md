@@ -1,10 +1,16 @@
 # Changelog
 
+## v1.5.0 — 2026-08-10
+
+- **Progress bars.** A heading can show a bar for the tasks beneath it, with the count beside it. Opt in per section from its `⋯` menu or with **Supertask: Progress Bar** on the caret's section, or switch it on for every heading in Settings.
+- A heading counts its **direct** tasks. A sub-checklist stays its own business — unless that parent task has a bar of its own, in which case its numbers roll up into the heading too. Put the caret on a task with sub-tasks and run the same command to give it one.
+- Canceled tasks count as resolved, so a section with nothing left to do reaches the end of the bar.
+
 ## v1.4.5 — 2026-08-10
 
-- **Menus follow the theme.** The date box's dropdowns kept their dark surface after a switch to a light theme, because their colours were sampled once when the plugin loaded. They are now recomputed whenever the theme changes and again every time a menu opens.
+- **Menus follow the theme.** The date box's dropdowns kept their dark surface after a switch to a light theme. The theme is now read from the app's own light/dark marker (the previous check sampled a background that is transparent, so it always answered "dark"), rechecked whenever the theme changes and again every time a menu opens.
 - The **unit label** next to the interval ("day", "week") was nearly invisible on light themes; it now takes the box's own text colour.
-- **Repeat rules clean up after themselves.** Trashing a repeating page retires its rule, and its laid-out copies with it, instead of leaving dead entries behind forever.
+- **Repeat rules clean up after themselves.** Trashing a repeating page retires its rule, and its laid-out copies with it.
 
 ## v1.4.4 — 2026-08-10
 
