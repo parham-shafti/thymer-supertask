@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.7.0 — 2026-08-10
+
+- **A sub-task now says so when you meet it away from home.** A todo that lives under another todo reads fine on its own page, where the indentation tells you. In a live search result or in Thymer's Tasks view it arrives with no context at all, so those rows get a small glyph in front of the title. The page itself is left alone: the indentation already carries it there.
+- It works on pages you have never opened, like the progress bars: the parent is looked up in the background when the line's own page is closed.
+
 ## v1.6.0 — 2026-08-10
 
 - **Progress bars follow the line everywhere it is rendered.** A bar switched on for a heading or a parent task now also shows on that line's **live search results**, on **transclusions** of it, and in Thymer's **Tasks view** — same bar, same count, no extra setup.

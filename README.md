@@ -84,6 +84,12 @@ Everything else in the template is literal text, so the separator is yours: `{ti
 
 Keys are matched by physical position, so any keyboard layout works, and the Settings panel shows the chords for your platform. Thymer binds no digit key on any modifier, so the blocks are free in-app. Two OS-level caveats: macOS can claim `⌃`-digits for *Switch to Desktop* when you use multiple Spaces (System Settings → Keyboard → Shortcuts → Mission Control), and some Linux desktops bind `Alt`-digits to window or workspace switching — free the chord in your desktop's keyboard settings if one does nothing.
 
+## Sub-tasks keep their context
+
+A todo that lives under another todo reads fine on its own page, because the indentation tells you. Met in a **live search result** or in Thymer's **Tasks view** it arrives with no context at all, and nothing says it is one step of something bigger.
+
+Those rows get a small glyph in front of the title. Nothing to switch on, and the page itself is left alone, since the indentation already carries it there. Like the progress bars, it works on pages you have never opened.
+
 ## Which date moves
 
 One set of chords covers both halves of a GTD system. The target resolves in this order:

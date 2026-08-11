@@ -862,6 +862,7 @@ class Plugin extends AppPlugin {
 		/* last known bar counts, per client, so the other surfaces can paint
 		 * before the source page is loaded — see loadProgCache */
 		this.loadProgCache();
+		this.loadSubCache();
 		/* guid → {to, at}: the last advance we performed. Third layer of the
 		 * no-double-advance defence (with the recurBusy burst guard and the
 		 * status re-check): a replayed done-event whose line already sits on
@@ -1020,6 +1021,11 @@ class Plugin extends AppPlugin {
 		/* per-heading progress bars, same guid-keyed stylesheet discipline */
 		this.progStyle = document.createElement('style');
 		document.head.appendChild(this.progStyle);
+		/* the sub-task glyph gets its OWN sheet — it changes far less often
+		 * than the counts, and it must not fight the bar for pseudo-elements
+		 * (see loadSubCache). Created before the first refresh, which fills it. */
+		this.subStyle = document.createElement('style');
+		document.head.appendChild(this.subStyle);
 		this.refreshProgressStyle();
 
 		/* Rows appearing OUTSIDE lineitem.updated — a live search rendering its
@@ -1161,12 +1167,16 @@ class Plugin extends AppPlugin {
 		this.progOffsets = null;
 		this.progRemembered = null;
 		this.progLit = null;
+		this.subKnown = null;
+		this.subRemembered = null;
 		this.progTried = null;
 		this.progQueue = null;
 		this.lastAdvance = null;
 		this.orderKnown = null;
 		this.binKnown = null;
 		try { if (this.repStyle) this.repStyle.remove(); } catch (e) {}
+		try { if (this.subStyle) this.subStyle.remove(); } catch (e) {}
+		this.subStyle = null;
 		this.repStyle = null;
 		try { if (this.binStyle) this.binStyle.remove(); } catch (e) {}
 		this.binStyle = null;
@@ -3675,6 +3685,52 @@ class Plugin extends AppPlugin {
 		if (this.progRemembered.delete(g)) this.saveProgCache();
 	}
 
+	/* THE SUB-TASK GLYPH.
+	 * A todo that lives UNDER another todo reads fine on its own page, where
+	 * the indentation says so. Seen in a live search or the Tasks view it
+	 * arrives naked, and you cannot tell it is one step of something bigger
+	 * (his ask, 2026-08-10). So those surfaces get a small tree glyph in front
+	 * of the text. Deliberately NOT shown in the document: the indentation
+	 * already carries it there, and a glyph on every nested todo would be
+	 * noise (his call).
+	 * Same discipline as everything else here: a guid-keyed stylesheet, never
+	 * a node in a line. Persisted like the bar counts, because the answer
+	 * needs the line's PARENT and a foreign surface rarely has the page
+	 * loaded. Only the TRUE answers are stored, which keeps the cache small;
+	 * the false ones are re-derived per session by the same backfill pass. */
+	loadSubCache() {
+		this.subKnown = new Map();      /* session: guid → bool, both answers */
+		this.subRemembered = new Set(); /* persisted: guids that ARE sub-tasks */
+		try {
+			const raw = JSON.parse(localStorage.getItem('rs_subcache') || '[]');
+			if (Array.isArray(raw)) for (const g of raw) if (typeof g === 'string') this.subRemembered.add(g);
+		} catch (e) {}
+	}
+
+	saveSubCache() {
+		if (!this.subRemembered) return;
+		const out = [];
+		for (const g of this.subRemembered) { if (out.length >= 500) break; out.push(g); }
+		const s = JSON.stringify(out);
+		if (s === this.subCacheRaw) return;
+		this.subCacheRaw = s;
+		try { localStorage.setItem('rs_subcache', s); } catch (e) {}
+	}
+
+	subRemember(g, isSub) {
+		if (!this.subKnown) this.loadSubCache();
+		const before = this.subKnown.get(g);
+		if (before === isSub) return;
+		this.subKnown.set(g, isSub);
+		if (isSub) this.subRemembered.add(g); else this.subRemembered.delete(g);
+		this.saveSubCache();
+	}
+
+	isSubtask(g) {
+		if (this.subKnown && this.subKnown.has(g)) return this.subKnown.get(g);
+		return !!(this.subRemembered && this.subRemembered.has(g));
+	}
+
 	/* BACKFILL: count a line whose page nobody has opened.
 	 * The remembered cache only knows lines this device has already counted,
 	 * which is fine for a bar switched on by hand (you were on the page) but
@@ -3739,6 +3795,10 @@ class Plugin extends AppPlugin {
 			if (!pages.has(pageGuid)) pages.set(pageGuid, await this.pageLines(pageGuid).catch(() => null));
 			const pl = pages.get(pageGuid);
 			if (!pl || !pl.byG.has(g)) continue;
+			/* the same page fetch answers the sub-task question, so ask it here
+			 * — and ask it BEFORE the count, because a plain sub-task has no
+			 * children and would otherwise be skipped by the `continue` below */
+			this.subFromLineItems(pl, g);
 			const c = this.countFromLineItems(pl, g);
 			if (!c) continue;
 			const old = this.progRemembered && this.progRemembered.get(g);
@@ -3749,6 +3809,20 @@ class Plugin extends AppPlugin {
 			}
 		}
 		if (changed && !this.dead) { this.saveProgCache(); this.refreshProgressStyle(); }
+	}
+
+	/* Is `guid` a child of a TASK, answered from a fetched page. The raw row
+	 * carries the parent guid (`pguid`) and the real type — `getType()` comes
+	 * back empty on these handles, which is the trap documented in
+	 * countFromLineItems. */
+	subFromLineItems(pl, guid) {
+		const rawOf = (x) => { try { return x._getItem ? x._getItem() : null; } catch (e) { return null; } };
+		const me = pl.byG.get(guid);
+		const raw = me && rawOf(me);
+		if (!raw || raw.type !== 'task') return;
+		const parent = raw.pguid && pl.byG.get(raw.pguid);
+		const praw = parent && rawOf(parent);
+		this.subRemember(guid, !!(praw && praw.type === 'task'));
 	}
 
 	/* countSection's rule, reproduced against PluginLineItems for a page that
@@ -3816,6 +3890,13 @@ class Plugin extends AppPlugin {
 		for (const g in byGuid) {
 			const st = byGuid[g];
 			if (!st || st.is_trashed || st.is_deleted || st.is_virtual) continue;
+			/* Is this todo a SUB-task? Free to answer here for anything loaded.
+			 * `parent_unknown` is the tell that the tree was never fetched (the
+			 * normal state for a line pulled in by a search), and in that case
+			 * `parent` is meaningless — the backfill answers those instead. */
+			if (st.type === 'task' && !st.parent_unknown && st.parent) {
+				this.subRemember(g, st.parent.type === 'task');
+			}
 			/* headings AND parent tasks; collector roofs are excluded inside
 			 * canHaveProgress (caught live: the Done roof sprouted its own
 			 * "2 / 2" bar right under the section's real one) */
@@ -3885,12 +3966,21 @@ class Plugin extends AppPlugin {
 		 * page is closed, so they get counted through the SDK — see progBackfill */
 		const unknown = new Set();
 		const alias = [];
+		/* EVERY foreign row and what it points at, whether or not the target
+		 * has a bar. `alias` is only the barred subset; the sub-task glyph
+		 * needs all of them, because a plain sub-task has no children and so
+		 * never has a count. That mismatch is exactly why the glyph drew
+		 * nothing on the first attempt. */
+		const foreign = [];
+		const noteForeign = (dg, ref) => {
+			foreign.push([dg, ref]);
+			if (countOf(ref)) alias.push([dg, ref]); else unknown.add(ref);
+		};
 		for (const g in byGuid) {
 			const st = byGuid[g];
 			if (!st || st.is_trashed || st.is_deleted) continue;
 			const ref = st.props && st.props.itemref;
-			if (!ref) continue;
-			if (countOf(ref)) alias.push([g, ref]); else unknown.add(ref);
+			if (ref) noteForeign(g, ref);
 		}
 		try {
 			for (const lv of (window.g_universe && window.g_universe.listviews) || []) {
@@ -3900,8 +3990,7 @@ class Plugin extends AppPlugin {
 					for (const vg in map) {
 						const st = map[vg] && map[vg].state;
 						const ref = st && st.props && st.props.itemref;
-						if (!ref) continue;
-						if (countOf(ref)) alias.push([vg, ref]); else unknown.add(ref);
+						if (ref) noteForeign(vg, ref);
 					}
 				}
 			}
@@ -3918,19 +4007,19 @@ class Plugin extends AppPlugin {
 		 * page reference inside the text renders one too, earlier in the row),
 		 * so the DOM alone is enough. Guarded three ways so a prose line that
 		 * merely MENTIONS a barred line never sprouts its progress: the row
-		 * must be a reference/virtual row, the target must differ from the row,
-		 * and it must be a line we actually hold a count for. */
-		const seenAlias = new Set(alias.map((a) => a[0]));
+		 * must be a reference/virtual row and the target must differ from it,
+		 * so a prose line that merely MENTIONS another line never inherits its
+		 * decoration. */
+		const seenForeign = new Set(foreign.map((a) => a[0]));
 		try {
 			for (const el of document.querySelectorAll('.listitem.listitem-virtual[data-guid], .listitem.listitem-ref[data-guid]')) {
 				const dg = el.getAttribute('data-guid');
-				if (!dg || seenAlias.has(dg) || counts.has(dg)) continue;
+				if (!dg || seenForeign.has(dg) || counts.has(dg)) continue;
 				const chips = el.querySelectorAll('line-button.lineitem-lineref[data-guid]');
 				const ref = chips.length ? chips[chips.length - 1].getAttribute('data-guid') : null;
 				if (!ref || ref === dg) continue;
-				if (!countOf(ref)) { unknown.add(ref); continue; }
-				seenAlias.add(dg);
-				alias.push([dg, ref]);
+				seenForeign.add(dg);
+				noteForeign(dg, ref);
 			}
 		} catch (e) {}
 		/* the Tasks view names its lines directly, so an unbarred row there is
@@ -3982,6 +4071,30 @@ class Plugin extends AppPlugin {
 				if (d >= 0 && d < 600) { off = d; if (this.progOffsets) this.progOffsets.set(key, d); }
 			}
 			tvRows.push({ sel: '.tasks-view-row[data-guid="' + g + '"]', pct: c3.pct, label: c3.label, off: off });
+		}
+		/* the sub-task glyph, its own sheet: it changes far less often than the
+		 * counts do, and it must NOT fight the bar for pseudo-elements. The bar
+		 * owns ::before and ::after on `.listitem[data-guid]` and on
+		 * `.tasks-view-row[data-guid]`, and a sub-task can carry a bar of its
+		 * own, so the glyph hangs on an element INSIDE the row instead. */
+		if (this.subStyle) {
+			const subSel = [];
+			for (const [dg, ref] of foreign) {
+				if (this.isSubtask(ref)) subSel.push('.listitem[data-guid="' + dg + '"] .line-div::before');
+			}
+			/* Tasks-view rows are emitted unconditionally for every known
+			 * sub-task, same reasoning as the bar: a DOM-conditional rule is
+			 * dropped by any refresh that runs while the row is off screen and
+			 * never comes back. */
+			const seenTv = new Set();
+			if (this.subRemembered) for (const g of this.subRemembered) seenTv.add(g);
+			if (this.subKnown) for (const [g, v] of this.subKnown) { if (v) seenTv.add(g); else seenTv.delete(g); }
+			for (const g of seenTv) subSel.push('.tasks-view-row[data-guid="' + g + '"] .tasks-view-title::before');
+			const subCss = subSel.length
+				? subSel.join(',') + '{font-family:\'tabler-icons\';content:\'\\f1c8\';margin-right:5px;'
+					+ 'font-size:.8em;opacity:.4;position:relative;top:.06em;pointer-events:none}\n'
+				: '';
+			if (this.subStyle.textContent !== subCss) this.subStyle.textContent = subCss;
 		}
 		let css = '';
 		if (tvRows.length) {
