@@ -896,6 +896,7 @@ const rsVO = {
 	unfolded: new Set(), /* groups WE opened for a filter, to fold back after */
 	foldTried: new Map(), /* guid -> last click attempt, so a dud cannot loop */
 	hlTail: 0,      /* one-shot re-highlight after the editor settles */
+	lastMove: 0,    /* throttle for the pointer-move recovery trigger */
 	menu: null,     /* { guid, chip, path: [key], panels: [el] } */
 	raf: 0,
 	tail: 0,
@@ -1244,6 +1245,20 @@ function rsVoStart() {
 	 * a debounce alone makes them visibly lag and hop during a scroll. The
 	 * 120ms tail then settles with a full rescan. */
 	on.tick = () => rsVoTick();
+	/* RECOVERY AFTER AN APP START. g_universe is NULL until the user first
+	 * clicks into an editor (playbook), so a scan that runs before that finds
+	 * no lines and draws no chips. Scroll, resize and pointerup are not enough:
+	 * moving the pointer over a row to use a hover control is neither. So while
+	 * we are holding NOTHING, a pointer move is a cheap extra chance to notice
+	 * the universe has woken. Throttled, and it costs exactly zero once a
+	 * single chip exists. */
+	on.move = () => {
+		if (rsVO.chips && rsVO.chips.size) return;
+		const now = Date.now();
+		if (now - (rsVO.lastMove || 0) < 400) return;
+		rsVO.lastMove = now;
+		rsVoTick();
+	};
 	/* Folding is a click, and a fold that only re-layouts (no row added or
 	 * removed) escapes both the observer and scroll, so a chip could outlive
 	 * its heading's visibility. Any pointer release re-measures. */
@@ -1262,6 +1277,7 @@ function rsVoStart() {
 		window.addEventListener('scroll', on.tick, true);
 		window.addEventListener('resize', on.tick);
 		window.addEventListener('pointerup', on.tick, true);
+		window.addEventListener('pointermove', on.move, true);
 		document.addEventListener('themecsschange', on.theme);
 	} catch (e) {}
 	/* NEVER watch `class` on <html> — Thymer toggles classes there on nearly
@@ -1307,6 +1323,7 @@ function rsVoStop() {
 		try { window.removeEventListener('scroll', on.tick, true); } catch (e) {}
 		try { window.removeEventListener('resize', on.tick); } catch (e) {}
 		try { window.removeEventListener('pointerup', on.tick, true); } catch (e) {}
+		try { window.removeEventListener('pointermove', on.move, true); } catch (e) {}
 		try { document.removeEventListener('themecsschange', on.theme); } catch (e) {}
 		try { if (on.themeObs) on.themeObs.disconnect(); } catch (e) {}
 		try { if (on.themeTimer) clearTimeout(on.themeTimer); } catch (e) {}
@@ -1352,6 +1369,12 @@ function rsVoMenuColors() {
 		document.documentElement.style.setProperty('--tvo-menu-fg', dark
 			? '#D5D4D4'
 			: 'var(--cmdpal-fg-color, var(--text-color, #333))');
+		/* the filter hit: a DEEP green plate (his call), not a wash of the
+		 * accent. Solid rather than translucent so it reads the same over any
+		 * line, and it carries its own foreground because a dark plate under
+		 * dark text on a light theme would be unreadable. */
+		document.documentElement.style.setProperty('--tvo-hit-bg', dark ? '#1E5B44' : '#1E5B44');
+		document.documentElement.style.setProperty('--tvo-hit-fg', dark ? '#EAF6F0' : '#F2FBF7');
 	} catch (e) {}
 }
 
@@ -1999,7 +2022,9 @@ function rsVoPaintChip(btn, query) {
 	const pill = document.createElement('span');
 	pill.className = 'tvo-chip-flt';
 	const ic = document.createElement('span');
-	ic.className = 'ti ti-filter tvo-chip-ic';
+	/* the SAME glyph as the header button that opens it (his call): one symbol
+	 * for the feature, wherever it appears. Not a funnel. */
+	ic.className = 'ti ti-search tvo-chip-ic';
 	pill.appendChild(ic);
 	const lbl = document.createElement('span');
 	lbl.className = 'tvo-chip-term';
@@ -2442,7 +2467,8 @@ const rsVO_CSS = `
  * added to a line. Accent at low strength so the word stays readable and the
  * mark reads as the same green as everything else the module lights up. */
 ::highlight(tvo-filter-hit) {
-	background-color: color-mix(in srgb, var(--color-primary-500, #3aa37f) 42%, transparent);
+	background-color: var(--tvo-hit-bg, #1E5B44);
+	color: var(--tvo-hit-fg, #EAF6F0);
 }
 .tvo-filterhint { padding: 6px 2px 0; font-size: var(--text-size-smaller, 11px); opacity: .5; white-space: nowrap; }
 .tvo-menu {
