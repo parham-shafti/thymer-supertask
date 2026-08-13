@@ -822,6 +822,7 @@ const DOW = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
  *   cmdOwner: null,  // provider id registering the palette command (one only)
  *   writer: null,    // { id, write(guid, on) } — the plugin that persists a
  *                    //   dismissal as a meta property on the line
+ *   filters: {},     // guid -> query string, the in-block filter
  * }
  * CONTRACT 1 provider record:
  *   { id, version, order, appliesTo(ctx) -> bool, appliesToRow?(ctx) -> bool,
@@ -856,8 +857,10 @@ const rsVO_CONTRACT = 1;
  * 6 (2026-08-13): a dismissed chip SYNCS — it is a meta property on the line,
  * not a localStorage list.
  * 7 (2026-08-13): that writer is OPTIONAL. This module must work for anyone who
- * carries it, with no dependency on any particular plugin. */
-const rsVO_MODULE_VERSION = 7;
+ * carries it, with no dependency on any particular plugin.
+ * 8 (2026-08-13): the in-block FILTER, a module built-in rather than a provider,
+ * so every carrier has it. */
+const rsVO_MODULE_VERSION = 8;
 const rsVO_GLOBAL = '__thymerViewOptions';
 /* WHERE A DISMISSAL IS STORED, and why there are two answers.
  *
@@ -888,6 +891,8 @@ const rsVO = {
 	chips: null,    /* Map domKey -> chip element */
 	guids: null,    /* cached eligible guids; the scroll path skips the rescan */
 	style: null,
+	filterStyle: null,
+	filterPop: null,
 	menu: null,     /* { guid, chip, path: [key], panels: [el] } */
 	raf: 0,
 	tail: 0,
@@ -909,7 +914,7 @@ function rsVoRoot() {
 		R = {
 			contract: rsVO_CONTRACT, providers: [], rev: 0, host: null,
 			hidePending: {}, hiddenLocal: rsVoStoredHidden(),
-			cmdOwner: null, writer: null,
+			cmdOwner: null, writer: null, filters: rsVoStoredFilters(),
 		};
 		try { window[rsVO_GLOBAL] = R; } catch (e) { return null; }
 		return R;
@@ -930,6 +935,7 @@ function rsVoRoot() {
 	if (!Array.isArray(R.hiddenLocal)) R.hiddenLocal = rsVoStoredHidden();
 	if (typeof R.cmdOwner === 'undefined') R.cmdOwner = null;
 	if (typeof R.writer === 'undefined') R.writer = null;
+	if (!R.filters || typeof R.filters !== 'object') R.filters = rsVoStoredFilters();
 	return R;
 }
 
@@ -1202,7 +1208,9 @@ function rsVoRelease() {
 		rsVO.chips = null;
 	}
 	rsVO.guids = null;
+	rsVoCloseFilter();
 	if (rsVO.style) { try { rsVO.style.remove(); } catch (e) {} rsVO.style = null; }
+	if (rsVO.filterStyle) { try { rsVO.filterStyle.remove(); } catch (e) {} rsVO.filterStyle = null; }
 }
 
 /* ── Host duties: stylesheet, triggers ─────────────────────────────────── */
@@ -1215,6 +1223,12 @@ function rsVoStart() {
 		st.textContent = rsVO_CSS;
 		document.head.appendChild(st);
 		rsVO.style = st;
+		/* the filter's hide rules get their OWN sheet: they change on every
+		 * keystroke while the chip styles never change */
+		const fs = document.createElement('style');
+		fs.setAttribute('data-tvo-filter', '1');
+		document.head.appendChild(fs);
+		rsVO.filterStyle = fs;
 	} catch (e) {}
 	rsVoMenuColors();
 
@@ -1332,6 +1346,236 @@ function rsVoMenuColors() {
 	} catch (e) {}
 }
 
+/* ── IN-BLOCK FILTER ────────────────────────────────────────────────────────
+ * Type in a block and only the children that match stay on screen. It searches
+ * the line's text, its hashtags and its references, through the whole subtree.
+ *
+ * A BUILT-IN OF THE MODULE, not a provider (his call, 2026-08-13: "Den ska
+ * finnas med i alla view options, oavsett vilken plugin som aktiverar den").
+ * Which is also the only place it can live and still obey the rule that this
+ * module depends on no plugin: matching reads line states out of the universe
+ * and hiding is a stylesheet of our own, so a plugin that lends nothing gets
+ * filtering anyway.
+ *
+ * A filter PERSISTS once set, so you can filter and then work in the result,
+ * and every filtered block therefore carries a visible indicator that clears it
+ * in one click. Lines hidden with no way to see why would be a trap. */
+const rsVO_FILTER_KEY = 'thymer-view-options-filters';
+
+function rsVoStoredFilters() {
+	try {
+		const raw = localStorage.getItem(rsVO_FILTER_KEY);
+		const o = raw ? JSON.parse(raw) : {};
+		if (!o || typeof o !== 'object') return {};
+		const out = {};
+		for (const g in o) if (typeof o[g] === 'string' && o[g]) out[g] = o[g];
+		return out;
+	} catch (e) { return {}; }
+}
+
+/* Per device, deliberately: a filter is view state, not a property of the
+ * content, and it should not follow you to another screen mid-thought. It does
+ * survive a reload, because a plugin reload happens on every deploy and losing
+ * every filter to that would be its own annoyance. */
+function rsVoStoreFilters(map) {
+	try { localStorage.setItem(rsVO_FILTER_KEY, JSON.stringify(map)); } catch (e) {}
+}
+
+function rsVoFilterOf(R, guid) {
+	const q = R.filters[guid];
+	return typeof q === 'string' ? q : '';
+}
+
+function rsVoSetFilter(guid, q) {
+	const R = rsVoRoot();
+	if (!R || !guid) return;
+	const s = String(q == null ? '' : q).trim();
+	if (s) R.filters[guid] = s; else delete R.filters[guid];
+	rsVoStoreFilters(R.filters);
+	rsVoInvalidate();
+}
+
+/* `+` is an AND, same as the destination picker's search, so one convention
+ * covers every search surface in these plugins. */
+function rsVoNorm(s) {
+	return String(s == null ? '' : s).toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function rsVoParts(q) {
+	return String(q || '').split('+').map(rsVoNorm).filter(Boolean);
+}
+
+/* One segment's searchable text. A plain carrier stores a string; a chip stores
+ * an object, and which key holds the words differs per type. A ref is worth the
+ * extra hop: its alias is often NOT what you remember it by, so fall back to the
+ * target line's own text. One hop only, never recursing through refs. */
+function rsVoSegText(type, data, byGuid, depth) {
+	if (typeof data === 'string') return data;
+	const t = data || {};
+	if (type === 'ref') {
+		let out = t.title ? String(t.title) : '';
+		if (!depth && t.guid && byGuid[t.guid]) out += ' ' + rsVoLineText(byGuid[t.guid], byGuid, 1);
+		return out;
+	}
+	return String(t.title || t.text || t.name || t.formatted || '');
+}
+
+/* text_segments is PAIR-ENCODED: [type, data, type, data, …] */
+function rsVoLineText(st, byGuid, depth) {
+	const ts = (st && st.text_segments) || [];
+	let out = '';
+	for (let i = 0; i + 1 < ts.length; i += 2) {
+		out += ' ' + rsVoSegText(String(ts[i]), ts[i + 1], byGuid, depth || 0);
+	}
+	return out;
+}
+
+function rsVoMatches(st, parts, byGuid) {
+	const hay = rsVoNorm(rsVoLineText(st, byGuid, 0));
+	if (!hay) return false;
+	for (const p of parts) if (hay.indexOf(p) < 0) return false;
+	return true;
+}
+
+/* The caret's line is never hidden: filtering the row you are typing on would
+ * yank it out from under you. */
+function rsVoCaretGuid() {
+	try {
+		for (const lv of ((window.g_universe && window.g_universe.listviews) || [])) {
+			const pos = lv.selection && lv.selection._caret && lv.selection._caret.pos;
+			const g = pos && pos.list_item && pos.list_item.state && pos.list_item.state.guid;
+			if (g) return g;
+		}
+	} catch (e) {}
+	return null;
+}
+
+/* Which descendants a set of active filters hides. A line survives if it
+ * matches, if any descendant of it matches (or the hit would float with no
+ * context), or if an ancestor of it matched (a hit is shown with its own
+ * children intact, which is usually the whole point of finding it). */
+function rsVoFilterHidden(R) {
+	const byGuid = (window.g_universe && window.g_universe.itemsByGuid) || {};
+	const hide = [];
+	const caret = rsVoCaretGuid();
+	for (const g in R.filters) {
+		const parts = rsVoParts(R.filters[g]);
+		const root = byGuid[g];
+		if (!parts.length || !root) continue;
+		const keep = new Set();
+		const all = [];
+		const kids = (st) => ((st && st.children) || []).filter((k) => k && !k.is_trashed && !k.is_deleted);
+		const keepAll = (st) => {
+			for (const k of kids(st)) { keep.add(k.guid); keepAll(k); }
+		};
+		/* returns true when this line, or anything under it, matched */
+		const walk = (st) => {
+			let any = false;
+			for (const k of kids(st)) {
+				all.push(k.guid);
+				if (rsVoMatches(k, parts, byGuid)) {
+					keep.add(k.guid);
+					keepAll(k);
+					walk(k); /* still collect the ids below it for `all` */
+					any = true;
+					continue;
+				}
+				if (walk(k)) { keep.add(k.guid); any = true; }
+			}
+			return any;
+		};
+		walk(root);
+		for (const gg of all) {
+			if (keep.has(gg) || gg === caret) continue;
+			hide.push(gg);
+		}
+	}
+	return hide;
+}
+
+/* One stylesheet, guid-keyed, exactly like every other decoration in these
+ * plugins: nothing is ever removed from the document, so nothing can be lost,
+ * and a re-render cannot undo it.
+ * KNOWN EDGE, documented rather than solved: the rule keys on the guid, so a
+ * hidden line that ALSO renders inside a transclusion elsewhere on the page is
+ * hidden there too. Lines are flat siblings in the DOM, so there is no
+ * container to scope the selector to. */
+function rsVoRefreshFilterStyle() {
+	if (!rsVO.filterStyle) return;
+	const R = rsVoRoot();
+	let css = '';
+	if (R) {
+		const hide = rsVoFilterHidden(R);
+		if (hide.length) {
+			css = hide.map((g) => '.listitem[data-guid="' + rsVoCssAttr(g) + '"]').join(',')
+				+ '{display:none !important;}';
+		}
+	}
+	if (rsVO.filterStyle.textContent !== css) rsVO.filterStyle.textContent = css;
+}
+
+/* EVERY plugin text input needs a key shield, or Thymer's dispatcher forwards
+ * the keystroke to whatever component still holds focus — in a collection view
+ * that is the table, which eats Space and letters while your field has DOM
+ * focus (playbook §8). The module cannot borrow a plugin's, so it owns one. */
+function rsVoShieldKeys(el) {
+	for (const t of ['keydown', 'keypress', 'keyup']) {
+		el.addEventListener(t, (e) => {
+			const n = e.target;
+			if (n && (n.tagName === 'INPUT' || n.tagName === 'TEXTAREA')) e.stopPropagation();
+		});
+	}
+}
+
+function rsVoCloseFilter() {
+	const f = rsVO.filterPop;
+	rsVO.filterPop = null;
+	if (!f) return;
+	try { document.removeEventListener('pointerdown', f.outside, true); } catch (e) {}
+	try { f.el.remove(); } catch (e) {}
+}
+
+/* Filtering is LIVE as you type. Enter and Escape both just close the popover:
+ * the filter persists either way, and the indicator on the line is what takes
+ * it off again. */
+function rsVoOpenFilter(guid, anchor) {
+	rsVoCloseMenu();
+	rsVoCloseFilter();
+	const R = rsVoRoot();
+	if (!R || !guid) return;
+	rsVoMenuColors();
+	const box = document.createElement('div');
+	box.className = 'tvo-menu tvo-filterbox';
+	const input = document.createElement('input');
+	input.type = 'text';
+	input.className = 'tvo-filterinput';
+	input.placeholder = 'Filter this block…';
+	input.value = rsVoFilterOf(R, guid);
+	const hint = document.createElement('div');
+	hint.className = 'tvo-filterhint';
+	hint.textContent = 'Text, hashtags and references · + for AND';
+	box.appendChild(input);
+	box.appendChild(hint);
+	document.body.appendChild(box);
+	rsVoShieldKeys(box);
+
+	const f = { el: box, guid: guid };
+	rsVO.filterPop = f;
+	f.outside = (e) => { if (!box.contains(e.target)) rsVoCloseFilter(); };
+	setTimeout(() => {
+		if (rsVO.filterPop !== f) return;
+		document.addEventListener('pointerdown', f.outside, true);
+	}, 0);
+
+	input.addEventListener('input', () => rsVoSetFilter(guid, input.value));
+	input.addEventListener('keydown', (e) => {
+		if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); rsVoCloseFilter(); }
+	});
+	const r = anchor.getBoundingClientRect();
+	rsVoPlacePanel(box, r, true, null);
+	setTimeout(() => { try { input.focus(); input.select(); } catch (e) {} }, 0);
+}
+
 /* ── Providers ─────────────────────────────────────────────────────────── */
 
 /* A provider from ANOTHER plugin must never be able to break this menu, so
@@ -1384,6 +1628,7 @@ function rsVoPlaceChips(R, full) {
 	if (!rsVO.chips) return;
 	/* the byGuid sweep is the expensive half — cache the eligible guids and let
 	 * the scroll path (rAF, every frame) skip straight to measuring */
+	rsVoRefreshFilterStyle();
 	if (full || !rsVO.guids) {
 		const byGuid = (window.g_universe && window.g_universe.itemsByGuid) || {};
 		const out = [];
@@ -1392,6 +1637,10 @@ function rsVoPlaceChips(R, full) {
 			const st = byGuid[g];
 			if (!st || st.is_trashed || st.is_deleted) continue;
 			if (rsVoLineHidden(R, st, g)) continue; /* dismissed on this line */
+			/* A FILTERED BLOCK ALWAYS GETS A CHIP, whatever the providers say:
+			 * it carries the indicator, and a filter you cannot turn off
+			 * would be a trap. */
+			if (rsVoFilterOf(R, g)) { out.push(g); continue; }
 			const ctx = rsVoCtx(g, st);
 			for (let i = 0; i < provs.length; i++) {
 				if (rsVoApplies(provs[i], ctx)) { out.push(g); break; }
@@ -1463,7 +1712,7 @@ function rsVoPlaceChips(R, full) {
 		if (btn && btn.parentNode !== pos.parent) { try { btn.remove(); } catch (e) {} btn = null; }
 		if (!btn) {
 			btn = document.createElement('div');
-			btn.className = 'tvo-chip ti ti-dots';
+			btn.className = 'tvo-chip';
 			btn.setAttribute('data-guid', pos.guid);
 			/* inside a scroller: absolute + modest z so sticky bars cover it
 			 * naturally; the body fallback keeps the old fixed behaviour */
@@ -1474,7 +1723,15 @@ function rsVoPlaceChips(R, full) {
 				btn.style.position = 'absolute';
 				btn.style.zIndex = '5';
 			}
-			btn.addEventListener('click', () => {
+			btn.addEventListener('click', (e) => {
+				/* the indicator's x clears the filter and nothing else */
+				let x = null;
+				try { x = e.target && e.target.closest && e.target.closest('.tvo-chip-x'); } catch (err) {}
+				if (x) {
+					e.stopPropagation();
+					rsVoSetFilter(btn.getAttribute('data-guid'), '');
+					return;
+				}
 				/* a click on the chip that just closed the menu must not
 				 * reopen it: the outside-pointerdown handler fires FIRST and
 				 * has already closed, so without this the chip can never be
@@ -1489,6 +1746,7 @@ function rsVoPlaceChips(R, full) {
 			rsVO.chips.set(key, btn);
 		}
 		btn.setAttribute('data-guid', pos.guid);
+		rsVoPaintChip(btn, rsVoFilterOf(R, pos.guid));
 		/* the row this chip belongs to, so the menu can hand a provider the
 		 * exact rendered line to anchor its own popover against — the same line
 		 * can render more than once (a transclusion), and "the first match in
@@ -1510,6 +1768,33 @@ function rsVoPlaceChips(R, full) {
 	}
 	/* an open menu whose row left the screen has nothing to point at */
 	if (rsVO.menu && rsVO.menu.chip && !document.body.contains(rsVO.menu.chip)) rsVoCloseMenu();
+}
+
+/* A plain dots chip normally; while a filter runs on the line it becomes the
+ * INDICATOR — funnel glyph, the term, and an x that takes the filter off. One
+ * element rather than two, so there is still only one thing to measure and
+ * place, and it still opens the menu when you click the body of it. */
+function rsVoPaintChip(btn, query) {
+	const want = query ? 'f:' + query : 'dots';
+	if (btn.__tvoPaint === want) return;
+	btn.__tvoPaint = want;
+	btn.textContent = '';
+	if (!query) {
+		btn.className = 'tvo-chip ti ti-dots';
+		return;
+	}
+	btn.className = 'tvo-chip tvo-chip-filtering';
+	const ic = document.createElement('span');
+	ic.className = 'ti ti-filter tvo-chip-ic';
+	btn.appendChild(ic);
+	const lbl = document.createElement('span');
+	lbl.className = 'tvo-chip-term';
+	lbl.textContent = query;
+	btn.appendChild(lbl);
+	const x = document.createElement('span');
+	x.className = 'ti ti-x tvo-chip-x';
+	x.title = 'Clear the filter';
+	btn.appendChild(x);
 }
 
 function rsVoCssAttr(s) { return String(s == null ? '' : s).replace(/["\\]/g, '\\$&'); }
@@ -1621,6 +1906,22 @@ function rsVoRenderMenu() {
 	 * chip rather than about any one plugin's feature, so it belongs to nobody's
 	 * provider. Its group of one also keeps it out of the fill-yields-on-hover
 	 * scope of whatever sits above it. */
+	/* The module's own rows. Filter first, because it acts on this block; Hide
+	 * last, because it is about the chip. Filter is offered wherever the line
+	 * has children to filter. */
+	const kids = ((ctx.state && ctx.state.children) || []).filter((k) => k && !k.is_trashed && !k.is_deleted);
+	const term = rsVoFilterOf(R, m.guid);
+	if (kids.length) {
+		items = items.concat([
+			{ sep: true },
+			{
+				key: '__tvo_filter',
+				label: term ? 'Filter: ' + term : 'Filter Block',
+				checked: !!term,
+				onSelect: (c, api) => { api.close(); rsVoOpenFilter(c.guid, m.chip); },
+			},
+		]);
+	}
 	items = items.concat([
 		{ sep: true },
 		{
@@ -1857,6 +2158,29 @@ const rsVO_CSS = `
 	background: color-mix(in srgb, currentColor 10%, transparent);
 }
 .tvo-chip:hover { opacity: 1; background: color-mix(in srgb, currentColor 18%, transparent); }
+/* THE FILTER INDICATOR. A filter persists, so the block it is running on has to
+ * say so at a glance and be clearable in one click, or lines are missing with
+ * no visible reason. Accent, not grey: this is an active state, and it matches
+ * how an active row reads in the menu. */
+.tvo-chip.tvo-chip-filtering {
+	width: auto; max-width: 240px; gap: 5px; padding: 0 5px; opacity: 1;
+	color: color-mix(in srgb, var(--color-primary-500, #3aa37f) 70%, var(--text-color, currentColor));
+	background: color-mix(in srgb, currentColor 14%, transparent);
+	font-family: inherit; font-size: var(--text-size-smaller, 11px);
+}
+.tvo-chip.tvo-chip-filtering:hover { background: color-mix(in srgb, currentColor 22%, transparent); }
+.tvo-chip-ic { font-size: 11px; flex: 0 0 auto; }
+.tvo-chip-term { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.tvo-chip-x { font-size: 12px; flex: 0 0 auto; opacity: .65; border-radius: 4px; }
+.tvo-chip-x:hover { opacity: 1; background: color-mix(in srgb, currentColor 25%, transparent); }
+.tvo-filterbox { min-width: 260px; padding: 8px; }
+.tvo-filterinput {
+	width: 100%; box-sizing: border-box; border: 1px solid rgba(127,127,127,.35);
+	border-radius: 4px; padding: 5px 8px; font-family: inherit; font-size: 13px;
+	background: transparent; color: inherit; outline: none;
+}
+.tvo-filterinput:focus { border-color: color-mix(in srgb, var(--color-primary-500, #3aa37f) 60%, var(--text-color, currentColor)); }
+.tvo-filterhint { padding: 6px 2px 0; font-size: var(--text-size-smaller, 11px); opacity: .5; white-space: nowrap; }
 .tvo-menu {
 	position: fixed; z-index: 100000; min-width: 240px; padding: 6px;
 	background: var(--tvo-menu-bg, #2A2A31);
