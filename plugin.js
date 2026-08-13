@@ -5441,7 +5441,13 @@ class Plugin extends AppPlugin {
 		}
 		sub.push({ sep: true });
 		sub.push({
-			key: 'off', label: 'Turn Off Ordering',
+			/* the row says what it will actually undo: the two group modes file
+			 * tasks under collector roofs, sort mode only re-orders them in
+			 * place, and calling both "ordering" described neither (his call,
+			 * 2026-08-13). The KEY stays 'off' — it is the identity the open
+			 * submenu path is tracked by, and it must not move with the label. */
+			key: 'off',
+			label: cur.m === 's' ? 'Turn Off Ordering' : 'Turn Off Grouping',
 			/* nothing to turn off when nothing is running — an option that does
 			 * nothing must not look live (playbook §12) */
 			disabled: !conf,
