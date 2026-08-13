@@ -818,8 +818,10 @@ const DOW = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
  *   providers: [], // provider records, plain data (see rsVoRegister)
  *   rev: 0,        // bumped on every change; the host re-renders when it moves
  *   host: null,    // { version, id, release(), poke() } — the copy rendering
- *   hiddenLines: [], // guids whose chip the user dismissed; -> localStorage
+ *   hidePending: {}, // guid -> bool, the optimistic overlay on the meta prop
  *   cmdOwner: null,  // provider id registering the palette command (one only)
+ *   writer: null,    // { id, write(guid, on) } — the plugin that persists a
+ *                    //   dismissal as a meta property on the line
  * }
  * CONTRACT 1 provider record:
  *   { id, version, order, appliesTo(ctx) -> bool, appliesToRow?(ctx) -> bool,
@@ -850,15 +852,18 @@ const rsVO_CONTRACT = 1;
 /* 4 (2026-08-13): host.poke(), so a copy that is NOT hosting can demand an
  * immediate repaint instead of waiting for the host's next incidental trigger.
  * 5 (2026-08-13): the palette command is CLAIMED through the global instead of
- * being hardcoded to one plugin by convention. */
-const rsVO_MODULE_VERSION = 5;
+ * being hardcoded to one plugin by convention.
+ * 6 (2026-08-13): a dismissed chip SYNCS — it is a meta property on the line,
+ * not a localStorage list. */
+const rsVO_MODULE_VERSION = 6;
 const rsVO_GLOBAL = '__thymerViewOptions';
-/* A DISPLAY PREFERENCE, so localStorage and never saveConfiguration: that
- * reloads the plugin and would tear down the very menu the toggle lives in
- * (playbook). Per device, which is also all this module CAN do — it has no
- * data API of its own, so it cannot write a meta property on the line. */
-const rsVO_HIDE_KEY = 'thymer-view-options-hidden-lines';
-const rsVO_HIDE_CAP = 500;
+/* A DISMISSAL LIVES ON THE LINE, as its own meta property, so it syncs to every
+ * device and travels with the line (his call, 2026-08-13 — localStorage made it
+ * a per-device quirk). READING is free: the eligibility scan already walks
+ * `st.props` for every line. WRITING needs a plugin, because this module has no
+ * data API of its own — hence `R.writer`, claimed like the palette command.
+ * NOT saveConfiguration, which reloads the plugin and would tear down the host. */
+const rsVO_HIDE_PROP = 'tvo_hide';
 
 /* Per-EVALUATION state. Each plugin's spliced copy gets its own binding, which
  * is exactly what makes a stale copy (after a hot reload re-evaluates the file)
@@ -890,7 +895,7 @@ function rsVoRoot() {
 	if (!R) {
 		R = {
 			contract: rsVO_CONTRACT, providers: [], rev: 0, host: null,
-			hiddenLines: rsVoStoredHidden(), cmdOwner: null,
+			hidePending: {}, cmdOwner: null, writer: null,
 		};
 		try { window[rsVO_GLOBAL] = R; } catch (e) { return null; }
 		return R;
@@ -907,9 +912,22 @@ function rsVoRoot() {
 	if (typeof R.rev !== 'number') R.rev = 0;
 	/* seed the list if the record was created by a copy that predates hiding —
 	 * adding a data field is backward-safe, an older host simply ignores it */
-	if (!Array.isArray(R.hiddenLines)) R.hiddenLines = rsVoStoredHidden();
+	if (!R.hidePending || typeof R.hidePending !== 'object') R.hidePending = {};
 	if (typeof R.cmdOwner === 'undefined') R.cmdOwner = null;
+	if (typeof R.writer === 'undefined') R.writer = null;
 	return R;
+}
+
+/* The plugin that will persist dismissals. Same claim shape as the palette
+ * command: one holder, and only while it is still registered, so a plugin that
+ * died mid-teardown cannot leave the feature unable to write. */
+function rsVoSetWriter(fn) {
+	const R = rsVoRoot();
+	if (!R || !rsVO.pid || typeof fn !== 'function') return false;
+	const w = R.writer;
+	if (w && w.id !== rsVO.pid && R.providers.some((p) => p && p.id === w.id)) return false;
+	R.writer = { id: rsVO.pid, write: fn };
+	return true;
 }
 
 /* ── Who registers the palette command ──────────────────────────────────────
@@ -950,36 +968,54 @@ function rsVoClaimCommand() {
  * palette, which restores ALL of them at once: once a chip is gone there is
  * nothing on that line to click, and nothing marks which lines are dismissed,
  * so "un-hide the one I am standing on" would be a guessing game. */
-function rsVoStoredHidden() {
-	try {
-		const raw = localStorage.getItem(rsVO_HIDE_KEY);
-		const a = raw ? JSON.parse(raw) : [];
-		return Array.isArray(a) ? a.filter((g) => typeof g === 'string') : [];
-	} catch (e) { return []; }
+/* The stored answer for one line, with the optimistic overlay on top.
+ * The overlay exists for the documented reason a plugin's own meta writes need
+ * one: the writing client's in-memory props can transiently lose a property it
+ * just set, and a write is async anyway, so without it the chip would linger
+ * for a beat after you dismissed it. It SELF-HEALS — once the property agrees,
+ * the overlay entry is dropped, so a failed write stops lying on the next scan. */
+function rsVoLineHidden(R, st, guid) {
+	const stored = !!(st && st.props && st.props[rsVO_HIDE_PROP] === '1');
+	const pend = R.hidePending[guid];
+	if (typeof pend !== 'boolean') return stored;
+	if (pend === stored) { delete R.hidePending[guid]; return stored; }
+	return pend;
 }
 
-function rsVoStoreHidden(list) {
-	try { localStorage.setItem(rsVO_HIDE_KEY, JSON.stringify(list)); } catch (e) {}
+function rsVoWrite(R, guid, on) {
+	R.hidePending[guid] = !!on;
+	const w = R.writer;
+	if (w && typeof w.write === 'function') {
+		try { w.write(guid, !!on); } catch (e) {}
+	}
 }
 
 function rsVoHideLine(guid) {
 	const R = rsVoRoot();
 	if (!R || !guid) return;
-	if (R.hiddenLines.indexOf(guid) < 0) R.hiddenLines.push(guid);
-	/* oldest out first — a dismissal is a passing preference, not a record */
-	while (R.hiddenLines.length > rsVO_HIDE_CAP) R.hiddenLines.shift();
-	rsVoStoreHidden(R.hiddenLines);
+	rsVoWrite(R, guid, true);
 	rsVoCloseMenu();
 	rsVoInvalidate();
 }
 
-/* Restores every dismissed chip; returns how many, so the caller can say so. */
+/* Restores every dismissed chip we can SEE; returns how many, so the caller can
+ * say so. "Can see" is the honest limit of a per-line property: `itemsByGuid`
+ * holds LOADED PAGES ONLY (playbook), so a line dismissed on a page that is not
+ * open cannot be found here — it comes back on its own when that page is next
+ * opened and this runs again. Restoring per line is the alternative, and it
+ * cannot work: a dismissed line has no chip to click and nothing marks it. */
 function rsVoShowAll() {
 	const R = rsVoRoot();
 	if (!R) return 0;
-	const n = R.hiddenLines.length;
-	R.hiddenLines = [];
-	rsVoStoreHidden(R.hiddenLines);
+	const byGuid = (window.g_universe && window.g_universe.itemsByGuid) || {};
+	let n = 0;
+	for (const g in byGuid) {
+		const st = byGuid[g];
+		if (!st || st.is_trashed || st.is_deleted) continue;
+		if (!rsVoLineHidden(R, st, g)) continue;
+		rsVoWrite(R, g, false);
+		n++;
+	}
 	/* the palette command that calls this usually runs on a copy that is NOT
 	 * the host, which is exactly what poke exists for */
 	rsVoInvalidate();
@@ -1024,6 +1060,7 @@ function rsVoUnregister() {
 	/* let go of the palette command too, so a plugin that is still here can
 	 * pick it up on its next cycle rather than the command vanishing with us */
 	if (id && R.cmdOwner === id) R.cmdOwner = null;
+	if (id && R.writer && R.writer.id === id) R.writer = null;
 	rsVoRelease();
 	R.rev++;
 }
@@ -1304,11 +1341,10 @@ function rsVoPlaceChips(R, full) {
 		const byGuid = (window.g_universe && window.g_universe.itemsByGuid) || {};
 		const out = [];
 		const provs = R.providers;
-		const hid = new Set(R.hiddenLines);
 		for (const g in byGuid) {
 			const st = byGuid[g];
 			if (!st || st.is_trashed || st.is_deleted) continue;
-			if (hid.has(g)) continue; /* dismissed on this line */
+			if (rsVoLineHidden(R, st, g)) continue; /* dismissed on this line */
 			const ctx = rsVoCtx(g, st);
 			for (let i = 0; i < provs.length; i++) {
 				if (rsVoApplies(provs[i], ctx)) { out.push(g); break; }
@@ -5663,7 +5699,13 @@ class Plugin extends AppPlugin {
 	 * survives another contributor arriving and moves on if we unload. Re-checked
 	 * on every refresh cycle, because ownership changes when a plugin comes or
 	 * goes and a palette command can be added and removed at any time. */
+	/* A dismissed chip is stored as a meta property ON THE LINE, so it syncs to
+	 * every device and travels with the line. The shared module reads it for
+	 * free (its scan already walks each line's props) but cannot WRITE — it has
+	 * no data API — so a participating plugin lends it one. Same claim shape as
+	 * the palette command: one writer, and only while it is still registered. */
 	voSyncCommand() {
+		try { rsVoSetWriter((guid, on) => this.voWriteHide(guid, on)); } catch (e) {}
 		let mine = false;
 		try { mine = rsVoClaimCommand(); } catch (e) {}
 		if (mine && !this.cmdVo) {
@@ -5681,6 +5723,17 @@ class Plugin extends AppPlugin {
 			try { this.cmdVo.remove(); } catch (e) {}
 			this.cmdVo = null;
 		}
+	}
+
+	/* Serialized on the same chain as our other menu writes so a dismissal
+	 * cannot interleave with an ordering pass on the same line. The '' rather
+	 * than null is the documented tombstone: setMetaProperty(key, null) is
+	 * suspect, and '' clears reliably. */
+	voWriteHide(guid, on) {
+		this.voChain = (this.voChain || Promise.resolve())
+			.then(() => this.voTarget(guid))
+			.then((t) => (t ? t.headLi.setMetaProperty('tvo_hide', on ? '1' : '') : null))
+			.catch(() => {});
 	}
 
 	/* setOrderConf / setProgress want a live LineItem handle, which needs the
