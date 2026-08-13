@@ -2467,11 +2467,14 @@ const rsVO_CSS = `
 /* HIS EXACT VALUE, given as a hex after three wrong guesses from me: a deep
  * green of my choosing, then the criteria pill's own colour, then the app's
  * --selection-bg. Do not "improve" it back into a variable.
- * Background ONLY — every time he described this he said background, so the
- * text keeps the colour the line already gives it.
+ * The TEXT is set too, not just the plate: left alone, a marked word kept
+ * whatever colour the line gave it (a link teal, a hashtag, plain body text),
+ * so the same mark read differently from word to word. White is what the app's
+ * own selection uses against a plate this dark.
  * The pill in the chip is NOT this colour and must stay as it was. */
 ::highlight(tvo-filter-hit) {
 	background-color: #313E44;
+	color: #FFFFFF;
 }
 .tvo-filterhint { padding: 6px 2px 0; font-size: var(--text-size-smaller, 11px); opacity: .5; white-space: nowrap; }
 .tvo-menu {
