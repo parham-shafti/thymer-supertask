@@ -817,7 +817,7 @@ const DOW = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
  *   contract: 1,   // shape of the DATA below; changes almost never
  *   providers: [], // provider records, plain data (see rsVoRegister)
  *   rev: 0,        // bumped on every change; the host re-renders when it moves
- *   host: null,    // { version, id, release() } — the copy currently rendering
+ *   host: null,    // { version, id, release(), poke() } — the copy rendering
  *   hiddenLines: [], // guids whose chip the user dismissed; -> localStorage
  * }
  * CONTRACT 1 provider record:
@@ -846,8 +846,9 @@ const rsVO_CONTRACT = 1;
 /* 2 (2026-08-13): the appliesTo / appliesToRow split, and the main-menu layout
  * round (no icon column, divider under the header, filled active leaf, submenu
  * aligned to its title row). Bump this whenever behaviour here changes. */
-/* 3 (2026-08-13): Hide View Options, PER LINE. */
-const rsVO_MODULE_VERSION = 3;
+/* 4 (2026-08-13): host.poke(), so a copy that is NOT hosting can demand an
+ * immediate repaint instead of waiting for the host's next incidental trigger. */
+const rsVO_MODULE_VERSION = 4;
 const rsVO_GLOBAL = '__thymerViewOptions';
 /* A DISPLAY PREFERENCE, so localStorage and never saveConfiguration: that
  * reloads the plugin and would tear down the very menu the toggle lives in
@@ -938,8 +939,7 @@ function rsVoHideLine(guid) {
 	while (R.hiddenLines.length > rsVO_HIDE_CAP) R.hiddenLines.shift();
 	rsVoStoreHidden(R.hiddenLines);
 	rsVoCloseMenu();
-	R.rev++;
-	rsVoRefresh(true);
+	rsVoInvalidate();
 }
 
 /* Restores every dismissed chip; returns how many, so the caller can say so. */
@@ -949,8 +949,9 @@ function rsVoShowAll() {
 	const n = R.hiddenLines.length;
 	R.hiddenLines = [];
 	rsVoStoreHidden(R.hiddenLines);
-	R.rev++;
-	rsVoRefresh(true);
+	/* the palette command that calls this usually runs on a copy that is NOT
+	 * the host, which is exactly what poke exists for */
+	rsVoInvalidate();
 	return n;
 }
 
@@ -1005,14 +1006,30 @@ function rsVoRefresh(full) {
 	rsVoPlaceChips(R, full !== false);
 }
 
-/* Bump rev after changing something the menu reflects. If we hold the claim we
- * repaint immediately; if another copy does, it picks the new rev up on its own
- * next cycle (its window-capture pointerup listener makes that the same click). */
+/* Bump rev after changing something the menu reflects, and make sure SOMEBODY
+ * repaints now.
+ *
+ * "The host notices on its next cycle" is fine for a passive change but wrong
+ * for a direct user action: the palette command that restores dismissed chips
+ * is registered by Supertask, and if Reference Extravaganza happens to be the
+ * host (load order decides, both ship the same module version) the chips only
+ * came back when some incidental trigger fired — measured at ~0.5s off the
+ * palette closing, which reads as "it did nothing until I clicked the line"
+ * (his report, 2026-08-13).
+ *
+ * `poke` is the second function on the host record, alongside `release`. That
+ * record is the ONE place a live handle is legitimate — it is the handle TO the
+ * copy that is rendering — and every call into it is typeof-guarded, so an
+ * older host without poke simply falls back to the next-cycle behaviour. */
 function rsVoInvalidate() {
 	const R = rsVoRoot();
 	if (!R) return;
 	R.rev++;
-	rsVoRefresh(true);
+	rsVoRefresh(true);   /* repaints if the claim is ours */
+	const h = R.host;
+	if (h && h !== rsVO.host && typeof h.poke === 'function') {
+		try { h.poke(); } catch (e) {}
+	}
 }
 
 /* HOST ELECTION: highest module version wins, with live handover.
@@ -1044,6 +1061,13 @@ function rsVoClaim(R) {
 				if (RR && RR.host === rec) RR.host = null;
 			} catch (e) {}
 			rsVoRelease();
+		},
+		/* "repaint now" from a copy that is not us — see VoInvalidate. Guarded
+		 * against being called on a record that has since been released. */
+		poke: () => {
+			if (rsVO.host !== rec) return;
+			rsVoRefresh(true);
+			rsVoTick();   /* and once more after the frame settles */
 		},
 	};
 	rsVO.host = rec;
