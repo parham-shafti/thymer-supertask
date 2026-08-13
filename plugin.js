@@ -2473,13 +2473,14 @@ const rsVO_CSS = `
 }
 .tvo-filterinput:focus { border-color: color-mix(in srgb, var(--color-primary-500, #3aa37f) 60%, var(--text-color, currentColor)); }
 /* The hit itself, painted through the Custom Highlight API — no node is ever
- * added to a line. Accent at low strength so the word stays readable and the
- * mark reads as the same green as everything else the module lights up. */
-/* Identical to the criteria pill, plate AND text. Four colours were tried
- * before this: an accent wash, a deep green of mine, the app's --selection-bg,
- * and a #313E44 plate with white text. Every one of them differed from the pill
- * the user is looking at while they read the result, which is the thing it has
- * to agree with. Keep both halves pointing at the shared variables. */
+ * added to a line (see VoRefreshHighlight for why that matters).
+ * Identical to the criteria pill, plate AND text, through the shared variables.
+ * CONFIRMED RIGHT BY HIM after five wrong attempts (an accent wash, a deep green
+ * of mine, the app's --selection-bg, a #313E44 plate with white text, and
+ * matching only the background). Do not touch it.
+ * The text half is what kept it wrong for so long: match only the plate and the
+ * marked word stays teal, white or link-coloured depending on what it is, so it
+ * never looks like the pill however close the background gets. */
 ::highlight(tvo-filter-hit) {
 	background-color: var(--tvo-sel-bg);
 	color: var(--tvo-sel-fg);
