@@ -1215,7 +1215,7 @@ function rsVoRelease() {
 	}
 	rsVO.guids = null;
 	rsVoCloseFilter();
-	try { if (rsVoHighlightAvailable()) CSS.highlights.delete('tvo-filter-hit'); } catch (e) {}
+	try { if (rsVoHighlightAvailable()) window.CSS.highlights.delete('tvo-filter-hit'); } catch (e) {}
 	if (rsVO.style) { try { rsVO.style.remove(); } catch (e) {} rsVO.style = null; }
 	if (rsVO.filterStyle) { try { rsVO.filterStyle.remove(); } catch (e) {} rsVO.filterStyle = null; }
 }
@@ -1612,8 +1612,18 @@ function rsVoApplyUnfold(open) {
  *
  * Feature-detected, because it is a young API: without it the filter simply
  * hides non-matches and marks nothing, which is still the whole feature. */
+/* EVERYTHING THROUGH `window.`, never a bare global. Measured over CDP
+ * 2026-08-13: the page has CSS.highlights and Highlight (Chromium 144), the
+ * filter's own stylesheet was being written, and yet the highlight pass never
+ * ran — because a bare `CSS` does not resolve in the plugin's scope, so the
+ * availability probe threw into its own catch and answered "no API". Nothing in
+ * the feature was wrong; it was reading the wrong scope. The DOM names these
+ * plugins already use bare (document, localStorage, MutationObserver) are fine;
+ * the newer ones are not, so do not "tidy" these back. */
 function rsVoHighlightAvailable() {
-	try { return !!(window.CSS && CSS.highlights && typeof Highlight === 'function'); } catch (e) { return false; }
+	try {
+		return !!(window.CSS && window.CSS.highlights && typeof window.Highlight === 'function');
+	} catch (e) { return false; }
 }
 
 function rsVoTextTarget(el) {
@@ -1623,7 +1633,8 @@ function rsVoTextTarget(el) {
 function rsVoCollectRanges(el, parts, out) {
 	const scope = rsVoTextTarget(el);
 	let walker = null;
-	try { walker = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT, null); } catch (e) { return; }
+	const SHOW_TEXT = (window.NodeFilter && window.NodeFilter.SHOW_TEXT) || 4;
+	try { walker = document.createTreeWalker(scope, SHOW_TEXT, null); } catch (e) { return; }
 	let node = walker.nextNode();
 	while (node) {
 		const low = String(node.nodeValue || '').toLowerCase();
@@ -1660,8 +1671,8 @@ function rsVoRefreshHighlight(R, keep) {
 		}
 	} catch (e) {}
 	try {
-		if (!ranges.length) { CSS.highlights.delete(name); return; }
-		CSS.highlights.set(name, new Highlight(...ranges));
+		if (!ranges.length) { window.CSS.highlights.delete(name); return; }
+		window.CSS.highlights.set(name, new window.Highlight(...ranges));
 	} catch (e) {}
 }
 
@@ -2392,23 +2403,17 @@ function rsVoPlacePanel(panel, anchor, below, keep) {
  * washes out. 4px radius on boxes and row fills, per the standing rule. */
 const rsVO_CSS = `
 .tvo-chip { display: flex; align-items: center; gap: 4px; cursor: pointer; }
-/* THE SAME GREY AS THE BACKLINK PILL BESIDE IT (his call), taken from Thymer's
- * own variables rather than approximated, so it tracks every theme exactly the
- * way the native pill does: --ed-backlink-bg / -color / -hover-bg are what
- * .lineitem-backlink-pill itself uses. NOTE there is no opacity here on
- * purpose — dimming the element would dim the background too and it would no
- * longer match. The fallbacks are the module's old self-mixed values, for a
- * build where those variables are not defined. */
+/* Self-mixed from the line's own colour, NOT the backlink pill's variables.
+ * Matching --ed-backlink-bg exactly was tried on 2026-08-13 and he rejected the
+ * result: beside the pill it read heavier than the quiet affordance this is
+ * meant to be. Leave it mixed. */
 .tvo-chip-dots {
 	display: flex; align-items: center; justify-content: center;
 	flex: 0 0 auto; width: 22px; height: 20px; border-radius: 4px;
-	font-size: 13px;
-	background: var(--ed-backlink-bg, color-mix(in srgb, currentColor 10%, transparent));
-	color: var(--ed-backlink-color, inherit);
+	font-size: 13px; opacity: .45;
+	background: color-mix(in srgb, currentColor 10%, transparent);
 }
-.tvo-chip-dots:hover {
-	background: var(--ed-backlink-hover-bg, color-mix(in srgb, currentColor 18%, transparent));
-}
+.tvo-chip-dots:hover { opacity: 1; background: color-mix(in srgb, currentColor 18%, transparent); }
 /* THE FILTER INDICATOR, sitting AFTER the dots as its own small control. A
  * filter persists, so the block it runs on has to say so at a glance and be
  * clearable in one click, or lines are missing with no visible reason. Accent,
