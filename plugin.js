@@ -1779,22 +1779,28 @@ function rsVoPaintChip(btn, query) {
 	if (btn.__tvoPaint === want) return;
 	btn.__tvoPaint = want;
 	btn.textContent = '';
-	if (!query) {
-		btn.className = 'tvo-chip ti ti-dots';
-		return;
-	}
-	btn.className = 'tvo-chip tvo-chip-filtering';
+	btn.className = 'tvo-chip' + (query ? ' tvo-chip-filtering' : '');
+	/* THE DOTS ALWAYS STAY. The filter indicator is APPENDED AFTER them (his
+	 * call, 2026-08-13), never a replacement: the menu has to remain reachable
+	 * on a filtered block, not least to change or clear the filter. */
+	const dots = document.createElement('span');
+	dots.className = 'tvo-chip-dots ti ti-dots';
+	btn.appendChild(dots);
+	if (!query) return;
+	const pill = document.createElement('span');
+	pill.className = 'tvo-chip-flt';
 	const ic = document.createElement('span');
 	ic.className = 'ti ti-filter tvo-chip-ic';
-	btn.appendChild(ic);
+	pill.appendChild(ic);
 	const lbl = document.createElement('span');
 	lbl.className = 'tvo-chip-term';
 	lbl.textContent = query;
-	btn.appendChild(lbl);
+	pill.appendChild(lbl);
 	const x = document.createElement('span');
 	x.className = 'ti ti-x tvo-chip-x';
 	x.title = 'Clear the filter';
-	btn.appendChild(x);
+	pill.appendChild(x);
+	btn.appendChild(pill);
 }
 
 function rsVoCssAttr(s) { return String(s == null ? '' : s).replace(/["\\]/g, '\\$&'); }
@@ -1906,22 +1912,10 @@ function rsVoRenderMenu() {
 	 * chip rather than about any one plugin's feature, so it belongs to nobody's
 	 * provider. Its group of one also keeps it out of the fill-yields-on-hover
 	 * scope of whatever sits above it. */
-	/* The module's own rows. Filter first, because it acts on this block; Hide
-	 * last, because it is about the chip. Filter is offered wherever the line
-	 * has children to filter. */
-	const kids = ((ctx.state && ctx.state.children) || []).filter((k) => k && !k.is_trashed && !k.is_deleted);
-	const term = rsVoFilterOf(R, m.guid);
-	if (kids.length) {
-		items = items.concat([
-			{ sep: true },
-			{
-				key: '__tvo_filter',
-				label: term ? 'Filter: ' + term : 'Filter Block',
-				checked: !!term,
-				onSelect: (c, api) => { api.close(); rsVoOpenFilter(c.guid, m.chip); },
-			},
-		]);
-	}
+	/* The module's own row. The FILTER is not here: it lives as an icon in the
+	 * header (his call, 2026-08-13, pointing at the empty space beside the
+	 * title). It is an action on the block rather than one of the features the
+	 * main menu lists, and a row of its own competed with them. */
 	items = items.concat([
 		{ sep: true },
 		{
@@ -1969,7 +1963,27 @@ function rsVoPanel(items, depth, ctx) {
 	if (depth === 0) {
 		const head = document.createElement('div');
 		head.className = 'tvo-head';
-		head.textContent = 'View Options';
+		const title = document.createElement('span');
+		title.className = 'tvo-head-lbl';
+		title.textContent = 'View Options';
+		head.appendChild(title);
+		/* THE FILTER LIVES IN THE HEADER, as a glyph in the space beside the
+		 * title. Offered only where there is something to filter, and lit when
+		 * a filter is already running on this block. */
+		const R0 = rsVoRoot();
+		const kids = ((ctx.state && ctx.state.children) || []).filter((k) => k && !k.is_trashed && !k.is_deleted);
+		if (R0 && kids.length) {
+			const term = rsVoFilterOf(R0, ctx.guid);
+			const act = document.createElement('span');
+			act.className = 'tvo-head-act ti ti-search' + (term ? ' tvo-on' : '');
+			act.title = term ? 'Filtered by: ' + term : 'Filter this block';
+			act.addEventListener('click', (e) => {
+				e.stopPropagation();
+				const chip = rsVO.menu && rsVO.menu.chip;
+				rsVoOpenFilter(ctx.guid, chip || act);
+			});
+			head.appendChild(act);
+		}
 		panel.appendChild(head);
 		const hsep = document.createElement('div');
 		hsep.className = 'tvo-sep';
@@ -2151,24 +2165,27 @@ function rsVoPlacePanel(panel, anchor, below, keep) {
  * on light themes and lightens on dark ones, where --color-primary-500 alone
  * washes out. 4px radius on boxes and row fills, per the standing rule. */
 const rsVO_CSS = `
-.tvo-chip {
+.tvo-chip { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+.tvo-chip-dots {
 	display: flex; align-items: center; justify-content: center;
-	width: 22px; height: 20px; border-radius: 4px; cursor: pointer;
+	flex: 0 0 auto; width: 22px; height: 20px; border-radius: 4px;
 	font-size: 13px; opacity: .45;
 	background: color-mix(in srgb, currentColor 10%, transparent);
 }
-.tvo-chip:hover { opacity: 1; background: color-mix(in srgb, currentColor 18%, transparent); }
-/* THE FILTER INDICATOR. A filter persists, so the block it is running on has to
- * say so at a glance and be clearable in one click, or lines are missing with
- * no visible reason. Accent, not grey: this is an active state, and it matches
- * how an active row reads in the menu. */
-.tvo-chip.tvo-chip-filtering {
-	width: auto; max-width: 240px; gap: 5px; padding: 0 5px; opacity: 1;
+.tvo-chip-dots:hover { opacity: 1; background: color-mix(in srgb, currentColor 18%, transparent); }
+/* THE FILTER INDICATOR, sitting AFTER the dots as its own small control. A
+ * filter persists, so the block it runs on has to say so at a glance and be
+ * clearable in one click, or lines are missing with no visible reason. Accent,
+ * not grey: this is an active state, and it matches how an active row reads. */
+.tvo-chip-flt {
+	display: flex; align-items: center; gap: 4px; flex: 0 1 auto;
+	max-width: 220px; min-width: 0; height: 20px; padding: 0 5px;
+	border-radius: 4px; box-sizing: border-box;
+	font-family: inherit; font-size: var(--text-size-smaller, 11px);
 	color: color-mix(in srgb, var(--color-primary-500, #3aa37f) 70%, var(--text-color, currentColor));
 	background: color-mix(in srgb, currentColor 14%, transparent);
-	font-family: inherit; font-size: var(--text-size-smaller, 11px);
 }
-.tvo-chip.tvo-chip-filtering:hover { background: color-mix(in srgb, currentColor 22%, transparent); }
+.tvo-chip-flt:hover { background: color-mix(in srgb, currentColor 22%, transparent); }
 .tvo-chip-ic { font-size: 11px; flex: 0 0 auto; }
 .tvo-chip-term { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .tvo-chip-x { font-size: 12px; flex: 0 0 auto; opacity: .65; border-radius: 4px; }
@@ -2194,9 +2211,36 @@ const rsVO_CSS = `
 	overflow-x: hidden; overflow-y: auto;
 }
 .tvo-head {
-	padding: 6px 13px 8px; font-size: 11.5px; font-weight: 600; opacity: .5;
-	text-transform: uppercase; letter-spacing: .04em; user-select: none;
-	white-space: nowrap;
+	display: flex; align-items: center; justify-content: space-between; gap: 12px;
+	padding: 6px 9px 8px 13px; user-select: none; white-space: nowrap;
+}
+.tvo-head-lbl {
+	font-size: 11.5px; font-weight: 600; opacity: .5;
+	text-transform: uppercase; letter-spacing: .04em;
+}
+/* The filter's way in: a real BUTTON in the header's own empty space (his call),
+ * so it reads as pressable at rest rather than as decoration, and it does not
+ * compete with the rows below, which list FEATURES rather than actions.
+ * 4px radius, per the standing rule for every button and field. */
+.tvo-head-act {
+	flex: 0 0 auto; cursor: pointer; font-size: 13px;
+	display: flex; align-items: center; justify-content: center;
+	width: 24px; height: 20px; border-radius: 4px;
+	border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+	background: color-mix(in srgb, currentColor 8%, transparent);
+	opacity: .75;
+}
+.tvo-head-act:hover {
+	opacity: 1;
+	background: color-mix(in srgb, currentColor 18%, transparent);
+	border-color: color-mix(in srgb, currentColor 34%, transparent);
+}
+/* a filter is RUNNING on this block: same accent treatment an active row gets */
+.tvo-head-act.tvo-on {
+	opacity: 1;
+	color: color-mix(in srgb, var(--color-primary-500, #3aa37f) 70%, var(--text-color, currentColor));
+	border-color: color-mix(in srgb, currentColor 55%, transparent);
+	background: color-mix(in srgb, currentColor 14%, transparent);
 }
 /* .tvo-root carries NO icon column (VoPanel skips it at depth 0), which is what
  * puts its labels on the same left edge as the header. Nothing to declare here:
