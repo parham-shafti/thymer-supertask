@@ -1567,9 +1567,16 @@ function rsVoApplyUnfold(open) {
 		mine.add(g);
 		rsVoFoldToggle(g, false);
 	}
+	/* CLEARING A FILTER PUTS THE TREE BACK: a group we opened is collapsed
+	 * again, exactly as he had it. We keep it on the list until it really has
+	 * closed, rather than crossing it off on the attempt — a click can land
+	 * mid-render and do nothing, and forgetting it there would leave the group
+	 * hanging open with nobody left who knows it should not be. */
 	for (const g of [...mine]) {
 		if (open.has(g)) continue;
-		mine.delete(g);
+		let el = null;
+		try { el = document.querySelector('.listitem[data-guid="' + rsVoCssAttr(g) + '"]'); } catch (e) {}
+		if (!el || rsVoFoldState(el)) { mine.delete(g); continue; }
 		rsVoFoldToggle(g, true);
 	}
 }
