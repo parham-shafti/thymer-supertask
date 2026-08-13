@@ -1860,13 +1860,19 @@ function rsVoCtx(guid, st, node) {
  * no chip at all, and therefore no way to reach Description or the filter, which
  * have nothing to do with tasks (his diagnosis, 2026-08-13).
  *
- * Showing one on every parent line instead would be noise on a document-sized
- * scale. Thymer's own per-line affordances appear on hover, so ours does too:
- * the row under the pointer gets a chip if anything at all would be OFFERED
- * there, which is a provider's appliesToRow, or children for the filter to work
- * on. Exactly one such chip exists at a time. */
+ * Thymer's own per-line affordances appear on hover, so ours does too, and
+ * exactly one such chip exists at a time.
+ *
+ * BUT ONLY ON A BLOCK: a line with children. Keying it on "would any provider
+ * offer a row here" put a chip under the pointer on EVERY line in the document,
+ * because Reference Extravaganza offers Description on any line at all — which
+ * is right for a row riding a chip that already exists, and quite wrong as a
+ * reason to summon one (his report, 2026-08-13). A block is also what the two
+ * things reachable this way are about: the filter searches a block's children,
+ * and the case he raised was a heading with plain text under it. Setting a
+ * description on a childless line stays the command palette's job, exactly as
+ * it was before any of this. */
 function rsVoHoverEligible(R, ctx) {
-	for (const p of R.providers) if (rsVoAppliesRow(p, ctx)) return true;
 	const kids = ((ctx.state && ctx.state.children) || []).filter((k) => k && !k.is_trashed && !k.is_deleted);
 	return kids.length > 0;
 }
