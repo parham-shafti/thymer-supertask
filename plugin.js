@@ -854,16 +854,29 @@ const rsVO_CONTRACT = 1;
  * 5 (2026-08-13): the palette command is CLAIMED through the global instead of
  * being hardcoded to one plugin by convention.
  * 6 (2026-08-13): a dismissed chip SYNCS — it is a meta property on the line,
- * not a localStorage list. */
-const rsVO_MODULE_VERSION = 6;
+ * not a localStorage list.
+ * 7 (2026-08-13): that writer is OPTIONAL. This module must work for anyone who
+ * carries it, with no dependency on any particular plugin. */
+const rsVO_MODULE_VERSION = 7;
 const rsVO_GLOBAL = '__thymerViewOptions';
-/* A DISMISSAL LIVES ON THE LINE, as its own meta property, so it syncs to every
- * device and travels with the line (his call, 2026-08-13 — localStorage made it
- * a per-device quirk). READING is free: the eligibility scan already walks
- * `st.props` for every line. WRITING needs a plugin, because this module has no
- * data API of its own — hence `R.writer`, claimed like the palette command.
- * NOT saveConfiguration, which reloads the plugin and would tear down the host. */
+/* WHERE A DISMISSAL IS STORED, and why there are two answers.
+ *
+ * The good one: a meta property on the line, so it SYNCS to every device and
+ * travels with the line. Reading it is free — the eligibility scan already
+ * walks `st.props` for every line — but WRITING one needs a data API, and this
+ * module has none. A plugin carrying the module can lend it one (VoSetWriter).
+ *
+ * THAT LEND IS OPTIONAL, AND THAT IS THE POINT. This module has to stand on its
+ * own for whoever carries it: making persistence depend on a plugin volunteering
+ * a writer would mean View Options only works if some particular plugin is
+ * installed, which is exactly the dependency a shared component must not have
+ * (his call, 2026-08-13, correcting me). With no writer the dismissal falls back
+ * to localStorage — this device only, but working. Lend a writer and it syncs.
+ * Never saveConfiguration either way: it reloads the plugin and would tear down
+ * the host. */
 const rsVO_HIDE_PROP = 'tvo_hide';
+const rsVO_HIDE_KEY = 'thymer-view-options-hidden-lines';
+const rsVO_HIDE_CAP = 500;
 
 /* Per-EVALUATION state. Each plugin's spliced copy gets its own binding, which
  * is exactly what makes a stale copy (after a hot reload re-evaluates the file)
@@ -895,7 +908,8 @@ function rsVoRoot() {
 	if (!R) {
 		R = {
 			contract: rsVO_CONTRACT, providers: [], rev: 0, host: null,
-			hidePending: {}, cmdOwner: null, writer: null,
+			hidePending: {}, hiddenLocal: rsVoStoredHidden(),
+			cmdOwner: null, writer: null,
 		};
 		try { window[rsVO_GLOBAL] = R; } catch (e) { return null; }
 		return R;
@@ -913,6 +927,7 @@ function rsVoRoot() {
 	/* seed the list if the record was created by a copy that predates hiding —
 	 * adding a data field is backward-safe, an older host simply ignores it */
 	if (!R.hidePending || typeof R.hidePending !== 'object') R.hidePending = {};
+	if (!Array.isArray(R.hiddenLocal)) R.hiddenLocal = rsVoStoredHidden();
 	if (typeof R.cmdOwner === 'undefined') R.cmdOwner = null;
 	if (typeof R.writer === 'undefined') R.writer = null;
 	return R;
@@ -974,8 +989,23 @@ function rsVoClaimCommand() {
  * just set, and a write is async anyway, so without it the chip would linger
  * for a beat after you dismissed it. It SELF-HEALS — once the property agrees,
  * the overlay entry is dropped, so a failed write stops lying on the next scan. */
+function rsVoStoredHidden() {
+	try {
+		const raw = localStorage.getItem(rsVO_HIDE_KEY);
+		const a = raw ? JSON.parse(raw) : [];
+		return Array.isArray(a) ? a.filter((g) => typeof g === 'string') : [];
+	} catch (e) { return []; }
+}
+
+function rsVoStoreHidden(list) {
+	try { localStorage.setItem(rsVO_HIDE_KEY, JSON.stringify(list)); } catch (e) {}
+}
+
 function rsVoLineHidden(R, st, guid) {
-	const stored = !!(st && st.props && st.props[rsVO_HIDE_PROP] === '1');
+	/* either store counts, so a workspace that gained a writer later still
+	 * honours what was dismissed before it */
+	const stored = !!(st && st.props && st.props[rsVO_HIDE_PROP] === '1')
+		|| R.hiddenLocal.indexOf(guid) >= 0;
 	const pend = R.hidePending[guid];
 	if (typeof pend !== 'boolean') return stored;
 	if (pend === stored) { delete R.hidePending[guid]; return stored; }
@@ -984,10 +1014,18 @@ function rsVoLineHidden(R, st, guid) {
 
 function rsVoWrite(R, guid, on) {
 	R.hidePending[guid] = !!on;
+	let synced = false;
 	const w = R.writer;
 	if (w && typeof w.write === 'function') {
-		try { w.write(guid, !!on); } catch (e) {}
+		try { w.write(guid, !!on); synced = true; } catch (e) {}
 	}
+	const i = R.hiddenLocal.indexOf(guid);
+	/* the local list only picks up what nothing synced, but it always lets go:
+	 * a line dismissed before a writer existed must still be restorable after */
+	if (on && !synced && i < 0) R.hiddenLocal.push(guid);
+	if (!on && i >= 0) R.hiddenLocal.splice(i, 1);
+	while (R.hiddenLocal.length > rsVO_HIDE_CAP) R.hiddenLocal.shift();
+	rsVoStoreHidden(R.hiddenLocal);
 }
 
 function rsVoHideLine(guid) {
@@ -1009,10 +1047,19 @@ function rsVoShowAll() {
 	if (!R) return 0;
 	const byGuid = (window.g_universe && window.g_universe.itemsByGuid) || {};
 	let n = 0;
+	const seen = new Set();
 	for (const g in byGuid) {
 		const st = byGuid[g];
 		if (!st || st.is_trashed || st.is_deleted) continue;
 		if (!rsVoLineHidden(R, st, g)) continue;
+		seen.add(g);
+		rsVoWrite(R, g, false);
+		n++;
+	}
+	/* the local fallback keeps the full list, so unlike the synced property it
+	 * can restore lines whose page is not open */
+	for (const g of R.hiddenLocal.slice()) {
+		if (seen.has(g)) continue;
 		rsVoWrite(R, g, false);
 		n++;
 	}
