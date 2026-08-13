@@ -1369,12 +1369,10 @@ function rsVoMenuColors() {
 		document.documentElement.style.setProperty('--tvo-menu-fg', dark
 			? '#D5D4D4'
 			: 'var(--cmdpal-fg-color, var(--text-color, #333))');
-		/* the filter hit: a DEEP green plate (his call), not a wash of the
-		 * accent. Solid rather than translucent so it reads the same over any
-		 * line, and it carries its own foreground because a dark plate under
-		 * dark text on a light theme would be unreadable. */
-		document.documentElement.style.setProperty('--tvo-hit-bg', dark ? '#1E5B44' : '#1E5B44');
-		document.documentElement.style.setProperty('--tvo-hit-fg', dark ? '#EAF6F0' : '#F2FBF7');
+		/* NOTE the filter hit's colour is NOT set here. It is one CSS variable
+		 * shared with the criteria pill (see --tvo-hit-bg in the stylesheet), so
+		 * the mark on the line and the pill in the chip cannot drift apart. An
+		 * inline value written here would beat that rule. */
 	} catch (e) {}
 }
 
@@ -2427,6 +2425,17 @@ function rsVoPlacePanel(panel, anchor, below, keep) {
  * on light themes and lightens on dark ones, where --color-primary-500 alone
  * washes out. 4px radius on boxes and row fills, per the standing rule. */
 const rsVO_CSS = `
+/* THE SELECTION GREEN, defined ONCE and used by both the criteria pill in the
+ * chip and the mark on the line (his call: the same colour in both places).
+ * It is the accent leaned towards the theme's text colour and then laid on at
+ * low strength, which is what the pill has always been — written out here as an
+ * expression instead of riding currentColor, because a ::highlight() cannot see
+ * the pill's colour and currentColor there would resolve to the line's text. */
+:root {
+	--tvo-hit-bg: color-mix(in srgb,
+		color-mix(in srgb, var(--color-primary-500, #3aa37f) 70%, var(--text-color, #dddddd)) 14%,
+		transparent);
+}
 .tvo-chip { display: flex; align-items: center; gap: 4px; cursor: pointer; }
 /* Self-mixed from the line's own colour, NOT the backlink pill's variables.
  * Matching --ed-backlink-bg exactly was tried on 2026-08-13 and he rejected the
@@ -2449,7 +2458,7 @@ const rsVO_CSS = `
 	border-radius: 4px; box-sizing: border-box;
 	font-family: inherit; font-size: var(--text-size-smaller, 11px);
 	color: color-mix(in srgb, var(--color-primary-500, #3aa37f) 70%, var(--text-color, currentColor));
-	background: color-mix(in srgb, currentColor 14%, transparent);
+	background: var(--tvo-hit-bg);
 }
 .tvo-chip-flt:hover { background: color-mix(in srgb, currentColor 22%, transparent); }
 .tvo-chip-ic { font-size: 11px; flex: 0 0 auto; }
@@ -2467,8 +2476,7 @@ const rsVO_CSS = `
  * added to a line. Accent at low strength so the word stays readable and the
  * mark reads as the same green as everything else the module lights up. */
 ::highlight(tvo-filter-hit) {
-	background-color: var(--tvo-hit-bg, #1E5B44);
-	color: var(--tvo-hit-fg, #EAF6F0);
+	background-color: var(--tvo-hit-bg);
 }
 .tvo-filterhint { padding: 6px 2px 0; font-size: var(--text-size-smaller, 11px); opacity: .5; white-space: nowrap; }
 .tvo-menu {
