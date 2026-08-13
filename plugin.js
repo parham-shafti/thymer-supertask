@@ -3760,8 +3760,10 @@ class Plugin extends AppPlugin {
 		 * follows, go to the end of the line so typing carries on naturally. */
 		let move = null;
 		if (i >= 0) {
+			/* CHANGING a date must not grow a blank either — this is the
+			 * "byter datum" half of his report. The caret is restored to where
+			 * he stood on this path, so nothing needs a span to aim at. */
 			segs[i] = { type: 'datetime', text: dt.value() };
-			if (i === segs.length - 1) segs.push({ type: 'text', text: ' ' });
 		} else {
 			const at = this.insertDate(segs, dt);
 			const trailing = segs.slice(at + 1).some((sg) => sg.type !== 'text' || (sg.text || '').trim());
@@ -3822,19 +3824,29 @@ class Plugin extends AppPlugin {
 	}
 
 	/* New dates go in front of the trailing hashtags, which is where they sit on
-	 * every existing line: "text <date> #timeblock". A separator is ALWAYS left
-	 * after the date, never just before it: the date chip is inert to caret
-	 * placement, so the span that follows it is the only thing we can aim at
-	 * afterwards. Returns the index of the date segment. */
+	 * every existing line: "text <date> #timeblock".
+	 *
+	 * The separator AFTER the date is only written when something follows it,
+	 * where it is real formatting that keeps the chip off the next segment. It
+	 * used to be written unconditionally, as a caret crutch: the date chip is
+	 * inert to synthetic caret placement, so the span after it was the only
+	 * thing we could aim at. That left a trailing blank on every line whose
+	 * date landed last — provable in his data, and his report 2026-08-13.
+	 * `caretToLineEnd` removes the need for the crutch.
+	 *
+	 * Returns the index of the date segment. */
 	insertDate(segs, dt) {
 		const at = segs.findIndex((s) => s.type === 'hashtag');
 		const where = at < 0 ? segs.length : at;
-		const parts = [{ type: 'datetime', text: dt.value() }, { type: 'text', text: ' ' }];
 		/* only add a leading separator when there is not already one, or a line
 		 * ending in a space picks up a second one every time a date is set */
-		if (this.needsGap(segs, where)) parts.unshift({ type: 'text', text: ' ' });
+		const lead = this.needsGap(segs, where);
+		const parts = [];
+		if (lead) parts.push({ type: 'text', text: ' ' });
+		parts.push({ type: 'datetime', text: dt.value() });
+		if (where < segs.length) parts.push({ type: 'text', text: ' ' });
 		segs.splice(where, 0, ...parts);
-		return where + (parts.length === 3 ? 1 : 0);
+		return where + (lead ? 1 : 0);
 	}
 
 	/* True when segs[i-1] does not already end in whitespace. */
@@ -3897,6 +3909,14 @@ class Plugin extends AppPlugin {
 				} else {
 					const at = spans.findIndex((sp) => /lineitem-datetime/.test(sp.className || ''));
 					if (at >= 0 && spans[at + 1]) { el = spans[at + 1]; atEnd = false; }
+					/* the date is LAST — there is no following span any more,
+					 * because we stopped writing a blank one. Take the chip
+					 * itself; the chip-is-last branch below routes it to
+					 * caretToLineEnd, which is the same visual position and
+					 * does not need the chip to accept a pointer. Without this
+					 * the caret was never placed and focus never restored, and
+					 * the row silently ate every keystroke. */
+					else if (at >= 0) { el = spans[at]; atEnd = true; }
 				}
 			}
 			if (el) break;
@@ -3906,9 +3926,55 @@ class Plugin extends AppPlugin {
 		/* one more frame so the rect we are about to measure is the settled one */
 		await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 16)));
 
+		/* THE CHIP IS LAST — there is no span after it to aim at, because we no
+		 * longer write a blank one just to have a target. Use Thymer's own
+		 * position factory instead: it lands the caret at the end of the line,
+		 * which IS "just after the chip" in this case, and it does not care
+		 * whether the last thing rendered accepts a pointer. */
+		const spansNow = this.segmentSpans(lineGuid);
+		if (el === spansNow[spansNow.length - 1]
+			&& /lineitem-(datetime|hashtag)/.test(el.className || '')) {
+			if (await this.caretToLineEnd(lineGuid)) return;
+		}
+
 		const r = el.getBoundingClientRect();
 		if (!r.width && !r.height) return;
 		this.pointAt(el, atEnd ? r.right - 1 : r.left + 1, r.top + r.height / 2);
+	}
+
+	/* Caret to the end of a line without synthesising a pointer, ported from
+	 * Reshape's placeCaretAtLineEnd (mined from the bundle). Build the position
+	 * with Thymer's own factory off the live caret's class and collapse the
+	 * selection onto it: that moves the caret, clears the block range and
+	 * repaints, and unlike a synthetic press it works against a chip.
+	 * `lineGuid` is the RENDERED row's guid, so inside a live search this is the
+	 * V-guid — which is exactly how the container map is keyed. */
+	async caretToLineEnd(lineGuid) {
+		try {
+			let lv = null;
+			let itemView = null;
+			for (let i = 0; i < 20 && !itemView; i++) {
+				for (const v of (window.g_universe && window.g_universe.listviews) || []) {
+					for (const c of (v && v.containers) || []) {
+						const iv = c && c.items_by_guid && c.items_by_guid[lineGuid];
+						if (iv) { lv = v; itemView = iv; break; }
+					}
+					if (itemView) break;
+				}
+				if (!itemView) await new Promise((res) => setTimeout(res, 25));
+			}
+			if (!lv || !itemView) return false;
+			const sel = lv.selection;
+			const pos = sel && sel._caret && sel._caret.pos;
+			const PosClass = pos && pos.constructor;
+			if (!sel || typeof sel.collapse !== 'function'
+				|| !PosClass || typeof PosClass.T !== 'function') return false;
+			sel.collapse(PosClass.T(itemView, 'E'), true);
+			/* keyboard focus back WITHOUT moving the caret — focus() on the
+			 * wrapper is ignored, but the textarea takes it */
+			try { window.g_virtual_input.$textarea.focus(); } catch (e) {}
+			return true;
+		} catch (e) { return false; }
 	}
 
 	/* Calling focus() on #virtualinput-wrapper does NOT work on its own: verified
@@ -6746,14 +6812,17 @@ class Plugin extends AppPlugin {
 		const created = i < 0;
 		if (i < 0) {
 			if (this.needsGap(segs, segs.length)) segs.push({ type: 'text', text: ' ' });
-			segs.push({ type: 'hashtag', text: tb.tag }, { type: 'text', text: ' ' });
+			/* no trailing separator: the tag is last, so a space after it is
+			 * nothing but a blank on the end of the line (his report). The
+			 * caret is placed with caretToLineEnd instead of being aimed at
+			 * that span. */
+			segs.push({ type: 'hashtag', text: tb.tag });
 		} else if (segs[i].text === tb.tag) {
 			segs.splice(i, 1);
 			this.healGap(segs, i);
 			cleared = true;
 		} else {
 			segs[i] = { type: 'hashtag', text: tb.tag };
-			if (i === segs.length - 1) segs.push({ type: 'text', text: ' ' });
 		}
 
 		await li.setSegments(segs);
