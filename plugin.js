@@ -5352,16 +5352,28 @@ class Plugin extends AppPlugin {
 		const st = ctx.state;
 		if (!st) return [];
 		const pend = (this.voPending && this.voPending.get(ctx.guid)) || null;
-		/* the {m:'g',k:[]} fallback is deliberate and pre-existing: a heading
-		 * that has the chip only because of a progress bar shows Group by Status
-		 * as the mode it WOULD use, with nothing ticked */
-		const cur = (pend && pend.hasConf ? pend.conf : this.orderConfOf(st)) || { m: 'g', k: [] };
+		/* THE EFFECTIVE conf, and `conf === null` MEANS NOTHING IS ACTIVE.
+		 * Two things this gets right that the older read did not:
+		 *   - Turning ordering off used to leave "Group by Status" lit. The
+		 *     menu read a `{m:'g',k:[]}` fallback and lit the mode from it, so
+		 *     the shape it would USE was indistinguishable from the mode it WAS
+		 *     using (his report, 2026-08-13). The fallback now only supplies a
+		 *     shape for building the rows; `conf` alone decides what is active.
+		 *   - Reading EFFECTIVE ordering (not just an explicit conf) makes the
+		 *     submenu agree with its own title: a section grouped by the global
+		 *     switch shows the mode and rows it is actually running, instead of
+		 *     an accent title over a submenu with nothing lit. Picking a row
+		 *     there writes an explicit conf for this section, which is what
+		 *     customising a globally-ordered section should do. */
+		const conf = (pend && pend.hasConf) ? pend.conf : this.effectiveOrderConf(st);
+		const cur = conf || { m: 'g', k: [] };
 		const progOn = (pend && pend.hasProg) ? pend.prog : this.effectiveProgress(st);
 
 		const modeRow = (m, label) => ({
 			key: 'm-' + m,
 			label: label,
-			selected: cur.m === m,
+			/* only a mode that is actually RUNNING reads as active */
+			selected: !!conf && cur.m === m,
 			/* Clicking the ALREADY-ACTIVE mode does nothing (his call — an
 			 * earlier version turned ordering off there and kept surprising
 			 * him). Only Turn off ordering turns it off. */
@@ -5409,20 +5421,21 @@ class Plugin extends AppPlugin {
 		sub.push({ sep: true });
 		sub.push({
 			key: 'off', label: 'Turn Off Ordering',
+			/* nothing to turn off when nothing is running — an option that does
+			 * nothing must not look live (playbook §12) */
+			disabled: !conf,
 			onSelect: (c, api) => { api.close(); this.voSetOrder(c, null); },
 		});
 
-		/* EFFECTIVE ordering decides whether the title reads as active, so a
-		 * section grouped by the global switch lights up too. The pending
-		 * overlay wins while a write is in flight, exactly as it does for the
-		 * rows inside. */
-		const ordered = pend && pend.hasConf ? !!pend.conf : !!this.effectiveOrderConf(st);
+		/* ONE source of truth for "is this section ordered": the same `conf` the
+		 * rows inside are built from, so the title can never disagree with what
+		 * the submenu shows. */
 		return [
 			{
 				key: 'prog', label: 'Progress Bar', checked: progOn,
 				onSelect: (c) => this.voSetProgress(c, !progOn),
 			},
-			{ key: 'section', label: 'Order/Group Section', checked: ordered, submenu: sub },
+			{ key: 'section', label: 'Order/Group Section', checked: !!conf, submenu: sub },
 		];
 	}
 
