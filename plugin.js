@@ -1563,7 +1563,19 @@ function rsVoFoldToggle(guid, wantFolded) {
  * his tree back the way he had it. */
 function rsVoApplyUnfold(open) {
 	const mine = rsVO.unfolded;
+	/* OWNERSHIP IS "IT WAS COLLAPSED AND WE OPENED IT", nothing weaker. Marking
+	 * every line the filter NEEDS open as ours collapsed things on clear that
+	 * were never closed in the first place, the filtered block itself included
+	 * (his report, 2026-08-13: removing the search collapsed the whole main
+	 * group). A line that is already open when we reach it is simply left
+	 * alone, and never lands on the list.
+	 * Note there is no early-out on `mine.has(g)`: a line that is ours and has
+	 * somehow gone back to folded gets another attempt, which is what makes a
+	 * click that landed mid-render recoverable. */
 	for (const g of open) {
+		let el = null;
+		try { el = document.querySelector('.listitem[data-guid="' + rsVoCssAttr(g) + '"]'); } catch (e) {}
+		if (!el || !rsVoFoldState(el)) continue;
 		mine.add(g);
 		rsVoFoldToggle(g, false);
 	}
