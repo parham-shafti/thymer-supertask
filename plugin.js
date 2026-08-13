@@ -820,7 +820,16 @@ const DOW = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
  *   host: null,    // { version, id, release() } — the copy currently rendering
  * }
  * CONTRACT 1 provider record:
- *   { id, version, order, appliesTo(ctx) -> bool, build(ctx) -> items[] }
+ *   { id, version, order, appliesTo(ctx) -> bool, appliesToRow?(ctx) -> bool,
+ *     build(ctx) -> items[] }
+ *   TWO predicates, and the split matters. `appliesTo` means "this line
+ *   WARRANTS A CHIP because of me". `appliesToRow` means "my row belongs in a
+ *   menu on this line" and defaults to `appliesTo`. A provider that is useful
+ *   to reach but not worth summoning a chip on its own (Reference
+ *   Extravaganza's Description: worth offering wherever a chip already is,
+ *   never a chip on every line in the document) sets a narrow `appliesTo` and
+ *   a wide `appliesToRow`. Deliberately in that order, so an OLDER host that
+ *   knows only `appliesTo` shows FEWER ROWS — never a chip on every line.
  * CONTRACT 1 context:
  *   { guid, type, state, node }  type/state come from g_universe.itemsByGuid;
  *   `node` is the rendered .listitem the chip is anchored to, and it is present
@@ -833,7 +842,10 @@ const DOW = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
  *     onSelect?(ctx, api) }      api = { close(), refresh() }
  * onSelect belongs to the registering plugin; the host only invokes it. */
 const rsVO_CONTRACT = 1;
-const rsVO_MODULE_VERSION = 1;
+/* 2 (2026-08-13): the appliesTo / appliesToRow split, and the main-menu layout
+ * round (no icon column, divider under the header, filled active leaf, submenu
+ * aligned to its title row). Bump this whenever behaviour here changes. */
+const rsVO_MODULE_VERSION = 2;
 const rsVO_GLOBAL = '__thymerViewOptions';
 
 /* Per-EVALUATION state. Each plugin's spliced copy gets its own binding, which
@@ -892,6 +904,7 @@ function rsVoRegister(rec) {
 		version: String(rec.version == null ? '' : rec.version),
 		order: typeof rec.order === 'number' ? rec.order : 100,
 		appliesTo: rec.appliesTo,
+		appliesToRow: rec.appliesToRow,
 		build: rec.build,
 	};
 	const i = R.providers.findIndex((x) => x && x.id === p.id);
@@ -1118,6 +1131,15 @@ function rsVoApplies(p, ctx) {
 	try { return !!(p && typeof p.appliesTo === 'function' && p.appliesTo(ctx)); } catch (e) { return false; }
 }
 
+/* Whether this provider's ROWS belong in a menu on this line — a wider question
+ * than whether it warrants a chip. Defaults to appliesTo. */
+function rsVoAppliesRow(p, ctx) {
+	try {
+		if (p && typeof p.appliesToRow === 'function') return !!p.appliesToRow(ctx);
+	} catch (e) { return false; }
+	return rsVoApplies(p, ctx);
+}
+
 function rsVoBuild(p, ctx) {
 	try {
 		const items = (p && typeof p.build === 'function') ? p.build(ctx) : null;
@@ -1278,7 +1300,9 @@ function rsVoCssAttr(s) { return String(s == null ? '' : s).replace(/["\\]/g, '\
 function rsVoItemsFor(R, ctx) {
 	const out = [];
 	for (const p of R.providers) {
-		if (!rsVoApplies(p, ctx)) continue;
+		/* the ROW predicate, not the chip one: a provider can be worth reaching
+		 * wherever a chip already is without being worth a chip of its own */
+		if (!rsVoAppliesRow(p, ctx)) continue;
 		const items = rsVoBuild(p, ctx).filter((it) => it && typeof it === 'object');
 		if (!items.length) continue;
 		if (out.length) out.push({ sep: true });
@@ -1410,30 +1434,41 @@ function rsVoPanel(items, depth, ctx) {
 			panel.appendChild(s);
 			return;
 		}
+		const hasSub = Array.isArray(it.submenu) && it.submenu.length;
+		/* WHICH ACTIVE ROWS CARRY A FILL, and not just accent text:
+		 *   - the current MODE inside a submenu (`selected`), as before;
+		 *   - an active LEAF in the main menu (his call, 2026-08-13) — a leaf
+		 *     IS its own state, so it should read as pressed. A row that opens
+		 *     a submenu only reports what is inside it, so it stays accent
+		 *     text: filling it would compete with the submenu it summons. */
+		const filled = !!it.selected || (depth === 0 && !!it.checked && !hasSub);
 		const row = document.createElement('div');
 		row.className = 'tvo-row'
 			+ (it.selected ? ' tvo-cur' : '')
 			+ (it.checked ? ' tvo-on' : '')
+			+ (filled ? ' tvo-fill' : '')
 			+ (it.disabled ? ' tvo-dis' : '');
 		row.setAttribute('data-tvo-i', String(i));
 		panel.appendChild(row);
-		/* THE ROOT PANEL HAS NO ICON COLUMN, so its labels start at the same
-		 * inset as the VIEW OPTIONS header and the whole main menu reads as one
-		 * left edge (his call, 2026-08-13). The main menu is a list of the
-		 * FEATURES each plugin contributes; icons belong to the detail rows
-		 * inside a submenu, where they carry real information (a status row
-		 * wears its collector's own flag). An `icon` on a root item is
-		 * therefore ignored, deliberately. */
-		if (depth > 0) {
+		/* AN ICON SLOT IS ONLY RENDERED WHEN THERE IS AN ICON — never as an
+		 * empty spacer. A row without one starts its label at the row's own
+		 * padding, level with where the icons sit, which is how this menu has
+		 * always looked: the mode rows line up with the status rows' GLYPHS,
+		 * not with their labels. Reserving the slot indents every iconless row
+		 * and he caught it immediately.
+		 * At depth 0 there are no icons at all: the main menu is a list of the
+		 * FEATURES each plugin contributes, and dropping the column is what puts
+		 * its labels on the same left edge as the VIEW OPTIONS header. An
+		 * `icon` on a root item is therefore ignored, deliberately. */
+		if (depth > 0 && it.icon) {
 			const ic = document.createElement('span');
-			ic.className = 'tvo-ic' + (it.icon ? ' ti ' + it.icon : '');
+			ic.className = 'tvo-ic ti ' + it.icon;
 			row.appendChild(ic);
 		}
 		const lbl = document.createElement('span');
 		lbl.className = 'tvo-lbl';
 		lbl.textContent = String(it.label == null ? '' : it.label);
 		row.appendChild(lbl);
-		const hasSub = Array.isArray(it.submenu) && it.submenu.length;
 		if (hasSub) {
 			const ch = document.createElement('span');
 			ch.className = 'tvo-chev ti ti-chevron-right';
@@ -1582,19 +1617,22 @@ const rsVO_CSS = `
 	display: flex; align-items: center; gap: 12px; white-space: nowrap;
 	padding: 8px 13px; border-radius: 4px; font-weight: 400; cursor: pointer;
 }
-.tvo-row:hover { background: color-mix(in srgb, currentColor 13%, transparent); }
+/* HOVER IS NEUTRAL GREY, never a tint of the row's own colour. Riding
+ * currentColor made an accent row hover accent-tinted, so an active row read as
+ * "more active" rather than merely hovered. This is the same flat grey the menu
+ * used before it was shared. */
+.tvo-row:hover { background: rgba(127,127,127,.2); }
 .tvo-ic { width: 17px; flex: 0 0 auto; font-size: 15px; opacity: .6; text-align: center; }
 .tvo-lbl { flex: 1 1 auto; }
 .tvo-chev { flex: 0 0 auto; font-size: 13px; opacity: .45; margin-right: -4px; }
-.tvo-row.tvo-cur {
-	background: color-mix(in srgb, currentColor 13%, transparent);
-	color: color-mix(in srgb, var(--color-primary-500, #3aa37f) 70%, var(--text-color, currentColor));
-}
+/* ACTIVE = accent text; see VoPanel for which active rows also carry a fill */
+.tvo-row.tvo-cur,
+.tvo-row.tvo-on { color: color-mix(in srgb, var(--color-primary-500, #3aa37f) 70%, var(--text-color, currentColor)); }
+.tvo-row.tvo-fill { background: color-mix(in srgb, currentColor 13%, transparent); }
 /* the fill SHIFTS to the hovered row when the two would sit flush against each
  * other; two adjacent fills read as one plate */
-.tvo-row:hover + .tvo-row.tvo-cur:not(:hover),
-.tvo-row.tvo-cur:not(:hover):has(+ .tvo-row:hover) { background: transparent; }
-.tvo-row.tvo-on { color: color-mix(in srgb, var(--color-primary-500, #3aa37f) 70%, var(--text-color, currentColor)); }
+.tvo-row:hover + .tvo-row.tvo-fill:not(:hover),
+.tvo-row.tvo-fill:not(:hover):has(+ .tvo-row:hover) { background: transparent; }
 .tvo-row.tvo-on .tvo-ic { opacity: .9; }
 .tvo-row.tvo-dis { opacity: .4; cursor: default; }
 .tvo-row.tvo-dis:hover { background: transparent; }
@@ -5327,7 +5365,7 @@ class Plugin extends AppPlugin {
 		}
 		sub.push({ sep: true });
 		sub.push({
-			key: 'off', label: 'Turn off ordering',
+			key: 'off', label: 'Turn Off Ordering',
 			onSelect: (c, api) => { api.close(); this.voSetOrder(c, null); },
 		});
 
@@ -5338,7 +5376,7 @@ class Plugin extends AppPlugin {
 		const ordered = pend && pend.hasConf ? !!pend.conf : !!this.effectiveOrderConf(st);
 		return [
 			{
-				key: 'prog', label: 'Progress bar', checked: progOn,
+				key: 'prog', label: 'Progress Bar', checked: progOn,
 				onSelect: (c) => this.voSetProgress(c, !progOn),
 			},
 			{ key: 'section', label: 'Order/Group Section', checked: ordered, submenu: sub },
@@ -5421,8 +5459,18 @@ class Plugin extends AppPlugin {
 	 *      ordering" should do that.
 	 * Case 3 is narrowed to headings that have something to sort, or every
 	 * heading in the workspace would sprout a chip the moment the global
-	 * switch is on. */
+	 * switch is on.
+	 *
+	 * OUR OWN COLLECTOR ROOFS NEVER QUALIFY, whatever the three cases say.
+	 * A collector ("Done", "Important", …) is an H5 heading we created and it
+	 * holds tasks, so case 3 matched it the moment the global switch was on and
+	 * every group inside a section sprouted its own chip (his report,
+	 * 2026-08-13; it predates the shared menu — the case-3 widening in 6a4f62e
+	 * introduced it). A collector is not a section: it has no ordering of its
+	 * own to configure, and its parent's menu already controls it. Same guard
+	 * `canHaveProgress` already uses to keep bars off them. */
 	chipWanted(st, g) {
+		if (this.binKeyOf(st)) return false;
 		if (this.orderConfOf(st)) return true;
 		if (this.progLit && this.progLit.has(g)) return true;
 		if (!this.effectiveOrderConf(st)) return false;
