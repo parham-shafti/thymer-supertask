@@ -894,6 +894,7 @@ const rsVO = {
 	filterStyle: null,
 	filterPop: null,
 	unfolded: new Set(), /* groups WE opened for a filter, to fold back after */
+	foldTried: new Map(), /* guid -> last click attempt, so a dud cannot loop */
 	menu: null,     /* { guid, chip, path: [key], panels: [el] } */
 	raf: 0,
 	tail: 0,
@@ -1505,39 +1506,53 @@ function rsVoFilterHidden(R, openOut) {
 	return hide;
 }
 
-/* Fold state is PER CLIENT and lives in localStorage under `folded_items`,
- * keyed "<workspaceGuid>_<lineGuid>", read once per listview construction into
- * each listview's `fold_loaded_keys`. So changing it means writing both, then
- * nudging a re-layout. Same mechanism as Supertask's foldLines, other way up. */
-function rsVoWsGuid() {
-	const u = window.g_universe;
-	return (u && u.workspace && u.workspace.guid) || (u && u.workspaceGuid) || null;
+/* UNFOLDING: drive Thymer's OWN control, do not write the fold store.
+ *
+ * The first attempt wrote `folded_items` in localStorage and mirrored it into
+ * each listview's `fold_loaded_keys`, which is how Supertask FOLDS a group. It
+ * does not unfold one: that Set is read once when a listview builds its items,
+ * so changing it afterwards leaves an already-rendered folded line exactly as
+ * it was, and his match stayed buried (his report, 2026-08-13).
+ *
+ * What works is clicking the control the user would click, with the same
+ * synthetic pointer sequence Reference Extravaganza proved on the unfold
+ * affordance. Thymer then does its own bookkeeping, including persistence, so
+ * there is no store for us to keep in step.
+ *
+ * `.listitem-folded` is the state (both class names verified in the live CSS);
+ * `.line-fold-chevron` is the toggle on a foldable line and
+ * `.lineitem-btn-unfold` the dots that appear on a folded one. */
+function rsVoFoldState(el) {
+	if (el.classList.contains('listitem-folded')) return true;
+	/* the dots only exist on a folded line, so they are a second opinion for a
+	 * build where the class is not applied */
+	return !!el.querySelector('.lineitem-btn-unfold');
 }
 
-/* Returns true when it actually changed something, so the caller only nudges
- * a re-layout on a real change and cannot loop through the resize listener. */
-function rsVoSetFolded(guids, folded) {
-	const ws = rsVoWsGuid();
-	if (!ws || !guids || !guids.length) return false;
-	const keys = guids.map((g) => ws + '_' + g);
-	let cur = [];
-	try { cur = JSON.parse(localStorage.getItem('folded_items') || '[]') || []; } catch (e) {}
-	if (!Array.isArray(cur)) cur = [];
-	let changed = false;
-	for (const k of keys) {
-		const at = cur.indexOf(k);
-		if (folded && at < 0) { cur.push(k); changed = true; }
-		if (!folded && at >= 0) { cur.splice(at, 1); changed = true; }
-	}
-	if (!changed) return false;
-	try { localStorage.setItem('folded_items', JSON.stringify(cur.slice(-100))); } catch (e) {}
-	try {
-		for (const lv of ((window.g_universe && window.g_universe.listviews) || [])) {
-			if (!lv || !lv.fold_loaded_keys) continue;
-			for (const k of keys) { if (folded) lv.fold_loaded_keys.add(k); else lv.fold_loaded_keys.delete(k); }
-		}
-	} catch (e) {}
-	return true;
+function rsVoFoldToggle(guid, wantFolded) {
+	let el = null;
+	try { el = document.querySelector('.listitem[data-guid="' + rsVoCssAttr(guid) + '"]'); } catch (e) {}
+	if (!el) return;
+	if (rsVoFoldState(el) === !!wantFolded) return;
+	/* Retry-limited. A click can land mid-render and do nothing, and without a
+	 * limit every refresh cycle would fire another one at the same row. */
+	const now = Date.now();
+	const last = rsVO.foldTried.get(guid) || 0;
+	if (now - last < 800) return;
+	rsVO.foldTried.set(guid, now);
+	const btn = el.querySelector('.lineitem-btn-unfold') || el.querySelector('.line-fold-chevron');
+	if (!btn) return;
+	const r = btn.getBoundingClientRect();
+	if (!r.width && !r.height) return;
+	const x = Math.round(r.left + r.width / 2);
+	const y = Math.round(r.top + r.height / 2);
+	const down = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, button: 0, buttons: 1 };
+	const up = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, button: 0, buttons: 0 };
+	try { btn.dispatchEvent(new PointerEvent('pointerdown', down)); } catch (e) {}
+	try { btn.dispatchEvent(new MouseEvent('mousedown', down)); } catch (e) {}
+	try { btn.dispatchEvent(new PointerEvent('pointerup', up)); } catch (e) {}
+	try { btn.dispatchEvent(new MouseEvent('mouseup', up)); } catch (e) {}
+	try { btn.dispatchEvent(new MouseEvent('click', up)); } catch (e) {}
 }
 
 /* A MATCH INSIDE A FOLDED GROUP MUST STILL SHOW. A folded line's children are
@@ -1548,18 +1563,15 @@ function rsVoSetFolded(guids, folded) {
  * his tree back the way he had it. */
 function rsVoApplyUnfold(open) {
 	const mine = rsVO.unfolded;
-	const toOpen = [];
-	const toClose = [];
-	for (const g of open) if (!mine.has(g)) toOpen.push(g);
-	for (const g of mine) if (!open.has(g)) toClose.push(g);
-	if (!toOpen.length && !toClose.length) return;
-	let changed = false;
-	if (toOpen.length && rsVoSetFolded(toOpen, false)) changed = true;
-	if (toClose.length && rsVoSetFolded(toClose, true)) changed = true;
-	for (const g of toOpen) mine.add(g);
-	for (const g of toClose) mine.delete(g);
-	/* only on a real change, or the resize listener would re-enter this */
-	if (changed) { try { window.dispatchEvent(new Event('resize')); } catch (e) {} }
+	for (const g of open) {
+		mine.add(g);
+		rsVoFoldToggle(g, false);
+	}
+	for (const g of [...mine]) {
+		if (open.has(g)) continue;
+		mine.delete(g);
+		rsVoFoldToggle(g, true);
+	}
 }
 
 /* One stylesheet, guid-keyed, exactly like every other decoration in these
