@@ -1458,8 +1458,24 @@ function rsVoPanel(items, depth, ctx) {
 		hsep.className = 'tvo-sep';
 		panel.appendChild(hsep);
 	}
+	/* Rows are wrapped in a GROUP per divider-delimited run. Grouping is not
+	 * decoration: it is the scope of the active-fill-yields-on-hover rule (his
+	 * call, 2026-08-13), and a divider is exactly where one set of choices ends
+	 * and another begins. Expressing it as real elements lets the CSS say it in
+	 * one selector; sibling combinators cannot express "with no divider
+	 * between", and a group is what the rule is actually about. */
+	let group = null;
+	const closeGroup = () => {
+		if (group && group.childNodes.length) panel.appendChild(group);
+		group = null;
+	};
+	const openGroup = () => {
+		if (!group) { group = document.createElement('div'); group.className = 'tvo-group'; }
+		return group;
+	};
 	items.forEach((it, i) => {
 		if (it.sep) {
+			closeGroup();
 			const s = document.createElement('div');
 			s.className = 'tvo-sep';
 			panel.appendChild(s);
@@ -1480,7 +1496,7 @@ function rsVoPanel(items, depth, ctx) {
 			+ (filled ? ' tvo-fill' : '')
 			+ (it.disabled ? ' tvo-dis' : '');
 		row.setAttribute('data-tvo-i', String(i));
-		panel.appendChild(row);
+		openGroup().appendChild(row);
 		/* AN ICON SLOT IS ONLY RENDERED WHEN THERE IS AN ICON — never as an
 		 * empty spacer. A row without one starts its label at the row's own
 		 * padding, level with where the icons sit, which is how this menu has
@@ -1514,6 +1530,7 @@ function rsVoPanel(items, depth, ctx) {
 			rsVoSelect(it, ctx);
 		});
 	});
+	closeGroup();
 	return panel;
 }
 
@@ -1660,22 +1677,26 @@ const rsVO_CSS = `
 .tvo-row.tvo-cur,
 .tvo-row.tvo-on { color: color-mix(in srgb, var(--color-primary-500, #3aa37f) 70%, var(--text-color, currentColor)); }
 .tvo-row.tvo-fill { background: color-mix(in srgb, currentColor 13%, transparent); }
-/* THE ACTIVE FILL STANDS DOWN WHILE ANY OTHER ROW IN THE SAME PANEL IS HOVERED,
+/* THE ACTIVE FILL STANDS DOWN WHILE ANOTHER ROW IN ITS OWN GROUP IS HOVERED,
  * and comes straight back. Two filled rows at once — the accent one and the
- * grey hovered one — clash, whether or not they touch.
+ * grey hovered one — clash, so the active one yields while you are choosing
+ * inside the same set of options.
  *
- * SCOPE THIS TO THE PANEL, never to adjacency. The rule inherited from the
- * pre-shared menu keyed on the hovered row being an immediate SIBLING, so the
- * fill vanished for neighbours and survived for everything else; he read that
- * as the fill being unstable, and he was right — a rule you cannot predict is
- * indistinguishable from a bug. Panel-scoped, the behaviour is the same
- * wherever the pointer is.
+ * THE SCOPE IS THE DIVIDER-DELIMITED GROUP. Three scopes were tried on him in
+ * one session and the story is worth keeping: ADJACENCY (inherited from the
+ * pre-shared menu) made the fill vanish for neighbours and survive for
+ * everything else, which reads as instability rather than as a rule; NONE at
+ * all let the accent fill sit next to the grey hover fill and clash; the WHOLE
+ * PANEL dropped a fill in an unrelated set of options that had nothing to do
+ * with what the pointer was on. A divider is exactly where one set of choices
+ * ends and another begins, so hovering a status row leaves the active MODE
+ * green, and hovering Description leaves Progress Bar green.
  *
  * The hovered row keeps its own fill (the :not(:hover) half): an active row you
  * are pointing at has nothing to clash with. Panels are separate elements, so
  * hovering inside a submenu leaves the main menu's fills alone.
  * (NO BACKTICKS ANYWHERE IN THIS BLOCK — it is a template literal.) */
-.tvo-menu:has(> .tvo-row:hover) > .tvo-row.tvo-fill:not(:hover) { background: transparent; }
+.tvo-group:has(> .tvo-row:hover) > .tvo-row.tvo-fill:not(:hover) { background: transparent; }
 .tvo-row.tvo-on .tvo-ic { opacity: .9; }
 .tvo-row.tvo-dis { opacity: .4; cursor: default; }
 .tvo-row.tvo-dis:hover { background: transparent; }
