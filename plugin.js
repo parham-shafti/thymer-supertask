@@ -509,8 +509,7 @@ const CSS = `
 	color: var(--rs-menu-fg, #D5D4D4); /* set at load: his exact hex on dark, theme fg on light */
 }
 .rs-repmenu div { padding: 5px 10px; border-radius: 5px; cursor: pointer; white-space: nowrap; }
-.rs-repmenu > div[data-v]:hover,
-.rs-repmenu > .rs-om-row:hover { background: rgba(127,127,127,.2); } /* real menu ROWS only — never the datepicker wrapper or its cells */
+.rs-repmenu > div[data-v]:hover { background: rgba(127,127,127,.2); } /* real menu ROWS only — never the datepicker wrapper or its cells */
 .rs-repmenu div.rs-on { color: color-mix(in srgb, var(--color-primary-500, #3aa37f) 60%, var(--text-color, currentColor)); font-weight: 600; }
 .rs-custom { padding: 8px 12px 10px; border-top: 1px solid rgba(127,127,127,.18); }
 .rs-custom label { display: flex; align-items: center; gap: 8px; padding: 4px 0; min-width: 0; }
@@ -795,54 +794,783 @@ html.is-dark {
 .rs-p-fold { cursor: pointer; user-select: none; }
 .rs-p-fold:hover .rs-p-sec-label { opacity: .8; }
 .rs-p-chev { flex: 0 0 auto; font-size: 11px; opacity: .5; }
-/* ── The order menu, per his mock (2026-08-08): airy rows; each status row
- * wears the SAME flag icon as its collector; an ENABLED status is accent-
- * coloured (icon + label), a disabled one plain; the active MODE row is a
- * quiet fill; no checkmarks or controls anywhere. ───────────────────────── */
-/* Base text: 86% of the theme's own fg — equals his #DADADB on the dark
- * theme (dadadb ≈ 86% of white) but stays DARK on light themes, where the
- * hardcoded hex was nearly invisible (his light-mode report). The row fills
- * ride currentColor, so they self-correct too. Accent .rs-on rows override.
- * 4px radius on box AND row fills (2px too sharp, 8px/6px too round). */
-.rs-ordmenu {
-	min-width: 240px; padding: 6px; border-radius: 4px;
-	color: color-mix(in srgb, var(--cmdpal-fg-color, var(--text-color, #dadadb)) 86%, transparent);
-	/* softer lift than the repmenu default — the .5 black read harsh (his call) */
-	box-shadow: 0 2px 8px rgba(0,0,0,.10), 0 8px 28px rgba(0,0,0,.16);
+/* The section menu and its dots chip MOVED to the shared view-options module
+ * (2026-08-13): the chip, the menu surface and the row treatment his 2026-08-08
+ * mock settled are now the tvo- classes, styled in shared/view-options.js, so
+ * every plugin contributing to the menu gets the same look. Supertask now
+ * contributes its rows as DATA (voProvider) and any copy of the module in the
+ * app can render them. Do not re-add the ordmenu or chip rules here.
+ * NOTE this block is a TEMPLATE LITERAL: no backticks anywhere, comments
+ * included, or the string terminates and the plugin will not parse. */
+`;
+
+const DOW = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+
+/* The shared VIEW OPTIONS menu — the "..." chip, the menu behind it, and the
+ * cross-plugin registry that lets several plugins contribute to one menu.
+ * Supertask's own contribution is voProvider() further down; everything in the
+ * generated region below is shared property. Spec: ../SHARED-VIEW-OPTIONS.md */
+// <<<SHARED view-options — GENERATED, DO NOT EDIT HERE.
+// Source: shared/view-options.js  |  regenerate: node tools/sync-view-options.mjs
+/* ── THE SHARED GLOBAL ────────────────────────────────────────────────────
+ * window.__thymerViewOptions = {
+ *   contract: 1,   // shape of the DATA below; changes almost never
+ *   providers: [], // provider records, plain data (see rsVoRegister)
+ *   rev: 0,        // bumped on every change; the host re-renders when it moves
+ *   host: null,    // { version, id, release() } — the copy currently rendering
+ * }
+ * CONTRACT 1 provider record:
+ *   { id, version, order, appliesTo(ctx) -> bool, build(ctx) -> items[] }
+ * CONTRACT 1 context:
+ *   { guid, type, state, node }  type/state come from g_universe.itemsByGuid;
+ *   `node` is the rendered .listitem the chip is anchored to, and it is present
+ *   ONLY for build()/onSelect() — appliesTo runs over the model before any DOM
+ *   lookup, so it must never depend on node, and a provider reading node must
+ *   tolerate null (an older host predates the field).
+ * CONTRACT 1 item (a plain tree, so an OLD host can render a NEW plugin's menu):
+ *   { sep: true }
+ *   { key?, label, icon?, checked?, selected?, disabled?, submenu?: items[],
+ *     onSelect?(ctx, api) }      api = { close(), refresh() }
+ * onSelect belongs to the registering plugin; the host only invokes it. */
+const rsVO_CONTRACT = 1;
+const rsVO_MODULE_VERSION = 1;
+const rsVO_GLOBAL = '__thymerViewOptions';
+
+/* Per-EVALUATION state. Each plugin's spliced copy gets its own binding, which
+ * is exactly what makes a stale copy (after a hot reload re-evaluates the file)
+ * tearable-down through the host record's release(). */
+const rsVO = {
+	pid: null,      /* our provider id, set on register */
+	host: null,     /* the host record WE own, while we are the host */
+	seenRev: -1,
+	chips: null,    /* Map domKey -> chip element */
+	guids: null,    /* cached eligible guids; the scroll path skips the rescan */
+	style: null,
+	menu: null,     /* { guid, chip, path: [key], panels: [el] } */
+	raf: 0,
+	tail: 0,
+	obs: null,
+	on: null,       /* installed listeners, for exact removal */
+	hoverTimer: 0,
+	reopenGuard: 0, /* see the chip's click handler: makes the chip a real toggle */
+	warned: false,
+};
+
+/* Returns the shared record, creating it if this is the first copy to load.
+ * A DIFFERENT contract means a version of the convention this copy cannot read
+ * or write safely: do nothing at all rather than corrupt it. That is the whole
+ * reason the contract number exists, so it must never be "handled" by guessing. */
+function rsVoRoot() {
+	let R = null;
+	try { R = window[rsVO_GLOBAL]; } catch (e) { return null; }
+	if (!R) {
+		R = { contract: rsVO_CONTRACT, providers: [], rev: 0, host: null };
+		try { window[rsVO_GLOBAL] = R; } catch (e) { return null; }
+		return R;
+	}
+	if (R.contract !== rsVO_CONTRACT) {
+		if (!rsVO.warned) {
+			rsVO.warned = true;
+			try { console.warn('[view-options] contract ' + R.contract + ' is not mine (' + rsVO_CONTRACT + '); standing down.'); } catch (e) {}
+		}
+		return null;
+	}
+	/* tolerate a record built by a copy that died mid-write */
+	if (!Array.isArray(R.providers)) R.providers = [];
+	if (typeof R.rev !== 'number') R.rev = 0;
+	return R;
 }
-.rs-ordmenu .rs-om-row {
-	display: flex; align-items: center; gap: 12px; white-space: nowrap;
-	padding: 8px 13px; border-radius: 4px; font-weight: 400;
+
+/* Registering REPLACES any record with the same id. That is what makes a hot
+ * reload not duplicate entries: the id is the plugin's stable identity. */
+function rsVoRegister(rec) {
+	const R = rsVoRoot();
+	if (!R || !rec || !rec.id) return;
+	rsVO.pid = rec.id;
+	const p = {
+		id: rec.id,
+		version: String(rec.version == null ? '' : rec.version),
+		order: typeof rec.order === 'number' ? rec.order : 100,
+		appliesTo: rec.appliesTo,
+		build: rec.build,
+	};
+	const i = R.providers.findIndex((x) => x && x.id === p.id);
+	if (i >= 0) R.providers.splice(i, 1, p); else R.providers.push(p);
+	R.providers.sort((a, b) => (a.order - b.order) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+	R.rev++;
+	rsVoRefresh(true);
 }
-.rs-ordmenu .rs-om-row .rs-om-ic { width: 17px; flex: 0 0 auto; font-size: 15px; opacity: .6; text-align: center; }
-.rs-ordmenu .rs-om-row.rs-om-cur {
-	background: color-mix(in srgb, currentColor 13%, transparent);
-	color: color-mix(in srgb, var(--color-primary-500, #3aa37f) 70%, var(--text-color, currentColor));
+
+/* onUnload. Remove our record; if we are the host, release the claim and bump
+ * rev so another live copy takes over on its next refresh cycle.
+ * NOTE: onUnload() can run on an instance whose onLoad() never ran, so every
+ * step here has to be a no-op on virgin state (playbook §2). */
+function rsVoUnregister() {
+	const id = rsVO.pid;
+	rsVO.pid = null;
+	const R = rsVoRoot();
+	if (!R) { rsVoRelease(); return; }
+	if (id) {
+		const i = R.providers.findIndex((x) => x && x.id === id);
+		if (i >= 0) R.providers.splice(i, 1);
+	}
+	if (rsVO.host && R.host === rsVO.host) R.host = null;
+	rsVoRelease();
+	R.rev++;
 }
-/* the highlight SHIFTS while hovering the other mode row — without this the
- * active row's fill sat flush against the hovered row's fill (his report) */
-.rs-ordmenu:has(.rs-om-row[data-m]:hover) .rs-om-row.rs-om-cur:not(:hover) { background: transparent; }
-.rs-ordmenu .rs-om-row.rs-on {
-	color: color-mix(in srgb, var(--color-primary-500, #3aa37f) 70%, var(--text-color, currentColor));
+
+/* Called from each plugin's own debounced refresh cycle (never a polling
+ * interval) and after any state change of its own that can move the chip.
+ * A non-host copy does almost nothing here beyond noticing a vacant claim. */
+function rsVoRefresh(full) {
+	const R = rsVoRoot();
+	if (!R) return;
+	rsVoElect(R);
+	if (!rsVO.host || R.host !== rsVO.host) return;
+	rsVO.seenRev = R.rev;
+	rsVoPlaceChips(R, full !== false);
 }
-.rs-ordmenu .rs-om-row.rs-on .rs-om-ic { opacity: .9; }
-.rs-ordmenu .rs-om-sep { height: 1px; padding: 0; margin: 6px 4px; background: color-mix(in srgb, currentColor 14%, transparent); }
-.rs-om-sep { height: 1px; padding: 0; margin: 6px 4px; background: color-mix(in srgb, currentColor 14%, transparent); }
-/* ── The ⋯ chip next to an ordered heading (overlay layer, like Thymer's
- * own hover buttons — NEVER a node inside the line) ─────────────────────── */
-.rs-ord-btn {
-	/* position + z-index are set inline: absolute inside the heading's own
-	 * scroll container (rides the scroll, sticky bars cover it), fixed on
-	 * the body only as a fallback */
+
+/* Bump rev after changing something the menu reflects. If we hold the claim we
+ * repaint immediately; if another copy does, it picks the new rev up on its own
+ * next cycle (its window-capture pointerup listener makes that the same click). */
+function rsVoInvalidate() {
+	const R = rsVoRoot();
+	if (!R) return;
+	R.rev++;
+	rsVoRefresh(true);
+}
+
+/* HOST ELECTION: highest module version wins, with live handover.
+ * The stale-id case is the hot reload: a code push re-evaluates the plugin file
+ * into a FRESH scope while the previous evaluation's DOM and listeners are
+ * still live. Its host record is reachable through the global, so calling its
+ * release() is the only way to clean it up — and it must happen even though the
+ * versions are equal, because that host is a dead copy of us. */
+function rsVoElect(R) {
+	const h = R.host;
+	if (h && h === rsVO.host) return;                    /* already ours */
+	if (h) {
+		const stale = !!(h.id && rsVO.pid && h.id === rsVO.pid);
+		const older = typeof h.version === 'number' && h.version < rsVO_MODULE_VERSION;
+		if (!stale && !older) return;                         /* equal or newer holds it */
+		try { if (typeof h.release === 'function') h.release(); } catch (e) {}
+	}
+	if (!rsVO.pid) return;              /* never claim without a provider */
+	rsVoClaim(R);
+}
+
+function rsVoClaim(R) {
+	const rec = {
+		version: rsVO_MODULE_VERSION,
+		id: rsVO.pid,
+		release: () => {
+			try {
+				const RR = window[rsVO_GLOBAL];
+				if (RR && RR.host === rec) RR.host = null;
+			} catch (e) {}
+			rsVoRelease();
+		},
+	};
+	rsVO.host = rec;
+	R.host = rec;
+	rsVoStart();
+}
+
+function rsVoRelease() {
+	rsVO.host = null;
+	rsVoCloseMenu();
+	rsVoStop();
+	if (rsVO.chips) {
+		for (const [, el] of rsVO.chips) { try { el.remove(); } catch (e) {} }
+		rsVO.chips = null;
+	}
+	rsVO.guids = null;
+	if (rsVO.style) { try { rsVO.style.remove(); } catch (e) {} rsVO.style = null; }
+}
+
+/* ── Host duties: stylesheet, triggers ─────────────────────────────────── */
+
+function rsVoStart() {
+	rsVO.chips = new Map();
+	try {
+		const st = document.createElement('style');
+		st.setAttribute('data-tvo', String(rsVO_MODULE_VERSION));
+		st.textContent = rsVO_CSS;
+		document.head.appendChild(st);
+		rsVO.style = st;
+	} catch (e) {}
+	rsVoMenuColors();
+
+	const on = {};
+	/* The chips follow the content EVERY FRAME (cached guids, measure only) —
+	 * a debounce alone makes them visibly lag and hop during a scroll. The
+	 * 120ms tail then settles with a full rescan. */
+	on.tick = () => rsVoTick();
+	/* Folding is a click, and a fold that only re-layouts (no row added or
+	 * removed) escapes both the observer and scroll, so a chip could outlive
+	 * its heading's visibility. Any pointer release re-measures. */
+	on.theme = () => {
+		if (on.themeTimer) clearTimeout(on.themeTimer);
+		on.themeTimer = setTimeout(() => {
+			on.themeTimer = 0;
+			if (!rsVO.host) return;
+			/* a theme swap changes font metrics, so every measured position is
+			 * stale, and the menu surface colours are sampled per theme */
+			rsVoMenuColors();
+			rsVoRefresh(true);
+		}, 120);
+	};
+	try {
+		window.addEventListener('scroll', on.tick, true);
+		window.addEventListener('resize', on.tick);
+		window.addEventListener('pointerup', on.tick, true);
+		document.addEventListener('themecsschange', on.theme);
+	} catch (e) {}
+	/* NEVER watch `class` on <html> — Thymer toggles classes there on nearly
+	 * every interaction. data-theme is the only attribute worth watching. */
+	try {
+		on.themeObs = new MutationObserver(on.theme);
+		on.themeObs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+	} catch (e) {}
+	/* Rows appearing or leaving outside any event we hear about (a live search
+	 * rendering, a page opening, a fold removing rows). The observer only ever
+	 * moves our own overlay layer — it never touches a line. */
+	try {
+		rsVO.obs = new MutationObserver((muts) => {
+			for (const m of muts) {
+				for (const list of [m.addedNodes, m.removedNodes]) {
+					for (const n of list) {
+						if (!n || n.nodeType !== 1) continue;
+						if ((n.matches && n.matches('.listitem'))
+							|| (n.querySelector && n.querySelector('.listitem'))) {
+							rsVoTick();
+							return;
+						}
+					}
+				}
+			}
+		});
+		rsVO.obs.observe(document.body, { childList: true, subtree: true });
+	} catch (e) {}
+	rsVO.on = on;
+}
+
+function rsVoStop() {
+	const on = rsVO.on;
+	rsVO.on = null;
+	if (on) {
+		try { window.removeEventListener('scroll', on.tick, true); } catch (e) {}
+		try { window.removeEventListener('resize', on.tick); } catch (e) {}
+		try { window.removeEventListener('pointerup', on.tick, true); } catch (e) {}
+		try { document.removeEventListener('themecsschange', on.theme); } catch (e) {}
+		try { if (on.themeObs) on.themeObs.disconnect(); } catch (e) {}
+		try { if (on.themeTimer) clearTimeout(on.themeTimer); } catch (e) {}
+	}
+	try { if (rsVO.obs) rsVO.obs.disconnect(); } catch (e) {}
+	rsVO.obs = null;
+	try { if (rsVO.raf) cancelAnimationFrame(rsVO.raf); } catch (e) {}
+	rsVO.raf = 0;
+	try { if (rsVO.tail) clearTimeout(rsVO.tail); } catch (e) {}
+	rsVO.tail = 0;
+	try { if (rsVO.hoverTimer) clearTimeout(rsVO.hoverTimer); } catch (e) {}
+	rsVO.hoverTimer = 0;
+}
+
+function rsVoTick() {
+	if (!rsVO.host) return;
+	if (!rsVO.raf) {
+		rsVO.raf = requestAnimationFrame(() => {
+			rsVO.raf = 0;
+			if (rsVO.host) rsVoRefresh(false);
+		});
+	}
+	if (rsVO.tail) return;
+	rsVO.tail = setTimeout(() => {
+		rsVO.tail = 0;
+		if (rsVO.host) rsVoRefresh(true);
+	}, 120);
+}
+
+/* Menu surface colours, recomputed from the LIVE theme. THE DISCRIMINATOR IS
+ * THE CLASS, not a sampled colour: document.body has no background at all, and
+ * --cmdpal-bg-color can be a display-p3 triple that no naive parse survives. */
+function rsVoMenuColors() {
+	try {
+		const cl = document.documentElement.classList;
+		const dark = cl.contains('is-dark')
+			|| (!cl.contains('is-light') && !!(window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches));
+		document.documentElement.style.setProperty('--tvo-menu-bg', dark
+			? '#2A2A31'
+			: 'color-mix(in srgb, var(--cmdpal-bg-color, #fff) 94%, var(--cmdpal-fg-color, #000))');
+		document.documentElement.style.setProperty('--tvo-menu-fg', dark
+			? '#D5D4D4'
+			: 'var(--cmdpal-fg-color, var(--text-color, #333))');
+	} catch (e) {}
+}
+
+/* ── Providers ─────────────────────────────────────────────────────────── */
+
+/* A provider from ANOTHER plugin must never be able to break this menu, so
+ * every call into one is contained. A thrower is simply treated as "does not
+ * apply" / "contributes nothing". */
+function rsVoApplies(p, ctx) {
+	try { return !!(p && typeof p.appliesTo === 'function' && p.appliesTo(ctx)); } catch (e) { return false; }
+}
+
+function rsVoBuild(p, ctx) {
+	try {
+		const items = (p && typeof p.build === 'function') ? p.build(ctx) : null;
+		return Array.isArray(items) ? items : [];
+	} catch (e) { return []; }
+}
+
+function rsVoCtx(guid, st, node) {
+	return { guid: guid, type: (st && st.type) || 'text', state: st || null, node: node || null };
+}
+
+/* ── The chip ──────────────────────────────────────────────────────────────
+ * Thymer's own +/... affordances live in an OVERLAY layer, never inside the
+ * line, and so must ours (never-insert-a-node-into-a-line, playbook §1.2).
+ * Each chip is parented INSIDE its row's SCROLL CONTAINER (absolute) so it
+ * rides the scroll natively at zero lag; a fixed-layer chip chased the content
+ * one frame behind however it was scheduled. Coordinates are solved by
+ * PLACE-MEASURE-CORRECT, which is immune to whatever coordinate space (and
+ * UI-zoom scaling) the container happens to use. */
+function rsVoScrollParent(el) {
+	let p = el.parentElement;
+	while (p && p !== document.body) {
+		const cs = getComputedStyle(p);
+		if (/(auto|scroll|overlay)/.test(cs.overflowY + ' ' + cs.overflowX)
+			&& (p.scrollHeight > p.clientHeight + 1 || p.scrollWidth > p.clientWidth + 1)) return p;
+		p = p.parentElement;
+	}
+	return null;
+}
+
+function rsVoPlaceChips(R, full) {
+	if (!rsVO.chips) return;
+	/* the byGuid sweep is the expensive half — cache the eligible guids and let
+	 * the scroll path (rAF, every frame) skip straight to measuring */
+	if (full || !rsVO.guids) {
+		const byGuid = (window.g_universe && window.g_universe.itemsByGuid) || {};
+		const out = [];
+		const provs = R.providers;
+		for (const g in byGuid) {
+			const st = byGuid[g];
+			if (!st || st.is_trashed || st.is_deleted) continue;
+			const ctx = rsVoCtx(g, st);
+			for (let i = 0; i < provs.length; i++) {
+				if (rsVoApplies(provs[i], ctx)) { out.push(g); break; }
+			}
+		}
+		rsVO.guids = out;
+	}
+	const want = new Map(); /* domKey -> {guid, x, y, h, parent} */
+	for (const g of rsVO.guids) {
+		const els = document.querySelectorAll('.listitem[data-guid="' + rsVoCssAttr(g) + '"]');
+		els.forEach((el, i) => {
+			const r = el.getBoundingClientRect();
+			/* a FOLDED-AWAY row can keep one dimension (width) while the other
+			 * collapses, and its chip then floats over whatever took its place —
+			 * either dimension gone means gone */
+			if (r.width < 2 || r.height < 2) return;
+			const spans = Array.from(el.querySelectorAll('span[class*="lineitem-"]'));
+			const last = spans[spans.length - 1];
+			/* anchor BOTH axes to the row's own text span: the listitem box can
+			 * be taller than the text (children, indent chrome), which floats
+			 * the chip above the line */
+			const lr = last ? last.getBoundingClientRect() : r;
+			if (lr.width < 1 || lr.height < 1) return;
+			/* OCCLUSION: a row scrolled under a sticky bar or covered by another
+			 * surface kept its chip drawn on top. If the topmost element at the
+			 * row's own midpoint is not inside this row, the row is not the
+			 * visible thing there — no chip. */
+			const topEl = document.elementFromPoint(
+				Math.min(lr.left + 8, lr.left + lr.width / 2),
+				lr.top + lr.height / 2
+			);
+			if (!topEl || (!el.contains(topEl) && topEl !== el)) return;
+			/* the chip sits after EVERYTHING the row renders — Thymer's backlink
+			 * counter (.lineitem-backlink-pill is a line-button, so the span scan
+			 * above misses it) extends past the text span. When a pill is there
+			 * the chip also aligns to the PILL's box (top + height), so the two
+			 * read as one row of controls. */
+			let x = lr.right + 8;
+			let box = null;
+			el.querySelectorAll('.lineitem-backlink-pill').forEach((p) => {
+				const pr = p.getBoundingClientRect();
+				if (!pr.width) return;
+				if (pr.right + 6 > x) { x = pr.right + 6; box = pr; }
+			});
+			want.set(g + ':' + i, {
+				guid: g, x: x, el: el,
+				y: box ? box.top : lr.top + (lr.height - 20) / 2,
+				h: box ? box.height : 20,
+				parent: rsVoScrollParent(el) || document.body,
+			});
+		});
+	}
+	const seen = new Set();
+	for (const [key, pos] of want) {
+		let btn = rsVO.chips.get(key);
+		/* the row changed scroller (view rebuild, panel move) -> remake */
+		if (btn && btn.parentNode !== pos.parent) { try { btn.remove(); } catch (e) {} btn = null; }
+		if (!btn) {
+			btn = document.createElement('div');
+			btn.className = 'tvo-chip ti ti-dots';
+			btn.setAttribute('data-guid', pos.guid);
+			/* inside a scroller: absolute + modest z so sticky bars cover it
+			 * naturally; the body fallback keeps the old fixed behaviour */
+			if (pos.parent === document.body) {
+				btn.style.position = 'fixed';
+				btn.style.zIndex = '9000';
+			} else {
+				btn.style.position = 'absolute';
+				btn.style.zIndex = '5';
+			}
+			btn.addEventListener('click', () => {
+				/* a click on the chip that just closed the menu must not
+				 * reopen it: the outside-pointerdown handler fires FIRST and
+				 * has already closed, so without this the chip can never be
+				 * clicked shut again */
+				if (rsVO.reopenGuard && Date.now() - rsVO.reopenGuard < 400) {
+					rsVO.reopenGuard = 0;
+					return;
+				}
+				try { rsVoOpenMenu(btn); } catch (e) {}
+			});
+			pos.parent.appendChild(btn);
+			rsVO.chips.set(key, btn);
+		}
+		btn.setAttribute('data-guid', pos.guid);
+		/* the row this chip belongs to, so the menu can hand a provider the
+		 * exact rendered line to anchor its own popover against — the same line
+		 * can render more than once (a transclusion), and "the first match in
+		 * the document" would be the wrong one */
+		btn.__tvoRow = pos.el;
+		/* PLACE-MEASURE-CORRECT: shift the current offsets by the viewport
+		 * error, whatever coordinate space the parent uses. Sub-pixel deltas are
+		 * skipped so the steady state writes no styles at all. */
+		const br = btn.getBoundingClientRect();
+		const dx = pos.x - br.left;
+		const dy = pos.y - br.top;
+		if (Math.abs(dx) > 0.5) btn.style.left = ((parseFloat(btn.style.left) || 0) + dx) + 'px';
+		if (Math.abs(dy) > 0.5) btn.style.top = ((parseFloat(btn.style.top) || 0) + dy) + 'px';
+		if (btn.style.height !== (pos.h || 20) + 'px') btn.style.height = (pos.h || 20) + 'px';
+		seen.add(key);
+	}
+	for (const [key, btn] of rsVO.chips) {
+		if (!seen.has(key)) { try { btn.remove(); } catch (e) {} rsVO.chips.delete(key); }
+	}
+	/* an open menu whose row left the screen has nothing to point at */
+	if (rsVO.menu && rsVO.menu.chip && !document.body.contains(rsVO.menu.chip)) rsVoCloseMenu();
+}
+
+function rsVoCssAttr(s) { return String(s == null ? '' : s).replace(/["\\]/g, '\\$&'); }
+
+/* ── The menu ──────────────────────────────────────────────────────────── */
+
+/* Every applicable provider contributes its items, in `order`, separated by a
+ * divider. The tree is plain data, so an OLD host renders a NEW plugin's menu
+ * faithfully; the host only invokes onSelect. Nodes are BUILT, never assembled
+ * as HTML — labels come from other plugins and must never be parsed as markup. */
+function rsVoItemsFor(R, ctx) {
+	const out = [];
+	for (const p of R.providers) {
+		if (!rsVoApplies(p, ctx)) continue;
+		const items = rsVoBuild(p, ctx).filter((it) => it && typeof it === 'object');
+		if (!items.length) continue;
+		if (out.length) out.push({ sep: true });
+		for (const it of items) out.push(it);
+	}
+	return out;
+}
+
+function rsVoItemKey(it, i) {
+	return String((it && it.key) || (it && it.label) || ('#' + i));
+}
+
+function rsVoOpenMenu(chip) {
+	const guid = chip.getAttribute('data-guid');
+	if (rsVO.menu && rsVO.menu.chip === chip) { rsVoCloseMenu(); return; }
+	rsVoCloseMenu();
+	const R = rsVoRoot();
+	if (!R || !guid) return;
+	rsVoMenuColors();
+	const m = { guid: guid, chip: chip, path: [], panels: [] };
+	rsVO.menu = m;
+
+	const outside = (e) => {
+		if (m.panels.some((p) => p.contains(e.target))) return;
+		let onChip = null;
+		try { onChip = e.target && e.target.closest && e.target.closest('.tvo-chip'); } catch (err) {}
+		rsVoCloseMenu();
+		if (onChip === chip) rsVO.reopenGuard = Date.now();
+	};
+	/* Enter finishes a multi-pick; Escape too when it reaches us (Electron can
+	 * swallow it before any JS — playbook §8). Window capture, because the menu
+	 * never holds focus. */
+	const keys = (e) => {
+		if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); rsVoCloseMenu(); }
+	};
+	m.outside = outside;
+	m.keys = keys;
+	setTimeout(() => {
+		if (rsVO.menu !== m) return;
+		document.addEventListener('pointerdown', outside, true);
+		window.addEventListener('keydown', keys, true);
+	}, 0);
+	rsVoRenderMenu();
+}
+
+function rsVoCloseMenu() {
+	const m = rsVO.menu;
+	rsVO.menu = null;
+	if (!m) return;
+	try { if (rsVO.hoverTimer) clearTimeout(rsVO.hoverTimer); } catch (e) {}
+	rsVO.hoverTimer = 0;
+	try { document.removeEventListener('pointerdown', m.outside, true); } catch (e) {}
+	try { window.removeEventListener('keydown', m.keys, true); } catch (e) {}
+	for (const p of m.panels) { try { p.remove(); } catch (e) {} }
+}
+
+/* Rebuilt from the providers on every repaint, with the open submenu path
+ * preserved by KEY. Rebuilding wholesale is what lets a pick repaint the menu
+ * (Supertask's status rows stay open while you tick several) without any state
+ * of the host's own that could disagree with the provider. */
+function rsVoRenderMenu() {
+	const m = rsVO.menu;
+	if (!m) return;
+	const R = rsVoRoot();
+	if (!R) { rsVoCloseMenu(); return; }
+	const byGuid = (window.g_universe && window.g_universe.itemsByGuid) || {};
+	let node = null;
+	try {
+		node = m.chip.__tvoRow || null;
+		if (node && !document.body.contains(node)) node = null;
+	} catch (e) {}
+	const ctx = rsVoCtx(m.guid, byGuid[m.guid], node);
+	m.ctx = ctx;
+
+	for (const p of m.panels) { try { p.remove(); } catch (e) {} }
+	m.panels = [];
+
+	let items = rsVoItemsFor(R, ctx);
+	if (!items.length) { rsVoCloseMenu(); return; }
+	let depth = 0;
+	let anchor = m.chip.getBoundingClientRect();
+	let anchorIsChip = true;
+	while (items) {
+		const panel = rsVoPanel(items, depth, ctx);
+		document.body.appendChild(panel);
+		m.panels.push(panel);
+		/* THE ROOT PANEL IS POSITIONED ONCE, on open, and only nudged back on
+		 * screen afterwards. A repaint changes its height (switching mode swaps
+		 * a long row set for a short one), and re-deciding flip-above from the
+		 * new height makes the box jump under the pointer. Submenus DO follow
+		 * their row on every repaint, because their anchor genuinely moves. */
+		const pos = rsVoPlacePanel(panel, anchor, anchorIsChip, anchorIsChip ? m.rootPos : null);
+		if (anchorIsChip) m.rootPos = pos;
+		const key = m.path[depth];
+		if (key == null) break;
+		let next = null, row = null;
+		items.forEach((it, i) => {
+			if (next || it.sep) return;
+			if (rsVoItemKey(it, i) !== key) return;
+			if (Array.isArray(it.submenu) && it.submenu.length) {
+				next = it.submenu;
+				row = panel.querySelector('[data-tvo-i="' + i + '"]');
+			}
+		});
+		if (!next) { m.path = m.path.slice(0, depth); break; }
+		anchor = (row || panel).getBoundingClientRect();
+		anchorIsChip = false;
+		items = next;
+		depth++;
+	}
+}
+
+function rsVoPanel(items, depth, ctx) {
+	const panel = document.createElement('div');
+	panel.className = 'tvo-menu';
+	if (depth === 0) {
+		const head = document.createElement('div');
+		head.className = 'tvo-head';
+		head.textContent = 'View Options';
+		panel.appendChild(head);
+	}
+	items.forEach((it, i) => {
+		if (it.sep) {
+			const s = document.createElement('div');
+			s.className = 'tvo-sep';
+			panel.appendChild(s);
+			return;
+		}
+		const row = document.createElement('div');
+		row.className = 'tvo-row'
+			+ (it.selected ? ' tvo-cur' : '')
+			+ (it.checked ? ' tvo-on' : '')
+			+ (it.disabled ? ' tvo-dis' : '');
+		row.setAttribute('data-tvo-i', String(i));
+		const ic = document.createElement('span');
+		ic.className = 'tvo-ic' + (it.icon ? ' ti ' + it.icon : '');
+		panel.appendChild(row);
+		row.appendChild(ic);
+		const lbl = document.createElement('span');
+		lbl.className = 'tvo-lbl';
+		lbl.textContent = String(it.label == null ? '' : it.label);
+		row.appendChild(lbl);
+		const hasSub = Array.isArray(it.submenu) && it.submenu.length;
+		if (hasSub) {
+			const ch = document.createElement('span');
+			ch.className = 'tvo-chev ti ti-chevron-right';
+			row.appendChild(ch);
+		}
+		const key = rsVoItemKey(it, i);
+		row.addEventListener('mouseenter', () => rsVoHover(depth, key, hasSub));
+		row.addEventListener('click', (e) => {
+			e.stopPropagation();
+			if (it.disabled) return;
+			if (hasSub) { rsVoSetPath(depth, key); return; }
+			rsVoSelect(it, ctx);
+		});
+	});
+	return panel;
+}
+
+/* Hovering a row with a submenu opens it; hovering a plain row closes anything
+ * deeper, but on a longer delay so a diagonal trip into an open submenu is not
+ * punished for passing over its neighbours. */
+function rsVoHover(depth, key, hasSub) {
+	const m = rsVO.menu;
+	if (!m) return;
+	try { if (rsVO.hoverTimer) clearTimeout(rsVO.hoverTimer); } catch (e) {}
+	rsVO.hoverTimer = 0;
+	if (m.path[depth] === key) return;
+	if (!hasSub && m.path.length <= depth) return;
+	rsVO.hoverTimer = setTimeout(() => {
+		rsVO.hoverTimer = 0;
+		if (rsVO.menu !== m) return;
+		m.path = hasSub ? m.path.slice(0, depth).concat([key]) : m.path.slice(0, depth);
+		rsVoRenderMenu();
+	}, hasSub ? 90 : 260);
+}
+
+function rsVoSetPath(depth, key) {
+	const m = rsVO.menu;
+	if (!m) return;
+	m.path = m.path.slice(0, depth).concat([key]);
+	rsVoRenderMenu();
+}
+
+/* The menu STAYS OPEN after a pick and repaints from the provider — closing on
+ * the first pick forces a reopen per status. An item that means "done here"
+ * calls api.close() itself. */
+function rsVoSelect(it, ctx) {
+	const m = rsVO.menu;
+	let closed = false;
+	const api = {
+		close: () => { closed = true; rsVoCloseMenu(); },
+		refresh: () => { if (rsVO.menu === m) rsVoRenderMenu(); },
+	};
+	try { if (typeof it.onSelect === 'function') it.onSelect(ctx, api); } catch (e) {}
+	if (!closed && rsVO.menu === m) rsVoRenderMenu();
+	/* who may show a chip can change with the pick itself (turning ordering off
+	 * on a heading with no bar takes its chip away), so re-place either way */
+	rsVoRefresh(true);
+}
+
+/* Positioned ONCE per render against a rect that is already on screen, and
+ * clamped to the viewport unconditionally. A body-parented popup and the panels
+ * can sit in different coordinate spaces under the app's UI zoom, so the root
+ * panel is placed, MEASURED and corrected rather than trusted. */
+function rsVoPlacePanel(panel, anchor, below, keep) {
+	const w = panel.offsetWidth;
+	const h = panel.offsetHeight;
+	const vw = window.innerWidth;
+	const vh = window.innerHeight;
+	let top;
+	let left;
+	if (keep) {
+		/* a repaint of a panel already on screen: keep where it was decided,
+		 * and let the clamp below nudge the edge back in if it grew */
+		top = keep.top;
+		left = keep.left;
+	} else if (below) {
+		top = anchor.bottom + 4 + h > vh - 8 ? anchor.top - h - 4 : anchor.bottom + 4;
+		left = anchor.left;
+	} else {
+		/* a submenu opens to the RIGHT of its row, flipping left when the room
+		 * is not there; the 6px overlap keeps the pointer trip continuous */
+		top = anchor.top - 6;
+		left = anchor.right - 4;
+		if (left + w > vw - 8) left = anchor.left - w + 4;
+	}
+	const wantTop = Math.max(8, Math.min(top, vh - h - 8));
+	const wantLeft = Math.max(8, Math.min(left, vw - w - 8));
+	panel.style.top = wantTop + 'px';
+	panel.style.left = wantLeft + 'px';
+	/* PLACE-MEASURE-CORRECT: a style.left in px does NOT necessarily land at
+	 * that viewport x — the app's UI-scale zoom puts body-parented popups and
+	 * the panels in different coordinate spaces. Measure and correct. */
+	const got = panel.getBoundingClientRect();
+	const dx = wantLeft - got.left;
+	const dy = wantTop - got.top;
+	if (Math.abs(dx) > 0.5) panel.style.left = ((parseFloat(panel.style.left) || 0) + dx) + 'px';
+	if (Math.abs(dy) > 0.5) panel.style.top = ((parseFloat(panel.style.top) || 0) + dy) + 'px';
+	return { top: wantTop, left: wantLeft };
+}
+
+/* The chip and the menu look the same whichever plugin happens to be hosting —
+ * that is half the point of sharing them. Everything rides theme variables:
+ * a mixed accent (60-70% accent, the rest the theme's own text colour) darkens
+ * on light themes and lightens on dark ones, where --color-primary-500 alone
+ * washes out. 4px radius on boxes and row fills, per the standing rule. */
+const rsVO_CSS = `
+.tvo-chip {
 	display: flex; align-items: center; justify-content: center;
 	width: 22px; height: 20px; border-radius: 4px; cursor: pointer;
 	font-size: 13px; opacity: .45;
 	background: color-mix(in srgb, currentColor 10%, transparent);
 }
-.rs-ord-btn:hover { opacity: 1; background: color-mix(in srgb, currentColor 18%, transparent); }
+.tvo-chip:hover { opacity: 1; background: color-mix(in srgb, currentColor 18%, transparent); }
+.tvo-menu {
+	position: fixed; z-index: 100000; min-width: 240px; padding: 6px;
+	background: var(--tvo-menu-bg, #2A2A31);
+	color: color-mix(in srgb, var(--cmdpal-fg-color, var(--text-color, #dadadb)) 86%, transparent);
+	border: 1px solid rgba(127,127,127,.4); border-radius: 4px;
+	box-shadow: 0 2px 8px rgba(0,0,0,.10), 0 8px 28px rgba(0,0,0,.16);
+	font-size: 13px; overflow: hidden;
+}
+.tvo-head {
+	padding: 6px 13px 8px; font-size: 11.5px; font-weight: 600; opacity: .5;
+	text-transform: uppercase; letter-spacing: .04em; user-select: none;
+	white-space: nowrap;
+}
+.tvo-row {
+	display: flex; align-items: center; gap: 12px; white-space: nowrap;
+	padding: 8px 13px; border-radius: 4px; font-weight: 400; cursor: pointer;
+}
+.tvo-row:hover { background: color-mix(in srgb, currentColor 13%, transparent); }
+.tvo-ic { width: 17px; flex: 0 0 auto; font-size: 15px; opacity: .6; text-align: center; }
+.tvo-lbl { flex: 1 1 auto; }
+.tvo-chev { flex: 0 0 auto; font-size: 13px; opacity: .45; margin-right: -4px; }
+.tvo-row.tvo-cur {
+	background: color-mix(in srgb, currentColor 13%, transparent);
+	color: color-mix(in srgb, var(--color-primary-500, #3aa37f) 70%, var(--text-color, currentColor));
+}
+/* the fill SHIFTS to the hovered row when the two would sit flush against each
+ * other; two adjacent fills read as one plate */
+.tvo-row:hover + .tvo-row.tvo-cur:not(:hover),
+.tvo-row.tvo-cur:not(:hover):has(+ .tvo-row:hover) { background: transparent; }
+.tvo-row.tvo-on { color: color-mix(in srgb, var(--color-primary-500, #3aa37f) 70%, var(--text-color, currentColor)); }
+.tvo-row.tvo-on .tvo-ic { opacity: .9; }
+.tvo-row.tvo-dis { opacity: .4; cursor: default; }
+.tvo-row.tvo-dis:hover { background: transparent; }
+.tvo-sep { height: 1px; margin: 6px 4px; background: color-mix(in srgb, currentColor 14%, transparent); }
 `;
-
-const DOW = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+// >>>SHARED
 
 class Plugin extends AppPlugin {
 	onLoad() {
@@ -978,10 +1706,10 @@ class Plugin extends AppPlugin {
 		this.themeApply = () => {
 			this.refreshMenuColors();
 			/* a theme swap changes font metrics, so every measured position is
-			 * stale: the ⋯ chips are position:fixed against a measured anchor
-			 * and the progress bars carry a measured indent (his report: the
-			 * chip on a line jumped once the theme changed). Re-measure both. */
-			if (!this.dead) { try { this.refreshOrderButtons(true); } catch (e) {} }
+			 * stale: the progress bars carry a measured indent (his report: a
+			 * decoration on a line jumped once the theme changed). The ⋯ chips
+			 * are re-measured by the shared view-options module, which watches
+			 * the theme itself — whichever plugin is hosting it. */
 			if (!this.dead) { try { this.refreshProgressStyle(); } catch (e) {} }
 		};
 		try { document.addEventListener('themecsschange', this.themeHandler); } catch (e) {}
@@ -1054,35 +1782,25 @@ class Plugin extends AppPlugin {
 		});
 		this.domObserver.observe(document.body, { childList: true, subtree: true });
 
-		/* the ⋯ chips next to ordered headings: parented inside each heading's
-		 * scroll container (zero scroll lag), tracked here for cleanup */
-		this.orderBtns = new Map();
-		this.orderScroll = () => {
-			/* the chips follow the content EVERY FRAME (cached guids, measure
-			 * only) — the 120ms debounce alone made the fixed-position chips
-			 * visibly lag and hop during scroll (his recording) */
-			if (!this.orderRaf) {
-				this.orderRaf = requestAnimationFrame(() => {
-					this.orderRaf = 0;
-					if (!this.dead) this.refreshOrderButtons(false);
-				});
-			}
-			if (this.orderScrollPending) return;
-			this.orderScrollPending = true;
+		/* THE SHARED VIEW OPTIONS MENU. The ⋯ chip and everything behind it now
+		 * belong to the shared module, which several plugins register into; we
+		 * contribute one provider and it does the rendering. Registering
+		 * REPLACES any record with our id, which is what keeps a hot reload from
+		 * duplicating entries, and it elects a host on the spot. */
+		try { rsVoRegister(this.voProvider()); } catch (e) {}
+		/* the deferred-arrival drain used to ride the chip's own pointerup
+		 * listener; the chip has no listener of ours any more, so it keeps its
+		 * own (caret moves are only observable after a pointer release) */
+		this.arrivalScroll = () => {
+			if (this.arrivalPending) return;
+			this.arrivalPending = true;
 			setTimeout(() => {
-				this.orderScrollPending = false;
+				this.arrivalPending = false;
 				if (this.dead) return;
-				this.refreshOrderButtons(); /* full rescan settles the tail */
-				this.drainDeferredArrivals(); /* caret moves ride pointerup */
+				this.drainDeferredArrivals();
 			}, 120);
 		};
-		window.addEventListener('scroll', this.orderScroll, true);
-		window.addEventListener('resize', this.orderScroll);
-		/* folding is a click, and a fold that only re-layouts (no row added or
-		 * removed) escapes both the observer and scroll — reposition after any
-		 * pointer release so a chip never outlives its heading's visibility */
-		window.addEventListener('pointerup', this.orderScroll, true);
-		this.refreshOrderButtons();
+		window.addEventListener('pointerup', this.arrivalScroll, true);
 
 		/* once the app settles: upgrade pre-v0.16.0 text collectors to H5
 		 * headings, then re-fold every Done group (it always STARTS collapsed;
@@ -1174,6 +1892,7 @@ class Plugin extends AppPlugin {
 		this.lastAdvance = null;
 		this.orderKnown = null;
 		this.binKnown = null;
+		this.voPending = null;
 		try { if (this.repStyle) this.repStyle.remove(); } catch (e) {}
 		try { if (this.subStyle) this.subStyle.remove(); } catch (e) {}
 		this.subStyle = null;
@@ -1186,15 +1905,14 @@ class Plugin extends AppPlugin {
 			window.removeEventListener('keydown', this.hotkeyHandler, true);
 			this.hotkeyHandler = null;
 		}
-		if (this.orderScroll) {
-			window.removeEventListener('scroll', this.orderScroll, true);
-			window.removeEventListener('resize', this.orderScroll);
-			window.removeEventListener('pointerup', this.orderScroll, true);
-			this.orderScroll = null;
-		}
-		if (this.orderBtns) {
-			for (const [, b] of this.orderBtns) { try { b.remove(); } catch (e) {} }
-			this.orderBtns = null;
+		/* Leave the shared menu: drop our provider, and if we were the copy
+		 * rendering it, release the claim and bump rev so another live copy
+		 * takes over on its next refresh cycle. Safe on an instance whose
+		 * onLoad never ran — the module guards that itself. */
+		try { rsVoUnregister(); } catch (e) {}
+		if (this.arrivalScroll) {
+			window.removeEventListener('pointerup', this.arrivalScroll, true);
+			this.arrivalScroll = null;
 		}
 		try { if (this.style) this.style.remove(); } catch (e) {}
 		try { if (this.cmd) this.cmd.remove(); } catch (e) {}
@@ -2875,7 +3593,10 @@ class Plugin extends AppPlugin {
 			this.refreshRepeatStyle();
 			this.refreshBinStyle();
 			this.refreshProgressStyle();
-			this.refreshOrderButtons(); /* same cycle: rows just (re)rendered */
+			/* the shared View Options menu, on the same cycle: rows just
+			 * (re)rendered, and this is also where a copy that is NOT the host
+			 * notices a vacated claim (no polling interval anywhere) */
+			try { rsVoRefresh(true); } catch (e) {}
 			this.arrivalScan();
 			this.drainDeferredArrivals();
 		}, 300);
@@ -3044,9 +3765,9 @@ class Plugin extends AppPlugin {
 	 * An explicit turn-off ('' tombstone, or a session-cached null) beats the
 	 * global switch — a section the user switched off stays off. Only real
 	 * HEADING lines qualify, so the switch can never grow collectors under a
-	 * plain indented line. NOTE: the ⋯ chip (refreshOrderButtons) deliberately
-	 * keys on the EXPLICIT conf only — a chip on every heading in the
-	 * workspace would be noise. */
+	 * plain indented line. NOTE: the ⋯ chip (chipWanted, our appliesTo for the
+	 * shared View Options menu) deliberately keys on the EXPLICIT conf only —
+	 * a chip on every heading in the workspace would be noise. */
 	effectiveOrderConf(headSt) {
 		const explicit = this.orderConfOf(headSt);
 		if (explicit) return explicit;
@@ -3942,7 +4663,7 @@ class Plugin extends AppPlugin {
 		}
 		this.progRemember(counts);
 		/* the lines that actually DREW a bar this pass — the ⋯ chip follows
-		 * this set, so a bar always has a menu behind it (see refreshOrderButtons) */
+		 * this set, so a bar always has a menu behind it (see chipWanted) */
 		this.progLit = new Set(counts.keys());
 		/* THE SAME BAR ON EVERY OTHER SURFACE THAT RENDERS THE LINE.
 		 * A live-search hit and a transclusion draw the line under a DIFFERENT
@@ -4358,7 +5079,9 @@ class Plugin extends AppPlugin {
 			await new Promise((r) => setTimeout(r, 350));
 		}
 		if (conf) await this.organizeSection(t, conf);
-		this.refreshOrderButtons();
+		/* who may show a chip just changed — bump the shared rev so the copy
+		 * currently hosting the menu repaints, whichever plugin that is */
+		try { rsVoInvalidate(); } catch (e) {}
 	}
 
 	/* Retroactive pass when a section opts in or its conf changes. Status
@@ -4468,25 +5191,181 @@ class Plugin extends AppPlugin {
 		}
 	}
 
-	// ---- the ⋯ button next to ordered headings --------------------------------
-	/* Thymer's own +/⋯ affordances live in an OVERLAY layer, never inside the
-	 * line (and so must ours — the never-insert-nodes doctrine). One chip per
-	 * RENDERED ordered heading. Since v0.16.5 each chip is parented INSIDE its
-	 * heading's SCROLL CONTAINER (absolute, never inside a line): it then
-	 * rides the scroll natively at zero lag — the previous fixed-layer chip
-	 * chased the content one frame behind, first via a 120ms debounce, then
-	 * via rAF, and both wobbled (his two reports). Coordinates are solved by
-	 * PLACE-MEASURE-CORRECT (the Reshape centerAt trick), immune to whatever
-	 * coordinate space the container uses. Clicking opens the section menu. */
-	scrollParentOf(el) {
-		let p = el.parentElement;
-		while (p && p !== document.body) {
-			const cs = getComputedStyle(p);
-			if (/(auto|scroll|overlay)/.test(cs.overflowY + ' ' + cs.overflowX)
-				&& (p.scrollHeight > p.clientHeight + 1 || p.scrollWidth > p.clientWidth + 1)) return p;
-			p = p.parentElement;
+	// ---- the shared View Options menu: Supertask's provider -------------------
+	/* The ⋯ chip, the menu surface and all the rendering moved to the shared
+	 * view-options module (the generated region at the top of this file) on
+	 * 2026-08-13, so several plugins can hang their own options off ONE menu on
+	 * a line instead of each growing a chip of its own. What stays here is
+	 * Supertask's PROVIDER, and that is the whole seam: we say WHEN the chip is
+	 * wanted and WHAT rows we contribute, as plain data; the module renders them
+	 * and calls our onSelect back. It never learns what a row does.
+	 *
+	 * Everything that used to live here — the measured chip, the scroll rAF, the
+	 * three liveness checks, the menu surface — is now shared property. Do not
+	 * re-grow a copy here; fix it in shared/view-options.js and re-sync. */
+	voProvider() {
+		let version = '';
+		try { version = String((this.getConfiguration() || {}).version || ''); } catch (e) {}
+		return {
+			id: 'supertask.section',
+			version: version,
+			order: 10,
+			appliesTo: (ctx) => {
+				try { return this.chipWanted(ctx.state, ctx.guid); } catch (e) { return false; }
+			},
+			build: (ctx) => this.voBuild(ctx),
+		};
+	}
+
+	/* One submenu, "Section", holding exactly the menu his 2026-08-08 mock
+	 * settled: the progress bar first, then the three modes, then the rows the
+	 * current mode owns, then Turn off ordering.
+	 *
+	 * THE PENDING OVERLAY IS LOAD-BEARING. The module rebuilds this tree after
+	 * every pick, which is how the menu stays open while several statuses are
+	 * ticked — but the write behind a pick is async, so the rebuild happens
+	 * while `props` still holds the OLD value and the row would not appear to
+	 * toggle. The session caches cannot cover this on their own: `orderConfOf`
+	 * and `progConfOf` OVERWRITE their cache from a successful props read, so
+	 * an optimistic cache write is thrown away by the very next read. Hence
+	 * `voPending`, a per-guid overlay that beats the props read and is dropped
+	 * only once every write outstanding for that line has landed. This is what
+	 * the old menu's local `conf` variable did, kept honest across repaints. */
+	voBuild(ctx) {
+		const st = ctx.state;
+		if (!st) return [];
+		const pend = (this.voPending && this.voPending.get(ctx.guid)) || null;
+		/* the {m:'g',k:[]} fallback is deliberate and pre-existing: a heading
+		 * that has the chip only because of a progress bar shows Group by Status
+		 * as the mode it WOULD use, with nothing ticked */
+		const cur = (pend && pend.hasConf ? pend.conf : this.orderConfOf(st)) || { m: 'g', k: [] };
+		const progOn = (pend && pend.hasProg) ? pend.prog : this.effectiveProgress(st);
+
+		const modeRow = (m, label) => ({
+			key: 'm-' + m,
+			label: label,
+			selected: cur.m === m,
+			/* Clicking the ALREADY-ACTIVE mode does nothing (his call — an
+			 * earlier version turned ordering off there and kept surprising
+			 * him). Only Turn off ordering turns it off. */
+			onSelect: (c) => {
+				if (m === cur.m) return;
+				/* carry what translates: sort keeps only the Done group; the two
+				 * group modes start from their full row sets */
+				const next = m === 's'
+					? { m: 's', k: cur.k.indexOf('done') >= 0 ? ['done'] : [] }
+					: m === 'h'
+						? { m: 'h', k: (this.tbSlots || []).map((s) => s.tag).concat(['tasks', 'done']) }
+						: { m: 'g', k: ORDER_BINS.map((b) => b.key) };
+				this.voSetOrder(c, next);
+			},
+		});
+		const keyRow = (k, icon, label) => ({
+			key: 'k-' + k,
+			label: label,
+			icon: icon,
+			checked: cur.k.indexOf(k) >= 0,
+			onSelect: (c) => this.voSetOrder(c, {
+				m: cur.m,
+				k: cur.k.indexOf(k) >= 0 ? cur.k.filter((x) => x !== k) : cur.k.concat([k]),
+			}),
+		});
+
+		const sub = [];
+		/* Progress bar sits FIRST, above a divider (his layout call), with no
+		 * icon so it lines up with the mode rows, and it wears the same active
+		 * fill as the current mode when it is on. */
+		sub.push({
+			key: 'prog', label: 'Progress bar', selected: progOn,
+			onSelect: (c) => this.voSetProgress(c, !progOn),
+		});
+		sub.push({ sep: true });
+		sub.push(modeRow('g', 'Group by Status'));
+		sub.push(modeRow('h', 'Group by Hashtags'));
+		sub.push(modeRow('s', 'Order by Status'));
+		sub.push({ sep: true });
+		if (cur.m === 'g') {
+			for (const b of ORDER_BINS) sub.push(keyRow(b.key, b.icon, b.label));
+		} else if (cur.m === 'h') {
+			/* the ⌘1-9 slots from settings, in slot order — never other
+			 * hashtags — plus the same Tasks/Done closers as group mode */
+			for (const s of (this.tbSlots || [])) sub.push(keyRow(s.tag, 'ti-tag', s.title || s.tag.slice(1)));
+			sub.push(keyRow('tasks', 'ti-checkbox', 'Todo'));
+			sub.push(keyRow('done', 'ti-check', 'Done'));
+		} else {
+			/* the Done row wears the same icon + accent treatment as its
+			 * group-mode sibling (his call) */
+			sub.push(keyRow('done', 'ti-check', 'Done group at the bottom'));
 		}
-		return null;
+		sub.push({ sep: true });
+		sub.push({
+			key: 'off', label: 'Turn off ordering',
+			onSelect: (c, api) => { api.close(); this.voSetOrder(c, null); },
+		});
+
+		return [{ key: 'section', label: 'Section', submenu: sub }];
+	}
+
+	/* Both writers are FIRE-AND-FORGET from the menu's point of view: the
+	 * pending overlay is written synchronously, so the repaint the module does
+	 * right after onSelect already shows the new state, and the real write lands
+	 * behind it. They are serialized on ONE promise chain so rapid picks cannot
+	 * interleave a dissolve pass with an organize pass.
+	 *
+	 * The overlay is refcounted per guid, not cleared by whichever write
+	 * finishes first: ticking two statuses quickly leaves two writes in flight,
+	 * and dropping the overlay when the FIRST lands would show the first conf
+	 * again until the second caught up. */
+	voSetOrder(ctx, conf) {
+		const p = this.voPend(ctx.guid);
+		p.conf = conf; p.hasConf = true;
+		if (this.orderKnown) this.orderKnown.set(ctx.guid, conf || null);
+		this.voRun(ctx.guid, (t) => this.setOrderConf(t, conf));
+	}
+
+	voSetProgress(ctx, on) {
+		const p = this.voPend(ctx.guid);
+		p.prog = !!on; p.hasProg = true;
+		if (this.progKnown) this.progKnown.set(ctx.guid, !!on);
+		this.voRun(ctx.guid, (t) => this.setProgress(t.headSt, t.headLi, on));
+	}
+
+	voPend(guid) {
+		if (!this.voPending) this.voPending = new Map();
+		let p = this.voPending.get(guid);
+		if (!p) { p = { n: 0 }; this.voPending.set(guid, p); }
+		return p;
+	}
+
+	voRun(guid, fn) {
+		const p = this.voPend(guid);
+		p.n++;
+		this.voChain = (this.voChain || Promise.resolve())
+			.then(() => this.voTarget(guid))
+			.then((t) => (t ? fn(t) : null))
+			.catch(() => {})
+			.then(() => {
+				/* the overlay has done its job once nothing is still in flight
+				 * for this line; from then on props and the session caches are
+				 * authoritative again. Cleared in every outcome, so a failed
+				 * write cannot leave the menu showing a lie forever. */
+				if (!this.voPending) return;
+				const q = this.voPending.get(guid);
+				if (q && --q.n <= 0) this.voPending.delete(guid);
+			});
+	}
+
+	/* setOrderConf / setProgress want a live LineItem handle, which needs the
+	 * page's lines. Resolved per action rather than held: handles go stale
+	 * after the first move/delete in a record (the stale-handle law). */
+	async voTarget(guid) {
+		const byGuid = (window.g_universe && window.g_universe.itemsByGuid) || {};
+		const headSt = byGuid[guid];
+		if (!headSt || !headSt.rguid) return null;
+		const pl = await this.pageLines(headSt.rguid);
+		const headLi = pl && pl.byG.get(guid);
+		if (!headLi) return null;
+		return { headSt, headLi, pl };
 	}
 
 	/* WHO GETS THE ⋯ CHIP.
@@ -4515,237 +5394,6 @@ class Plugin extends AppPlugin {
 		}
 		return false;
 	}
-
-	refreshOrderButtons(fullScan) {
-		if (!this.orderBtns) return;
-		/* the byGuid sweep is the expensive half — cache the ordered-heading
-		 * guids and let the scroll path (rAF, every frame) skip straight to
-		 * measuring; the debounced cycle rebuilds the cache */
-		if (fullScan !== false || !this.orderGuidCache) {
-			const byGuid = (window.g_universe && window.g_universe.itemsByGuid) || {};
-			this.orderGuidCache = [];
-			for (const g in byGuid) {
-				const st = byGuid[g];
-				if (!st || st.is_trashed || st.is_deleted) continue;
-				if (!this.chipWanted(st, g)) continue;
-				this.orderGuidCache.push(g);
-			}
-		}
-		const want = new Map(); /* domKey → {guid, rect} */
-		for (const g of this.orderGuidCache) {
-			const els = document.querySelectorAll('.listitem[data-guid="' + g + '"]');
-			els.forEach((el, i) => {
-				const r = el.getBoundingClientRect();
-				/* a FOLDED-AWAY row can keep one dimension (width) while the
-				 * other collapses — "!w && !h" let its chip float over whatever
-				 * took its place (his fold report); either dimension gone = gone */
-				if (r.width < 2 || r.height < 2) return;
-				const spans = Array.from(el.querySelectorAll('span[class*="lineitem-"]'));
-				const last = spans[spans.length - 1];
-				/* anchor BOTH axes to the heading's own text span — the listitem
-				 * box can be taller than the text (children/indent chrome), which
-				 * floated the chip above the heading (his screenshot) */
-				const lr = last ? last.getBoundingClientRect() : r;
-				if (lr.width < 1 || lr.height < 1) return;
-				/* OCCLUSION: the chip is position:fixed, so a heading scrolled
-				 * under a sticky bar / covered by another surface kept its chip
-				 * drawn on top. If the topmost element at the heading's own
-				 * midpoint is not inside this row, the row is not the visible
-				 * thing there — no chip. */
-				const topEl = document.elementFromPoint(
-					Math.min(lr.left + 8, lr.left + lr.width / 2),
-					lr.top + lr.height / 2
-				);
-				if (!topEl || (!el.contains(topEl) && topEl !== el)) return;
-				/* the chip sits after EVERYTHING the row renders — Thymer's
-				 * backlink counter (.lineitem-backlink-pill, a line-button, so
-				 * the span scan above misses it) extends past the text span and
-				 * the chip landed on top of it (his report). When a pill is
-				 * there, the chip also aligns to the PILL's box (top + height),
-				 * so the two read as one row of controls. */
-				let x = lr.right + 8;
-				let box = null; /* the pill rect to mirror, when present */
-				el.querySelectorAll('.lineitem-backlink-pill').forEach((p) => {
-					const pr = p.getBoundingClientRect();
-					if (!pr.width) return;
-					if (pr.right + 6 > x) { x = pr.right + 6; box = pr; }
-				});
-				want.set(g + ':' + i, {
-					guid: g, x,
-					y: box ? box.top : lr.top + (lr.height - 20) / 2,
-					h: box ? box.height : 20,
-					parent: this.scrollParentOf(el) || document.body,
-				});
-			});
-		}
-		const seen = new Set();
-		for (const [key, pos] of want) {
-			let btn = this.orderBtns.get(key);
-			/* the heading changed scroller (view rebuild, panel move) → remake */
-			if (btn && btn.parentNode !== pos.parent) { try { btn.remove(); } catch (e) {} btn = null; }
-			if (!btn) {
-				btn = document.createElement('div');
-				btn.className = 'rs-ord-btn ti ti-dots';
-				btn.setAttribute('data-guid', pos.guid);
-				/* inside a scroller: absolute + modest z so sticky bars cover
-				 * it naturally; body fallback keeps the old fixed behaviour */
-				if (pos.parent === document.body) {
-					btn.style.position = 'fixed';
-					btn.style.zIndex = '9000';
-				} else {
-					btn.style.position = 'absolute';
-					btn.style.zIndex = '5';
-				}
-				btn.addEventListener('click', () => this.openOrderMenu(btn).catch(() => {}));
-				pos.parent.appendChild(btn);
-				this.orderBtns.set(key, btn);
-			}
-			btn.setAttribute('data-guid', pos.guid);
-			/* PLACE-MEASURE-CORRECT: shift current offsets by the viewport
-			 * error, whatever coordinate space the parent uses. Skip sub-pixel
-			 * deltas so the steady state writes no styles at all. */
-			const br = btn.getBoundingClientRect();
-			const dx = pos.x - br.left;
-			const dy = pos.y - br.top;
-			if (Math.abs(dx) > 0.5) btn.style.left = ((parseFloat(btn.style.left) || 0) + dx) + 'px';
-			if (Math.abs(dy) > 0.5) btn.style.top = ((parseFloat(btn.style.top) || 0) + dy) + 'px';
-			if (btn.style.height !== (pos.h || 20) + 'px') btn.style.height = (pos.h || 20) + 'px';
-			seen.add(key);
-		}
-		for (const [key, btn] of this.orderBtns) {
-			if (!seen.has(key)) { try { btn.remove(); } catch (e) {} this.orderBtns.delete(key); }
-		}
-	}
-
-	async openOrderMenu(btn) {
-		const guid = btn.getAttribute('data-guid');
-		const byGuid = (window.g_universe && window.g_universe.itemsByGuid) || {};
-		const headSt = byGuid[guid];
-		if (!headSt || !headSt.rguid) return;
-		const pl = await this.pageLines(headSt.rguid);
-		const headLi = pl && pl.byG.get(guid);
-		if (!headLi) return;
-		const t = { headSt, headLi, pl };
-
-		this.refreshMenuColors();
-		document.querySelectorAll('.rs-repmenu').forEach((m) => m.remove());
-		const menu = document.createElement('div');
-		menu.className = 'rs-repmenu rs-ordmenu';
-		/* His mock (2026-08-08): mode rows are plain text, the active one gets a
-		 * quiet row fill; status rows carry their collector's flag icon and an
-		 * ENABLED status is accent-coloured — no checkmarks, no controls. The
-		 * whole row is the click target. */
-		const esc2 = (s) => String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-		const row = (attr, cls, icon, label) =>
-			'<div class="rs-om-row' + (cls ? ' ' + cls : '') + '" ' + attr + '>'
-			+ (icon ? '<span class="rs-om-ic ti ' + icon + '"></span>' : '')
-			+ '<span>' + label + '</span></div>';
-		/* the LOCAL conf is the menu's source of truth while it is open — a
-		 * re-read from props right after our own write can serve the OLD value
-		 * (the transient-props story), which repainted stale state */
-		let conf = this.orderConfOf(headSt) || { m: 'g', k: [] };
-		let progOn = this.effectiveProgress(headSt);
-		const paint = () => {
-			/* Progress bar sits FIRST, above a divider (his layout call), with
-			 * no icon so it lines up with the mode rows below it, and it wears
-			 * the same active fill as the current mode when it is on. */
-			let html = row('data-k="__prog"', progOn ? 'rs-om-cur' : '', null, 'Progress bar')
-				+ '<div class="rs-om-sep"></div>'
-				+ row('data-m="g"', conf.m === 'g' ? 'rs-om-cur' : '', null, 'Group by Status')
-				+ row('data-m="h"', conf.m === 'h' ? 'rs-om-cur' : '', null, 'Group by Hashtags')
-				+ row('data-m="s"', conf.m === 's' ? 'rs-om-cur' : '', null, 'Order by Status')
-				+ '<div class="rs-om-sep"></div>';
-			if (conf.m === 'g') {
-				html += ORDER_BINS.map((b) => row('data-k="' + b.key + '"', conf.k.indexOf(b.key) >= 0 ? 'rs-on' : '', b.icon, b.label)).join('');
-			} else if (conf.m === 'h') {
-				/* the ⌘1-9 slots from settings, in slot order — never other
-				 * hashtags — plus the same Tasks/Done closers as group mode */
-				html += (this.tbSlots || []).map((s) =>
-					row('data-k="' + esc2(s.tag) + '"', conf.k.indexOf(s.tag) >= 0 ? 'rs-on' : '', 'ti-tag', esc2(s.title || s.tag.slice(1)))).join('');
-				html += row('data-k="tasks"', conf.k.indexOf('tasks') >= 0 ? 'rs-on' : '', 'ti-checkbox', 'Todo');
-				html += row('data-k="done"', conf.k.indexOf('done') >= 0 ? 'rs-on' : '', 'ti-check', 'Done');
-			} else {
-				/* the Done row wears the same icon + accent treatment as its
-				 * group-mode sibling (his call) */
-				html += row('data-k="done"', conf.k.indexOf('done') >= 0 ? 'rs-on' : '', 'ti-check', 'Done group at the bottom');
-			}
-			html += '<div class="rs-om-sep"></div>' + row('data-k="__off"', '', null, 'Turn off ordering');
-			menu.innerHTML = html;
-		};
-		paint();
-		document.body.appendChild(menu);
-		const br = btn.getBoundingClientRect();
-		const mh = menu.offsetHeight;
-		const top = br.bottom + 4 + mh > window.innerHeight - 8 ? br.top - mh - 4 : br.bottom + 4;
-		menu.style.top = Math.max(8, top) + 'px';
-		menu.style.left = Math.max(8, Math.min(br.left, window.innerWidth - menu.offsetWidth - 8)) + 'px';
-		this.repMenu = menu;
-		const outside = (e) => { if (!menu.contains(e.target)) close(); };
-		/* Enter finishes the multi-pick (his suggestion); Escape too when it
-		 * reaches us (Electron can swallow it before any JS — playbook §8).
-		 * Window capture, because the menu never holds focus. */
-		const keys = (e) => {
-			if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); }
-		};
-		const close = () => {
-			document.removeEventListener('pointerdown', outside, true);
-			window.removeEventListener('keydown', keys, true);
-			menu.remove();
-			if (this.repMenu === menu) this.repMenu = null;
-		};
-		setTimeout(() => {
-			document.addEventListener('pointerdown', outside, true);
-			window.addEventListener('keydown', keys, true);
-		}, 0);
-		/* The menu STAYS OPEN while picking status rows and switching modes —
-		 * closing on the first pick forced a reopen per status (his report).
-		 * It closes on: Turn off ordering, Enter, Escape, outside click.
-		 * Clicking the already-active mode does NOTHING (his call — v0.15.x
-		 * turned ordering off there, which kept surprising him); only Turn
-		 * off ordering turns it off. Writes are serialized through a promise
-		 * chain so rapid picks cannot interleave dissolve/organize passes. */
-		let applying = Promise.resolve();
-		const apply = () => {
-			const c = { m: conf.m, k: conf.k.slice() };
-			applying = applying.then(() => this.setOrderConf(t, c)).catch(() => {});
-		};
-		menu.addEventListener('click', (e) => {
-			const r = e.target.closest('.rs-om-row');
-			if (!r) return;
-			const m = r.getAttribute('data-m');
-			const k = r.getAttribute('data-k');
-			if (k === '__prog') {
-				progOn = !progOn;
-				paint();
-				const want = progOn;
-				applying = applying.then(() => this.setProgress(headSt, headLi, want)).catch(() => {});
-				return;
-			}
-			if (k === '__off') {
-				close();
-				applying = applying.then(() => this.setOrderConf(t, null)).catch(() => {});
-				return;
-			}
-			if (m) {
-				if (m === conf.m) return;
-				/* carry what translates: sort keeps only the Done group; the
-				 * two group modes start from their full row sets */
-				conf = m === 's'
-					? { m: 's', k: conf.k.indexOf('done') >= 0 ? ['done'] : [] }
-					: m === 'h'
-						? { m: 'h', k: (this.tbSlots || []).map((s) => s.tag).concat(['tasks', 'done']) }
-						: { m: 'g', k: ORDER_BINS.map((b) => b.key) };
-				paint();
-				apply();
-				return;
-			}
-			if (!k) return;
-			conf = { m: conf.m, k: conf.k.indexOf(k) >= 0 ? conf.k.filter((x) => x !== k) : conf.k.concat([k]) };
-			paint();
-			apply();
-		});
-	}
-
 	/* Recurring lines get a repeat glyph in front of their date.
 	 *
 	 * The glyph is driven ENTIRELY from a stylesheet the plugin owns, keyed on
