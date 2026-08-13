@@ -895,6 +895,7 @@ const rsVO = {
 	filterPop: null,
 	unfolded: new Set(), /* groups WE opened for a filter, to fold back after */
 	foldTried: new Map(), /* guid -> last click attempt, so a dud cannot loop */
+	hlTail: 0,      /* one-shot re-highlight after the editor settles */
 	menu: null,     /* { guid, chip, path: [key], panels: [el] } */
 	raf: 0,
 	tail: 0,
@@ -1318,6 +1319,8 @@ function rsVoStop() {
 	rsVO.tail = 0;
 	try { if (rsVO.hoverTimer) clearTimeout(rsVO.hoverTimer); } catch (e) {}
 	rsVO.hoverTimer = 0;
+	try { if (rsVO.hlTail) clearTimeout(rsVO.hlTail); } catch (e) {}
+	rsVO.hlTail = 0;
 }
 
 function rsVoTick() {
@@ -1685,6 +1688,21 @@ function rsVoRefreshFilterStyle() {
 	if (rsVO.filterStyle.textContent !== css) rsVO.filterStyle.textContent = css;
 	rsVoApplyUnfold(open);
 	if (R) rsVoRefreshHighlight(R, keep);
+	/* AND AGAIN A BEAT LATER. A Range points at a text NODE, so it dies the
+	 * moment the editor re-renders that line — and a re-render that lands right
+	 * after our pass would leave the mark absent with nothing scheduled to
+	 * notice. One trailing rebuild, coalesced, costs nothing and covers it. */
+	if (R && !rsVO.hlTail) {
+		rsVO.hlTail = setTimeout(() => {
+			rsVO.hlTail = 0;
+			if (!rsVO.host) return;
+			const RR = rsVoRoot();
+			if (!RR) return;
+			const again = new Set();
+			rsVoFilterHidden(RR, null, again);
+			rsVoRefreshHighlight(RR, again);
+		}, 140);
+	}
 }
 
 /* EVERY plugin text input needs a key shield, or Thymer's dispatcher forwards
@@ -2374,13 +2392,23 @@ function rsVoPlacePanel(panel, anchor, below, keep) {
  * washes out. 4px radius on boxes and row fills, per the standing rule. */
 const rsVO_CSS = `
 .tvo-chip { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+/* THE SAME GREY AS THE BACKLINK PILL BESIDE IT (his call), taken from Thymer's
+ * own variables rather than approximated, so it tracks every theme exactly the
+ * way the native pill does: --ed-backlink-bg / -color / -hover-bg are what
+ * .lineitem-backlink-pill itself uses. NOTE there is no opacity here on
+ * purpose — dimming the element would dim the background too and it would no
+ * longer match. The fallbacks are the module's old self-mixed values, for a
+ * build where those variables are not defined. */
 .tvo-chip-dots {
 	display: flex; align-items: center; justify-content: center;
 	flex: 0 0 auto; width: 22px; height: 20px; border-radius: 4px;
-	font-size: 13px; opacity: .45;
-	background: color-mix(in srgb, currentColor 10%, transparent);
+	font-size: 13px;
+	background: var(--ed-backlink-bg, color-mix(in srgb, currentColor 10%, transparent));
+	color: var(--ed-backlink-color, inherit);
 }
-.tvo-chip-dots:hover { opacity: 1; background: color-mix(in srgb, currentColor 18%, transparent); }
+.tvo-chip-dots:hover {
+	background: var(--ed-backlink-hover-bg, color-mix(in srgb, currentColor 18%, transparent));
+}
 /* THE FILTER INDICATOR, sitting AFTER the dots as its own small control. A
  * filter persists, so the block it runs on has to say so at a glance and be
  * clearable in one click, or lines are missing with no visible reason. Accent,
