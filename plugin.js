@@ -1052,6 +1052,13 @@ function rsVoStart() {
 	try {
 		rsVO.obs = new MutationObserver((muts) => {
 			for (const m of muts) {
+				/* A DIRECT child of <body> arriving or leaving is how every
+				 * overlay in this app appears and disappears — a modal, a
+				 * click-catcher, another plugin's popover. Those change what
+				 * the occlusion test sees, and closing one with Escape produces
+				 * no scroll, no pointerup and no row mutation, so without this
+				 * a chip removed while an overlay was up would never return. */
+				if (m.target === document.body) { rsVoTick(); return; }
 				for (const list of [m.addedNodes, m.removedNodes]) {
 					for (const n of list) {
 						if (!n || n.nodeType !== 1) continue;
@@ -1207,12 +1214,24 @@ function rsVoPlaceChips(R, full) {
 			/* OCCLUSION: a row scrolled under a sticky bar or covered by another
 			 * surface kept its chip drawn on top. If the topmost element at the
 			 * row's own midpoint is not inside this row, the row is not the
-			 * visible thing there — no chip. */
+			 * visible thing there — no chip.
+			 *
+			 * EXCEPT A FULL-VIEWPORT LAYER, which is a modal's click-catcher,
+			 * not something covering this particular row. Reference
+			 * Extravaganza's description editor drops a transparent
+			 * `position:fixed; inset:0` catcher over everything, so every chip
+			 * in the workspace read as occluded and vanished the moment the
+			 * editor opened — and closing it with Escape produced no scroll, no
+			 * pointerup and no .listitem mutation, so they never came back (his
+			 * report, 2026-08-13). A chip left in place under such a layer is
+			 * painted beneath it anyway (the layer is a later body child at a
+			 * higher z-index), so keeping it is both correct and stable. */
 			const topEl = document.elementFromPoint(
 				Math.min(lr.left + 8, lr.left + lr.width / 2),
 				lr.top + lr.height / 2
 			);
-			if (!topEl || (!el.contains(topEl) && topEl !== el)) return;
+			if (!topEl) return;
+			if (!el.contains(topEl) && topEl !== el && !rsVoFullScreen(topEl)) return;
 			/* the chip sits after EVERYTHING the row renders — Thymer's backlink
 			 * counter (.lineitem-backlink-pill is a line-button, so the span scan
 			 * above misses it) extends past the text span. When a pill is there
@@ -1290,6 +1309,18 @@ function rsVoPlaceChips(R, full) {
 }
 
 function rsVoCssAttr(s) { return String(s == null ? '' : s).replace(/["\\]/g, '\\$&'); }
+
+/* Does this element blanket the whole viewport? That is the signature of a
+ * modal backdrop or click-catcher, as opposed to a sticky bar or a panel that
+ * genuinely covers one row. See the occlusion test. */
+function rsVoFullScreen(el) {
+	try {
+		const r = el.getBoundingClientRect();
+		return r.left <= 2 && r.top <= 2
+			&& r.right >= window.innerWidth - 2
+			&& r.bottom >= window.innerHeight - 2;
+	} catch (e) { return false; }
+}
 
 /* ── The menu ──────────────────────────────────────────────────────────── */
 
@@ -1628,16 +1659,23 @@ const rsVO_CSS = `
 /* ACTIVE = accent text; see VoPanel for which active rows also carry a fill */
 .tvo-row.tvo-cur,
 .tvo-row.tvo-on { color: color-mix(in srgb, var(--color-primary-500, #3aa37f) 70%, var(--text-color, currentColor)); }
-/* THE ACTIVE FILL IS PERMANENT. It stays until something else takes the active
- * state over, and hovering anything never disturbs it (his call, 2026-08-13).
- * There USED to be a rule that blanked the fill while an ADJACENT row was
- * hovered, inherited from the pre-shared menu, on the reasoning that two fills
- * sitting flush read as one plate. It made the fill look unstable: it vanished
- * for neighbours and survived for everything else, which is unreadable as a
- * rule. The reason it is no longer needed is that hover is now flat grey while
- * the active fill is accent-tinted, so two adjacent fills no longer merge into
- * one. Do not bring it back. */
 .tvo-row.tvo-fill { background: color-mix(in srgb, currentColor 13%, transparent); }
+/* THE ACTIVE FILL STANDS DOWN WHILE ANY OTHER ROW IN THE SAME PANEL IS HOVERED,
+ * and comes straight back. Two filled rows at once — the accent one and the
+ * grey hovered one — clash, whether or not they touch.
+ *
+ * SCOPE THIS TO THE PANEL, never to adjacency. The rule inherited from the
+ * pre-shared menu keyed on the hovered row being an immediate SIBLING, so the
+ * fill vanished for neighbours and survived for everything else; he read that
+ * as the fill being unstable, and he was right — a rule you cannot predict is
+ * indistinguishable from a bug. Panel-scoped, the behaviour is the same
+ * wherever the pointer is.
+ *
+ * The hovered row keeps its own fill (the :not(:hover) half): an active row you
+ * are pointing at has nothing to clash with. Panels are separate elements, so
+ * hovering inside a submenu leaves the main menu's fills alone.
+ * (NO BACKTICKS ANYWHERE IN THIS BLOCK — it is a template literal.) */
+.tvo-menu:has(> .tvo-row:hover) > .tvo-row.tvo-fill:not(:hover) { background: transparent; }
 .tvo-row.tvo-on .tvo-ic { opacity: .9; }
 .tvo-row.tvo-dis { opacity: .4; cursor: default; }
 .tvo-row.tvo-dis:hover { background: transparent; }
