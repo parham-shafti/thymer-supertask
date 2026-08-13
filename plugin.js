@@ -1393,12 +1393,15 @@ function rsVoRenderMenu() {
 
 function rsVoPanel(items, depth, ctx) {
 	const panel = document.createElement('div');
-	panel.className = 'tvo-menu';
+	panel.className = 'tvo-menu' + (depth === 0 ? ' tvo-root' : '');
 	if (depth === 0) {
 		const head = document.createElement('div');
 		head.className = 'tvo-head';
 		head.textContent = 'View Options';
 		panel.appendChild(head);
+		const hsep = document.createElement('div');
+		hsep.className = 'tvo-sep';
+		panel.appendChild(hsep);
 	}
 	items.forEach((it, i) => {
 		if (it.sep) {
@@ -1413,10 +1416,19 @@ function rsVoPanel(items, depth, ctx) {
 			+ (it.checked ? ' tvo-on' : '')
 			+ (it.disabled ? ' tvo-dis' : '');
 		row.setAttribute('data-tvo-i', String(i));
-		const ic = document.createElement('span');
-		ic.className = 'tvo-ic' + (it.icon ? ' ti ' + it.icon : '');
 		panel.appendChild(row);
-		row.appendChild(ic);
+		/* THE ROOT PANEL HAS NO ICON COLUMN, so its labels start at the same
+		 * inset as the VIEW OPTIONS header and the whole main menu reads as one
+		 * left edge (his call, 2026-08-13). The main menu is a list of the
+		 * FEATURES each plugin contributes; icons belong to the detail rows
+		 * inside a submenu, where they carry real information (a status row
+		 * wears its collector's own flag). An `icon` on a root item is
+		 * therefore ignored, deliberately. */
+		if (depth > 0) {
+			const ic = document.createElement('span');
+			ic.className = 'tvo-ic' + (it.icon ? ' ti ' + it.icon : '');
+			row.appendChild(ic);
+		}
 		const lbl = document.createElement('span');
 		lbl.className = 'tvo-lbl';
 		lbl.textContent = String(it.label == null ? '' : it.label);
@@ -1487,7 +1499,7 @@ function rsVoSelect(it, ctx) {
  * panel is placed, MEASURED and corrected rather than trusted. */
 function rsVoPlacePanel(panel, anchor, below, keep) {
 	const w = panel.offsetWidth;
-	const h = panel.offsetHeight;
+	let h = panel.offsetHeight; /* re-read if a submenu has to be capped below */
 	const vw = window.innerWidth;
 	const vh = window.innerHeight;
 	let top;
@@ -1501,11 +1513,22 @@ function rsVoPlacePanel(panel, anchor, below, keep) {
 		top = anchor.bottom + 4 + h > vh - 8 ? anchor.top - h - 4 : anchor.bottom + 4;
 		left = anchor.left;
 	} else {
-		/* a submenu opens to the RIGHT of its row, flipping left when the room
-		 * is not there; the 6px overlap keeps the pointer trip continuous */
-		top = anchor.top - 6;
+		/* A submenu's top edge lines up with the TOP OF ITS TITLE ROW's box (the
+		 * row div, not its text), so the two visibly belong together (his call,
+		 * 2026-08-13). That alignment is only keepable if the panel can be
+		 * SHORTER than the room below the row — otherwise the viewport clamp
+		 * pulls it up and it floats away from its title, which is exactly what
+		 * he screenshotted in a short window. So cap the height to the room and
+		 * let it scroll inside; on a normal window nothing scrolls and nothing
+		 * is capped. */
+		top = anchor.top;
 		left = anchor.right - 4;
 		if (left + w > vw - 8) left = anchor.left - w + 4;
+		const room = vh - top - 8;
+		if (h > room) {
+			panel.style.maxHeight = Math.max(160, room) + 'px';
+			h = panel.offsetHeight;
+		}
 	}
 	const wantTop = Math.max(8, Math.min(top, vh - h - 8));
 	const wantLeft = Math.max(8, Math.min(left, vw - w - 8));
@@ -1541,13 +1564,20 @@ const rsVO_CSS = `
 	color: color-mix(in srgb, var(--cmdpal-fg-color, var(--text-color, #dadadb)) 86%, transparent);
 	border: 1px solid rgba(127,127,127,.4); border-radius: 4px;
 	box-shadow: 0 2px 8px rgba(0,0,0,.10), 0 8px 28px rgba(0,0,0,.16);
-	font-size: 13px; overflow: hidden;
+	font-size: 13px;
+	/* a submenu taller than the room below its title row is CAPPED rather than
+	 * shoved up the screen, so it can stay aligned with the title it belongs
+	 * to (see VoPlacePanel). Nothing scrolls until that happens. */
+	overflow-x: hidden; overflow-y: auto;
 }
 .tvo-head {
 	padding: 6px 13px 8px; font-size: 11.5px; font-weight: 600; opacity: .5;
 	text-transform: uppercase; letter-spacing: .04em; user-select: none;
 	white-space: nowrap;
 }
+/* .tvo-root carries NO icon column (VoPanel skips it at depth 0), which is what
+ * puts its labels on the same left edge as the header. Nothing to declare here:
+ * the alignment is the absence of the icon span, so do not "restore" it. */
 .tvo-row {
 	display: flex; align-items: center; gap: 12px; white-space: nowrap;
 	padding: 8px 13px; border-radius: 4px; font-weight: 400; cursor: pointer;
@@ -5217,9 +5247,15 @@ class Plugin extends AppPlugin {
 		};
 	}
 
-	/* One submenu, "Section", holding exactly the menu his 2026-08-08 mock
-	 * settled: the progress bar first, then the three modes, then the rows the
-	 * current mode owns, then Turn off ordering.
+	/* TWO rows in the MAIN menu, because the main menu is where each plugin's
+	 * features live (his rule, 2026-08-13):
+	 *   "Progress bar"          a leaf toggle, accent when the bar is on
+	 *   "Order/Group Section"   a submenu: the three modes, the rows the current
+	 *                           mode owns, and Turn off ordering
+	 * The submenu title itself goes accent when the section IS ordered or
+	 * grouped, so the main menu tells you what is active without opening it.
+	 * That reads EFFECTIVE ordering, not just an explicit conf: a section
+	 * grouped by the global switch is visibly grouped, so it must say so.
 	 *
 	 * THE PENDING OVERLAY IS LOAD-BEARING. The module rebuilds this tree after
 	 * every pick, which is how the menu stays open while several statuses are
@@ -5272,14 +5308,6 @@ class Plugin extends AppPlugin {
 		});
 
 		const sub = [];
-		/* Progress bar sits FIRST, above a divider (his layout call), with no
-		 * icon so it lines up with the mode rows, and it wears the same active
-		 * fill as the current mode when it is on. */
-		sub.push({
-			key: 'prog', label: 'Progress bar', selected: progOn,
-			onSelect: (c) => this.voSetProgress(c, !progOn),
-		});
-		sub.push({ sep: true });
 		sub.push(modeRow('g', 'Group by Status'));
 		sub.push(modeRow('h', 'Group by Hashtags'));
 		sub.push(modeRow('s', 'Order by Status'));
@@ -5303,7 +5331,18 @@ class Plugin extends AppPlugin {
 			onSelect: (c, api) => { api.close(); this.voSetOrder(c, null); },
 		});
 
-		return [{ key: 'section', label: 'Section', submenu: sub }];
+		/* EFFECTIVE ordering decides whether the title reads as active, so a
+		 * section grouped by the global switch lights up too. The pending
+		 * overlay wins while a write is in flight, exactly as it does for the
+		 * rows inside. */
+		const ordered = pend && pend.hasConf ? !!pend.conf : !!this.effectiveOrderConf(st);
+		return [
+			{
+				key: 'prog', label: 'Progress bar', checked: progOn,
+				onSelect: (c) => this.voSetProgress(c, !progOn),
+			},
+			{ key: 'section', label: 'Order/Group Section', checked: ordered, submenu: sub },
+		];
 	}
 
 	/* Both writers are FIRE-AND-FORGET from the menu's point of view: the
