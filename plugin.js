@@ -819,6 +819,7 @@ const DOW = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
  *   rev: 0,        // bumped on every change; the host re-renders when it moves
  *   host: null,    // { version, id, release(), poke() } — the copy rendering
  *   hiddenLines: [], // guids whose chip the user dismissed; -> localStorage
+ *   cmdOwner: null,  // provider id registering the palette command (one only)
  * }
  * CONTRACT 1 provider record:
  *   { id, version, order, appliesTo(ctx) -> bool, appliesToRow?(ctx) -> bool,
@@ -847,8 +848,10 @@ const rsVO_CONTRACT = 1;
  * round (no icon column, divider under the header, filled active leaf, submenu
  * aligned to its title row). Bump this whenever behaviour here changes. */
 /* 4 (2026-08-13): host.poke(), so a copy that is NOT hosting can demand an
- * immediate repaint instead of waiting for the host's next incidental trigger. */
-const rsVO_MODULE_VERSION = 4;
+ * immediate repaint instead of waiting for the host's next incidental trigger.
+ * 5 (2026-08-13): the palette command is CLAIMED through the global instead of
+ * being hardcoded to one plugin by convention. */
+const rsVO_MODULE_VERSION = 5;
 const rsVO_GLOBAL = '__thymerViewOptions';
 /* A DISPLAY PREFERENCE, so localStorage and never saveConfiguration: that
  * reloads the plugin and would tear down the very menu the toggle lives in
@@ -887,7 +890,7 @@ function rsVoRoot() {
 	if (!R) {
 		R = {
 			contract: rsVO_CONTRACT, providers: [], rev: 0, host: null,
-			hiddenLines: rsVoStoredHidden(),
+			hiddenLines: rsVoStoredHidden(), cmdOwner: null,
 		};
 		try { window[rsVO_GLOBAL] = R; } catch (e) { return null; }
 		return R;
@@ -905,7 +908,35 @@ function rsVoRoot() {
 	/* seed the list if the record was created by a copy that predates hiding —
 	 * adding a data field is backward-safe, an older host simply ignores it */
 	if (!Array.isArray(R.hiddenLines)) R.hiddenLines = rsVoStoredHidden();
+	if (typeof R.cmdOwner === 'undefined') R.cmdOwner = null;
 	return R;
+}
+
+/* ── Who registers the palette command ──────────────────────────────────────
+ * "Show View Options" belongs to the shared surface, not to any one plugin, but
+ * only a PLUGIN can add a command to the palette — the module has no `ui`. So
+ * the module hands out the right to register it, and exactly one holder means
+ * exactly one palette entry.
+ *
+ * This used to be a convention ("Supertask owns it"), which only worked because
+ * both plugins were his. It also left a hole: disable that one plugin and there
+ * was no way back from a dismissed chip. The claim is now data in the shared
+ * record, so whoever is present takes it, and it moves on when its holder goes.
+ *
+ * Call it from the plugin's refresh cycle, not once at load: ownership can
+ * change under you when another plugin unloads, and a plugin can add or remove
+ * its own palette command at any time. */
+function rsVoClaimCommand() {
+	const R = rsVoRoot();
+	if (!R || !rsVO.pid) return false;
+	if (R.cmdOwner === rsVO.pid) return true;
+	/* somebody else holds it — but only while they are still registered, so a
+	 * holder that unloaded without releasing (or died mid-teardown) cannot
+	 * strand the command forever */
+	if (R.cmdOwner && R.providers.some((p) => p && p.id === R.cmdOwner)) return false;
+	R.cmdOwner = rsVO.pid;
+	R.rev++;
+	return true;
 }
 
 /* ── Hide the chip ON ONE LINE ──────────────────────────────────────────────
@@ -990,6 +1021,9 @@ function rsVoUnregister() {
 		if (i >= 0) R.providers.splice(i, 1);
 	}
 	if (rsVO.host && R.host === rsVO.host) R.host = null;
+	/* let go of the palette command too, so a plugin that is still here can
+	 * pick it up on its next cycle rather than the command vanishing with us */
+	if (id && R.cmdOwner === id) R.cmdOwner = null;
 	rsVoRelease();
 	R.rev++;
 }
@@ -2064,24 +2098,7 @@ class Plugin extends AppPlugin {
 			icon: 'ti-tags',
 			onSelected: () => this.openSettings(),
 		});
-		/* The way BACK from "Hide View Options" (the row at the bottom of the
-		 * shared menu, which dismisses the chip on ONE line): a dismissed line
-		 * has nothing left to click and nothing marks which lines are dismissed,
-		 * so this restores them ALL rather than playing guess-the-line. The label
-		 * is unprefixed because the command belongs to the SHARED surface, not to
-		 * Supertask. EXACTLY ONE participating plugin may register it or the
-		 * palette shows duplicates — Supertask owns it. If Supertask is ever
-		 * disabled while another contributor is not, move this there. */
-		this.cmdVo = this.ui.addCommandPaletteCommand({
-			label: 'Show View Options',
-			icon: 'ti-dots',
-			onSelected: () => {
-				let n = 0;
-				try { n = rsVoShowAll(); } catch (e) {}
-				this.toast(n ? 'View Options shown again on ' + n + (n === 1 ? ' line' : ' lines')
-					: 'View Options were not hidden anywhere');
-			},
-		});
+		this.voSyncCommand();
 		this.cmdProg = this.ui.addCommandPaletteCommand({
 			label: 'Supertask: Progress Bar',
 			icon: 'ti-progress',
@@ -3848,6 +3865,7 @@ class Plugin extends AppPlugin {
 			 * (re)rendered, and this is also where a copy that is NOT the host
 			 * notices a vacated claim (no polling interval anywhere) */
 			try { rsVoRefresh(true); } catch (e) {}
+			this.voSyncCommand(); /* ownership moves when a contributor comes or goes */
 			this.arrivalScan();
 			this.drainDeferredArrivals();
 		}, 300);
@@ -5632,6 +5650,37 @@ class Plugin extends AppPlugin {
 				const q = this.voPending.get(guid);
 				if (q && --q.n <= 0) this.voPending.delete(guid);
 			});
+	}
+
+	/* THE WAY BACK from "Hide View Options" (the row at the bottom of the shared
+	 * menu, which dismisses the chip on ONE line): a dismissed line has nothing
+	 * left to click and nothing marks which lines are dismissed, so this
+	 * restores them ALL rather than playing guess-the-line.
+	 *
+	 * The command belongs to the SHARED surface — hence the unprefixed label —
+	 * and only ONE plugin may register it or the palette shows duplicates. Who
+	 * that is comes from the module's claim, not from a convention here, so it
+	 * survives another contributor arriving and moves on if we unload. Re-checked
+	 * on every refresh cycle, because ownership changes when a plugin comes or
+	 * goes and a palette command can be added and removed at any time. */
+	voSyncCommand() {
+		let mine = false;
+		try { mine = rsVoClaimCommand(); } catch (e) {}
+		if (mine && !this.cmdVo) {
+			this.cmdVo = this.ui.addCommandPaletteCommand({
+				label: 'Show View Options',
+				icon: 'ti-dots',
+				onSelected: () => {
+					let n = 0;
+					try { n = rsVoShowAll(); } catch (e) {}
+					this.toast(n ? 'View Options shown again on ' + n + (n === 1 ? ' line' : ' lines')
+						: 'View Options were not hidden anywhere');
+				},
+			});
+		} else if (!mine && this.cmdVo) {
+			try { this.cmdVo.remove(); } catch (e) {}
+			this.cmdVo = null;
+		}
 	}
 
 	/* setOrderConf / setProgress want a live LineItem handle, which needs the
