@@ -4489,6 +4489,33 @@ class Plugin extends AppPlugin {
 		return null;
 	}
 
+	/* WHO GETS THE ⋯ CHIP.
+	 * Wherever the section is actually doing something the menu controls, so
+	 * the menu can always be reached to undo it. Three ways in:
+	 *   1. an EXPLICIT ordering conf on the heading;
+	 *   2. a progress bar that is actually drawn (`progLit`), however it was
+	 *      switched on — requiring an explicit `rs_prog` meant a line lit by
+	 *      the global switch had no way into its own menu;
+	 *   3. ordering INHERITED from the global switch, which is the one that
+	 *      bit him: such a heading has no explicit conf, so the chip existed
+	 *      only because of the bar, and turning the bar off took the menu away
+	 *      from a section that was still visibly grouped. Only "Turn off
+	 *      ordering" should do that.
+	 * Case 3 is narrowed to headings that have something to sort, or every
+	 * heading in the workspace would sprout a chip the moment the global
+	 * switch is on. */
+	chipWanted(st, g) {
+		if (this.orderConfOf(st)) return true;
+		if (this.progLit && this.progLit.has(g)) return true;
+		if (!this.effectiveOrderConf(st)) return false;
+		for (const k of ((st && st.children) || [])) {
+			if (!k || k.is_trashed || k.is_deleted) continue;
+			if (k.type === 'task') return true;
+			if (k.type === 'heading' && this.binKeyOf(k)) return true; /* our own collector roof */
+		}
+		return false;
+	}
+
 	refreshOrderButtons(fullScan) {
 		if (!this.orderBtns) return;
 		/* the byGuid sweep is the expensive half — cache the ordered-heading
@@ -4500,15 +4527,7 @@ class Plugin extends AppPlugin {
 			for (const g in byGuid) {
 				const st = byGuid[g];
 				if (!st || st.is_trashed || st.is_deleted) continue;
-				/* The chip shows for an EXPLICIT ordering conf, and for any line
-				 * that is actually SHOWING a progress bar — however the bar got
-				 * there. It used to require an explicit `rs_prog`, so the moment
-				 * the global switches lit a line there was no way into its menu
-				 * to switch that one off (his report, 2026-08-10). `progLit` is
-				 * the set refreshProgressStyle actually drew, so the chip
-				 * follows the bar exactly: a heading with no tasks under it has
-				 * no bar and still gets no chip. */
-				if (!this.orderConfOf(st) && !(this.progLit && this.progLit.has(g))) continue;
+				if (!this.chipWanted(st, g)) continue;
 				this.orderGuidCache.push(g);
 			}
 		}
