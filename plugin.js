@@ -1628,11 +1628,16 @@ const rsVO_CSS = `
 /* ACTIVE = accent text; see VoPanel for which active rows also carry a fill */
 .tvo-row.tvo-cur,
 .tvo-row.tvo-on { color: color-mix(in srgb, var(--color-primary-500, #3aa37f) 70%, var(--text-color, currentColor)); }
+/* THE ACTIVE FILL IS PERMANENT. It stays until something else takes the active
+ * state over, and hovering anything never disturbs it (his call, 2026-08-13).
+ * There USED to be a rule that blanked the fill while an ADJACENT row was
+ * hovered, inherited from the pre-shared menu, on the reasoning that two fills
+ * sitting flush read as one plate. It made the fill look unstable: it vanished
+ * for neighbours and survived for everything else, which is unreadable as a
+ * rule. The reason it is no longer needed is that hover is now flat grey while
+ * the active fill is accent-tinted, so two adjacent fills no longer merge into
+ * one. Do not bring it back. */
 .tvo-row.tvo-fill { background: color-mix(in srgb, currentColor 13%, transparent); }
-/* the fill SHIFTS to the hovered row when the two would sit flush against each
- * other; two adjacent fills read as one plate */
-.tvo-row:hover + .tvo-row.tvo-fill:not(:hover),
-.tvo-row.tvo-fill:not(:hover):has(+ .tvo-row:hover) { background: transparent; }
 .tvo-row.tvo-on .tvo-ic { opacity: .9; }
 .tvo-row.tvo-dis { opacity: .4; cursor: default; }
 .tvo-row.tvo-dis:hover { background: transparent; }
