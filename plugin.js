@@ -1214,6 +1214,7 @@ function rsVoRelease() {
 	}
 	rsVO.guids = null;
 	rsVoCloseFilter();
+	try { if (rsVoHighlightAvailable()) CSS.highlights.delete('tvo-filter-hit'); } catch (e) {}
 	if (rsVO.style) { try { rsVO.style.remove(); } catch (e) {} rsVO.style = null; }
 	if (rsVO.filterStyle) { try { rsVO.filterStyle.remove(); } catch (e) {} rsVO.filterStyle = null; }
 }
@@ -1459,7 +1460,7 @@ function rsVoCaretGuid() {
  * matches, if any descendant of it matches (or the hit would float with no
  * context), or if an ancestor of it matched (a hit is shown with its own
  * children intact, which is usually the whole point of finding it). */
-function rsVoFilterHidden(R, openOut) {
+function rsVoFilterHidden(R, openOut, keepOut) {
 	const byGuid = (window.g_universe && window.g_universe.itemsByGuid) || {};
 	const hide = [];
 	const caret = rsVoCaretGuid();
@@ -1499,7 +1500,7 @@ function rsVoFilterHidden(R, openOut) {
 		};
 		walk(root);
 		for (const gg of all) {
-			if (keep.has(gg) || gg === caret) continue;
+			if (keep.has(gg) || gg === caret) { if (keepOut) keepOut.add(gg); continue; }
 			hide.push(gg);
 		}
 	}
@@ -1593,6 +1594,74 @@ function rsVoApplyUnfold(open) {
 	}
 }
 
+/* MARKING THE HIT ON THE LINE, without touching the line.
+ *
+ * The obvious way to highlight a word is to wrap it in a span, and that is the
+ * one thing a plugin may never do to an editor line: the editor derives caret
+ * offsets from its own node tree, so an inserted node makes the line flicker,
+ * swallows every other Backspace and walks the caret backwards (playbook §1.2).
+ *
+ * The CSS Custom Highlight API paints arbitrary text ranges with NO DOM change
+ * at all, which puts it in the same safe class as a pseudo-element: Ranges live
+ * outside the tree, and styling comes from a ::highlight() rule in our own
+ * stylesheet. Ranges do go stale when the editor re-renders a line, so they are
+ * rebuilt on the same cycle as everything else here.
+ *
+ * Feature-detected, because it is a young API: without it the filter simply
+ * hides non-matches and marks nothing, which is still the whole feature. */
+function rsVoHighlightAvailable() {
+	try { return !!(window.CSS && CSS.highlights && typeof Highlight === 'function'); } catch (e) { return false; }
+}
+
+function rsVoTextTarget(el) {
+	return el.querySelector('.lineitem-text') || el.querySelector('.line-div') || el;
+}
+
+function rsVoCollectRanges(el, parts, out) {
+	const scope = rsVoTextTarget(el);
+	let walker = null;
+	try { walker = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT, null); } catch (e) { return; }
+	let node = walker.nextNode();
+	while (node) {
+		const low = String(node.nodeValue || '').toLowerCase();
+		if (low.trim()) {
+			for (const p of parts) {
+				if (!p) continue;
+				let at = low.indexOf(p);
+				while (at >= 0) {
+					try { const rg = document.createRange(); rg.setStart(node, at); rg.setEnd(node, at + p.length); out.push(rg); } catch (e) {}
+					at = low.indexOf(p, at + p.length);
+				}
+			}
+		}
+		node = walker.nextNode();
+	}
+}
+
+function rsVoRefreshHighlight(R, keep) {
+	if (!rsVoHighlightAvailable()) return;
+	const name = 'tvo-filter-hit';
+	const ranges = [];
+	try {
+		for (const g in R.filters) {
+			const parts = rsVoParts(R.filters[g]);
+			if (!parts.length) continue;
+			/* the filtered block's own line matches nothing by definition, but
+			 * every surviving descendant is worth marking */
+			for (const gg of keep) {
+				let els = [];
+				try { els = document.querySelectorAll('.listitem[data-guid="' + rsVoCssAttr(gg) + '"]'); } catch (e) {}
+				els.forEach((el) => rsVoCollectRanges(el, parts, ranges));
+			}
+			break; /* ranges are per query; one filtered block at a time is the case that matters */
+		}
+	} catch (e) {}
+	try {
+		if (!ranges.length) { CSS.highlights.delete(name); return; }
+		CSS.highlights.set(name, new Highlight(...ranges));
+	} catch (e) {}
+}
+
 /* One stylesheet, guid-keyed, exactly like every other decoration in these
  * plugins: nothing is ever removed from the document, so nothing can be lost,
  * and a re-render cannot undo it.
@@ -1605,8 +1674,9 @@ function rsVoRefreshFilterStyle() {
 	const R = rsVoRoot();
 	let css = '';
 	const open = new Set();
+	const keep = new Set();
 	if (R) {
-		const hide = rsVoFilterHidden(R, open);
+		const hide = rsVoFilterHidden(R, open, keep);
 		if (hide.length) {
 			css = hide.map((g) => '.listitem[data-guid="' + rsVoCssAttr(g) + '"]').join(',')
 				+ '{display:none !important;}';
@@ -1614,6 +1684,7 @@ function rsVoRefreshFilterStyle() {
 	}
 	if (rsVO.filterStyle.textContent !== css) rsVO.filterStyle.textContent = css;
 	rsVoApplyUnfold(open);
+	if (R) rsVoRefreshHighlight(R, keep);
 }
 
 /* EVERY plugin text input needs a key shield, or Thymer's dispatcher forwards
@@ -2334,6 +2405,12 @@ const rsVO_CSS = `
 	background: transparent; color: inherit; outline: none;
 }
 .tvo-filterinput:focus { border-color: color-mix(in srgb, var(--color-primary-500, #3aa37f) 60%, var(--text-color, currentColor)); }
+/* The hit itself, painted through the Custom Highlight API — no node is ever
+ * added to a line. Accent at low strength so the word stays readable and the
+ * mark reads as the same green as everything else the module lights up. */
+::highlight(tvo-filter-hit) {
+	background-color: color-mix(in srgb, var(--color-primary-500, #3aa37f) 42%, transparent);
+}
 .tvo-filterhint { padding: 6px 2px 0; font-size: var(--text-size-smaller, 11px); opacity: .5; white-space: nowrap; }
 .tvo-menu {
 	position: fixed; z-index: 100000; min-width: 240px; padding: 6px;
