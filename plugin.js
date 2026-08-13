@@ -818,6 +818,7 @@ const DOW = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
  *   providers: [], // provider records, plain data (see rsVoRegister)
  *   rev: 0,        // bumped on every change; the host re-renders when it moves
  *   host: null,    // { version, id, release() } — the copy currently rendering
+ *   hidden: false, // the user turned every chip off; mirrored to localStorage
  * }
  * CONTRACT 1 provider record:
  *   { id, version, order, appliesTo(ctx) -> bool, appliesToRow?(ctx) -> bool,
@@ -845,8 +846,13 @@ const rsVO_CONTRACT = 1;
 /* 2 (2026-08-13): the appliesTo / appliesToRow split, and the main-menu layout
  * round (no icon column, divider under the header, filled active leaf, submenu
  * aligned to its title row). Bump this whenever behaviour here changes. */
-const rsVO_MODULE_VERSION = 2;
+/* 3 (2026-08-13): Hide View Options. */
+const rsVO_MODULE_VERSION = 3;
 const rsVO_GLOBAL = '__thymerViewOptions';
+/* A DISPLAY PREFERENCE, so localStorage and never saveConfiguration: that
+ * reloads the plugin and would tear down the very menu the toggle lives in
+ * (playbook). Per device, which is right for "get these out of my way". */
+const rsVO_HIDE_KEY = 'thymer-view-options-hidden';
 
 /* Per-EVALUATION state. Each plugin's spliced copy gets its own binding, which
  * is exactly what makes a stale copy (after a hot reload re-evaluates the file)
@@ -876,7 +882,10 @@ function rsVoRoot() {
 	let R = null;
 	try { R = window[rsVO_GLOBAL]; } catch (e) { return null; }
 	if (!R) {
-		R = { contract: rsVO_CONTRACT, providers: [], rev: 0, host: null };
+		R = {
+			contract: rsVO_CONTRACT, providers: [], rev: 0, host: null,
+			hidden: rsVoStoredHidden(),
+		};
 		try { window[rsVO_GLOBAL] = R; } catch (e) { return null; }
 		return R;
 	}
@@ -890,7 +899,36 @@ function rsVoRoot() {
 	/* tolerate a record built by a copy that died mid-write */
 	if (!Array.isArray(R.providers)) R.providers = [];
 	if (typeof R.rev !== 'number') R.rev = 0;
+	/* seed the flag if the record was created by a copy that predates hiding —
+	 * adding a data field is backward-safe, an older host simply ignores it */
+	if (typeof R.hidden !== 'boolean') R.hidden = rsVoStoredHidden();
 	return R;
+}
+
+/* ── Hide / show every chip ─────────────────────────────────────────────────
+ * A single switch for the whole shared surface, not a per-plugin one: what the
+ * user wants is "get these dots out of my way", and having to turn each
+ * contributing plugin off separately would miss the point. Lives in the shared
+ * record so every copy agrees, mirrored to localStorage so it survives a
+ * reload. Turned off from the bottom of the menu, back on from the command
+ * palette (there is no chip left to click once they are hidden). */
+function rsVoStoredHidden() {
+	try { return localStorage.getItem(rsVO_HIDE_KEY) === '1'; } catch (e) { return false; }
+}
+
+function rsVoIsHidden() {
+	const R = rsVoRoot();
+	return R ? !!R.hidden : false;
+}
+
+function rsVoSetHidden(on) {
+	const R = rsVoRoot();
+	if (!R) return;
+	R.hidden = !!on;
+	try { localStorage.setItem(rsVO_HIDE_KEY, on ? '1' : ''); } catch (e) {}
+	rsVoCloseMenu();
+	R.rev++;
+	rsVoRefresh(true);
 }
 
 /* Registering REPLACES any record with the same id. That is what makes a hot
@@ -1179,6 +1217,12 @@ function rsVoScrollParent(el) {
 
 function rsVoPlaceChips(R, full) {
 	if (!rsVO.chips) return;
+	if (R.hidden) {
+		for (const [, el] of rsVO.chips) { try { el.remove(); } catch (e) {} }
+		rsVO.chips.clear();
+		rsVO.guids = null;
+		return;
+	}
 	/* the byGuid sweep is the expensive half — cache the eligible guids and let
 	 * the scroll path (rAF, every frame) skip straight to measuring */
 	if (full || !rsVO.guids) {
@@ -1413,6 +1457,18 @@ function rsVoRenderMenu() {
 
 	let items = rsVoItemsFor(R, ctx);
 	if (!items.length) { rsVoCloseMenu(); return; }
+	/* The module's OWN row, always last and in its own group: it is about the
+	 * shared surface itself, not about this line, so it belongs to nobody's
+	 * provider. Its group of one also keeps it out of the fill-yields-on-hover
+	 * scope of whatever sits above it. */
+	items = items.concat([
+		{ sep: true },
+		{
+			key: '__tvo_hide',
+			label: 'Hide View Options',
+			onSelect: (c, api) => { api.close(); rsVoSetHidden(true); },
+		},
+	]);
 	let depth = 0;
 	let anchor = m.chip.getBoundingClientRect();
 	let anchorIsChip = true;
@@ -1965,6 +2021,21 @@ class Plugin extends AppPlugin {
 			icon: 'ti-tags',
 			onSelected: () => this.openSettings(),
 		});
+		/* The way BACK from "Hide View Options" (the row at the bottom of the
+		 * shared menu): once the chips are hidden there is nothing left to click,
+		 * so the only route in is the palette. The label is unprefixed because
+		 * this command belongs to the SHARED surface, not to Supertask.
+		 * EXACTLY ONE participating plugin may register it, or the palette shows
+		 * duplicates — Supertask owns it. If Supertask is ever disabled while
+		 * another contributor is not, move this there. */
+		this.cmdVo = this.ui.addCommandPaletteCommand({
+			label: 'Show View Options',
+			icon: 'ti-dots',
+			onSelected: () => {
+				try { rsVoSetHidden(false); } catch (e) {}
+				this.toast('View Options shown');
+			},
+		});
 		this.cmdProg = this.ui.addCommandPaletteCommand({
 			label: 'Supertask: Progress Bar',
 			icon: 'ti-progress',
@@ -2054,6 +2125,8 @@ class Plugin extends AppPlugin {
 		try { if (this.cmd6) this.cmd6.remove(); } catch (e) {}
 		try { if (this.cmd7) this.cmd7.remove(); } catch (e) {}
 		try { if (this.cmd8) this.cmd8.remove(); } catch (e) {}
+		try { if (this.cmdVo) this.cmdVo.remove(); } catch (e) {}
+		this.cmdVo = null;
 		this.style = this.cmd = this.cmd2 = this.cmd3 = this.cmd5 = this.cmd6 = this.cmd7 = this.cmd8 = null;
 	}
 
