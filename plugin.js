@@ -893,6 +893,7 @@ const rsVO = {
 	style: null,
 	filterStyle: null,
 	filterPop: null,
+	unfolded: new Set(), /* groups WE opened for a filter, to fold back after */
 	menu: null,     /* { guid, chip, path: [key], panels: [el] } */
 	raf: 0,
 	tail: 0,
@@ -1200,6 +1201,9 @@ function rsVoClaim(R) {
 }
 
 function rsVoRelease() {
+	/* put his tree back before letting go: our record of what WE opened dies
+	 * with this scope, and the copy taking over cannot know to fold it again */
+	try { rsVoApplyUnfold(new Set()); } catch (e) {}
 	rsVO.host = null;
 	rsVoCloseMenu();
 	rsVoStop();
@@ -1454,7 +1458,7 @@ function rsVoCaretGuid() {
  * matches, if any descendant of it matches (or the hit would float with no
  * context), or if an ancestor of it matched (a hit is shown with its own
  * children intact, which is usually the whole point of finding it). */
-function rsVoFilterHidden(R) {
+function rsVoFilterHidden(R, openOut) {
 	const byGuid = (window.g_universe && window.g_universe.itemsByGuid) || {};
 	const hide = [];
 	const caret = rsVoCaretGuid();
@@ -1462,6 +1466,8 @@ function rsVoFilterHidden(R) {
 		const parts = rsVoParts(R.filters[g]);
 		const root = byGuid[g];
 		if (!parts.length || !root) continue;
+		/* the filtered block itself has to be open, or none of it renders */
+		if (openOut) openOut.add(g);
 		const keep = new Set();
 		const all = [];
 		const kids = (st) => ((st && st.children) || []).filter((k) => k && !k.is_trashed && !k.is_deleted);
@@ -1480,7 +1486,13 @@ function rsVoFilterHidden(R) {
 					any = true;
 					continue;
 				}
-				if (walk(k)) { keep.add(k.guid); any = true; }
+				if (walk(k)) {
+					keep.add(k.guid);
+					/* kept only because something UNDER it matched: if this one
+					 * is folded, the hit never reaches the screen */
+					if (openOut) openOut.add(k.guid);
+					any = true;
+				}
 			}
 			return any;
 		};
@@ -1491,6 +1503,63 @@ function rsVoFilterHidden(R) {
 		}
 	}
 	return hide;
+}
+
+/* Fold state is PER CLIENT and lives in localStorage under `folded_items`,
+ * keyed "<workspaceGuid>_<lineGuid>", read once per listview construction into
+ * each listview's `fold_loaded_keys`. So changing it means writing both, then
+ * nudging a re-layout. Same mechanism as Supertask's foldLines, other way up. */
+function rsVoWsGuid() {
+	const u = window.g_universe;
+	return (u && u.workspace && u.workspace.guid) || (u && u.workspaceGuid) || null;
+}
+
+/* Returns true when it actually changed something, so the caller only nudges
+ * a re-layout on a real change and cannot loop through the resize listener. */
+function rsVoSetFolded(guids, folded) {
+	const ws = rsVoWsGuid();
+	if (!ws || !guids || !guids.length) return false;
+	const keys = guids.map((g) => ws + '_' + g);
+	let cur = [];
+	try { cur = JSON.parse(localStorage.getItem('folded_items') || '[]') || []; } catch (e) {}
+	if (!Array.isArray(cur)) cur = [];
+	let changed = false;
+	for (const k of keys) {
+		const at = cur.indexOf(k);
+		if (folded && at < 0) { cur.push(k); changed = true; }
+		if (!folded && at >= 0) { cur.splice(at, 1); changed = true; }
+	}
+	if (!changed) return false;
+	try { localStorage.setItem('folded_items', JSON.stringify(cur.slice(-100))); } catch (e) {}
+	try {
+		for (const lv of ((window.g_universe && window.g_universe.listviews) || [])) {
+			if (!lv || !lv.fold_loaded_keys) continue;
+			for (const k of keys) { if (folded) lv.fold_loaded_keys.add(k); else lv.fold_loaded_keys.delete(k); }
+		}
+	} catch (e) {}
+	return true;
+}
+
+/* A MATCH INSIDE A FOLDED GROUP MUST STILL SHOW. A folded line's children are
+ * not rendered at all, so no stylesheet can reveal them: filtering has to open
+ * the group (his report, 2026-08-13 — a hit inside a collapsed "Done" left the
+ * group visible with nothing in it). We remember exactly which lines WE opened
+ * and fold them again when they are no longer needed, so clearing a filter puts
+ * his tree back the way he had it. */
+function rsVoApplyUnfold(open) {
+	const mine = rsVO.unfolded;
+	const toOpen = [];
+	const toClose = [];
+	for (const g of open) if (!mine.has(g)) toOpen.push(g);
+	for (const g of mine) if (!open.has(g)) toClose.push(g);
+	if (!toOpen.length && !toClose.length) return;
+	let changed = false;
+	if (toOpen.length && rsVoSetFolded(toOpen, false)) changed = true;
+	if (toClose.length && rsVoSetFolded(toClose, true)) changed = true;
+	for (const g of toOpen) mine.add(g);
+	for (const g of toClose) mine.delete(g);
+	/* only on a real change, or the resize listener would re-enter this */
+	if (changed) { try { window.dispatchEvent(new Event('resize')); } catch (e) {} }
 }
 
 /* One stylesheet, guid-keyed, exactly like every other decoration in these
@@ -1504,14 +1573,16 @@ function rsVoRefreshFilterStyle() {
 	if (!rsVO.filterStyle) return;
 	const R = rsVoRoot();
 	let css = '';
+	const open = new Set();
 	if (R) {
-		const hide = rsVoFilterHidden(R);
+		const hide = rsVoFilterHidden(R, open);
 		if (hide.length) {
 			css = hide.map((g) => '.listitem[data-guid="' + rsVoCssAttr(g) + '"]').join(',')
 				+ '{display:none !important;}';
 		}
 	}
 	if (rsVO.filterStyle.textContent !== css) rsVO.filterStyle.textContent = css;
+	rsVoApplyUnfold(open);
 }
 
 /* EVERY plugin text input needs a key shield, or Thymer's dispatcher forwards
@@ -1571,7 +1642,15 @@ function rsVoOpenFilter(guid, anchor) {
 	input.addEventListener('keydown', (e) => {
 		if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); rsVoCloseFilter(); }
 	});
-	rsVoPlaceAbove(box, anchor.getBoundingClientRect());
+	/* vertical anchor is the ROW, horizontal is the chip: the box hangs off the
+	 * chip's own left edge, which sits after the line's text, so aligning it to
+	 * the row cannot cover the heading it belongs to */
+	let rowR = null;
+	try {
+		const rowEl = anchor.__tvoRow;
+		if (rowEl && document.body.contains(rowEl)) rowR = rowEl.getBoundingClientRect();
+	} catch (e) {}
+	rsVoPlaceAbove(box, anchor.getBoundingClientRect(), rowR);
 	setTimeout(() => { try { input.focus(); input.select(); } catch (e) {} }, 0);
 }
 
@@ -2111,13 +2190,16 @@ function rsVoSelect(it, ctx) {
  * box STAYS open while you type and watch what survives, so opening downwards
  * put it straight on top of the very children it was filtering (his report,
  * 2026-08-13). It only drops below when there is no room above. */
-function rsVoPlaceAbove(panel, anchor) {
+function rsVoPlaceAbove(panel, anchor, row) {
 	const w = panel.offsetWidth;
 	const h = panel.offsetHeight;
 	const vw = window.innerWidth;
 	const vh = window.innerHeight;
-	let top = anchor.top - h - 6;
-	if (top < 8) top = anchor.bottom + 6;
+	/* BOTTOM AGAINST THE BOTTOM OF THE ROW (his call): flush with the line it
+	 * belongs to, rather than floating a gap above it. */
+	const base = row || anchor;
+	let top = base.bottom - h;
+	if (top < 8) top = base.bottom + 6;
 	const wantTop = Math.max(8, Math.min(top, vh - h - 8));
 	const wantLeft = Math.max(8, Math.min(anchor.left, vw - w - 8));
 	panel.style.top = wantTop + 'px';
