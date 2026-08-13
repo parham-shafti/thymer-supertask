@@ -896,7 +896,8 @@ const rsVO = {
 	unfolded: new Set(), /* groups WE opened for a filter, to fold back after */
 	foldTried: new Map(), /* guid -> last click attempt, so a dud cannot loop */
 	hlTail: 0,      /* one-shot re-highlight after the editor settles */
-	lastMove: 0,    /* throttle for the pointer-move recovery trigger */
+	lastMove: 0,    /* throttle for the pointer-move handler */
+	hoverGuid: null, /* the row under the pointer; it gets a chip too */
 	menu: null,     /* { guid, chip, path: [key], panels: [el] } */
 	raf: 0,
 	tail: 0,
@@ -1245,18 +1246,34 @@ function rsVoStart() {
 	 * a debounce alone makes them visibly lag and hop during a scroll. The
 	 * 120ms tail then settles with a full rescan. */
 	on.tick = () => rsVoTick();
-	/* RECOVERY AFTER AN APP START. g_universe is NULL until the user first
-	 * clicks into an editor (playbook), so a scan that runs before that finds
-	 * no lines and draws no chips. Scroll, resize and pointerup are not enough:
-	 * moving the pointer over a row to use a hover control is neither. So while
-	 * we are holding NOTHING, a pointer move is a cheap extra chance to notice
-	 * the universe has woken. Throttled, and it costs exactly zero once a
-	 * single chip exists. */
-	on.move = () => {
-		if (rsVO.chips && rsVO.chips.size) return;
+	/* THE HOVERED ROW, which is what gives a plain text block a chip at all, and
+	 * doubles as the recovery trigger after an app start (g_universe is null
+	 * until the first click into an editor, so an early scan draws nothing).
+	 * Throttled; a move that does not change the row costs one closest(). */
+	on.move = (e) => {
 		const now = Date.now();
-		if (now - (rsVO.lastMove || 0) < 400) return;
+		if (now - (rsVO.lastMove || 0) < 80) return;
 		rsVO.lastMove = now;
+		let t = null;
+		try { t = e.target; } catch (err) { return; }
+		if (!t || !t.closest) return;
+		/* FREEZE while the pointer is on our own surfaces, or the chip would
+		 * vanish the instant you moved off the row to click it */
+		if (rsVO.menu || rsVO.filterPop) return;
+		if (t.closest('.tvo-chip') || t.closest('.tvo-menu')) return;
+		let g = null;
+		try {
+			const row = t.closest('.listitem[data-guid]');
+			g = row ? row.getAttribute('data-guid') : null;
+		} catch (err) { g = null; }
+		if (g === rsVO.hoverGuid) {
+			/* nothing on screen yet: still worth a tick, this is the recovery
+			 * path after an app start */
+			if (!rsVO.chips || !rsVO.chips.size) rsVoTick();
+			return;
+		}
+		rsVO.hoverGuid = g;
+		rsVO.guids = null; /* eligibility changed, so the cache must go */
 		rsVoTick();
 	};
 	/* Folding is a click, and a fold that only re-layouts (no row added or
@@ -1835,6 +1852,25 @@ function rsVoCtx(guid, st, node) {
 	return { guid: guid, type: (st && st.type) || 'text', state: st || null, node: node || null };
 }
 
+/* WHO GETS A CHIP ON HOVER, as opposed to permanently.
+ *
+ * A permanent chip is summoned by a provider's appliesTo, and every one of those
+ * is about something being ACTIVE on the line: ordering, a progress bar, a
+ * description, a filter. That left a plain heading with plain text under it with
+ * no chip at all, and therefore no way to reach Description or the filter, which
+ * have nothing to do with tasks (his diagnosis, 2026-08-13).
+ *
+ * Showing one on every parent line instead would be noise on a document-sized
+ * scale. Thymer's own per-line affordances appear on hover, so ours does too:
+ * the row under the pointer gets a chip if anything at all would be OFFERED
+ * there, which is a provider's appliesToRow, or children for the filter to work
+ * on. Exactly one such chip exists at a time. */
+function rsVoHoverEligible(R, ctx) {
+	for (const p of R.providers) if (rsVoAppliesRow(p, ctx)) return true;
+	const kids = ((ctx.state && ctx.state.children) || []).filter((k) => k && !k.is_trashed && !k.is_deleted);
+	return kids.length > 0;
+}
+
 /* ── The chip ──────────────────────────────────────────────────────────────
  * Thymer's own +/... affordances live in an OVERLAY layer, never inside the
  * line, and so must ours (never-insert-a-node-into-a-line, playbook §1.2).
@@ -1872,9 +1908,13 @@ function rsVoPlaceChips(R, full) {
 			 * would be a trap. */
 			if (rsVoFilterOf(R, g)) { out.push(g); continue; }
 			const ctx = rsVoCtx(g, st);
+			let want = false;
 			for (let i = 0; i < provs.length; i++) {
-				if (rsVoApplies(provs[i], ctx)) { out.push(g); break; }
+				if (rsVoApplies(provs[i], ctx)) { want = true; break; }
 			}
+			/* and the row under the pointer, if anything would be offered on it */
+			if (!want && g === rsVO.hoverGuid) want = rsVoHoverEligible(R, ctx);
+			if (want) out.push(g);
 		}
 		rsVO.guids = out;
 	}
@@ -6228,8 +6268,42 @@ class Plugin extends AppPlugin {
 			appliesTo: (ctx) => {
 				try { return this.chipWanted(ctx.state, ctx.guid); } catch (e) { return false; }
 			},
+			/* OUR ROWS ARE OFFERED MORE WIDELY THAN OUR CHIP. `appliesTo` above
+			 * is "this line warrants a chip because of me", and it is narrow on
+			 * purpose. But since the shared chip now also appears on the HOVERED
+			 * row, a heading that HAS todos and simply has not been ordered yet
+			 * would open a menu with nothing of ours in it, and no way in to
+			 * ordering or the bar. So the rows show wherever they would DO
+			 * something: a heading or parent task with a todo somewhere beneath
+			 * it. On a block of plain text they stay hidden (his call,
+			 * 2026-08-13) — Description and the filter have nothing to do with
+			 * tasks and should not drag our options along. */
+			appliesToRow: (ctx) => {
+				const st = ctx.state;
+				try {
+					if (this.chipWanted(st, ctx.guid)) return true;
+					if (!st || st.is_trashed || st.is_deleted || st.is_virtual) return false;
+					if (this.binKeyOf(st)) return false; /* our own collector roof */
+					if (st.type !== 'heading' && st.type !== 'task') return false;
+					return this.hasTodoUnder(st, 0);
+				} catch (e) { return false; }
+			},
 			build: (ctx) => this.voBuild(ctx),
 		};
+	}
+
+	/* A todo ANYWHERE below, not just among the direct children: "there is
+	 * something here worth ordering" is a question about the whole section, and
+	 * a heading whose todos sit one level down is the common shape. Depth-capped
+	 * because nothing good comes of walking an unbounded tree on a hover. */
+	hasTodoUnder(st, depth) {
+		if (!st || (depth || 0) > 12) return false;
+		for (const k of ((st.children) || [])) {
+			if (!k || k.is_trashed || k.is_deleted) continue;
+			if (k.type === 'task') return true;
+			if (this.hasTodoUnder(k, (depth || 0) + 1)) return true;
+		}
+		return false;
 	}
 
 	/* TWO rows in the MAIN menu, because the main menu is where each plugin's
