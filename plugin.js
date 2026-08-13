@@ -2425,6 +2425,17 @@ function rsVoPlacePanel(panel, anchor, below, keep) {
  * on light themes and lightens on dark ones, where --color-primary-500 alone
  * washes out. 4px radius on boxes and row fills, per the standing rule. */
 const rsVO_CSS = `
+/* THE CRITERIA COLOUR, one definition used in BOTH places: the pill in the chip
+ * and the mark on the line must be the same thing, foreground included. The
+ * values are the pill's originals, written out instead of riding currentColor,
+ * because a ::highlight() cannot see the pill and currentColor there resolves to
+ * the line's own text. That last part is what kept getting this wrong: matching
+ * only the background left the marked word teal, white, or link-coloured
+ * depending on what it was. */
+:root {
+	--tvo-sel-fg: color-mix(in srgb, var(--color-primary-500, #3aa37f) 70%, var(--text-color, #dddddd));
+	--tvo-sel-bg: color-mix(in srgb, var(--tvo-sel-fg) 14%, transparent);
+}
 .tvo-chip { display: flex; align-items: center; gap: 4px; cursor: pointer; }
 /* Self-mixed from the line's own colour, NOT the backlink pill's variables.
  * Matching --ed-backlink-bg exactly was tried on 2026-08-13 and he rejected the
@@ -2446,8 +2457,8 @@ const rsVO_CSS = `
 	max-width: 220px; min-width: 0; height: 20px; padding: 0 5px;
 	border-radius: 4px; box-sizing: border-box;
 	font-family: inherit; font-size: var(--text-size-smaller, 11px);
-	color: color-mix(in srgb, var(--color-primary-500, #3aa37f) 70%, var(--text-color, currentColor));
-	background: color-mix(in srgb, currentColor 14%, transparent);
+	color: var(--tvo-sel-fg);
+	background: var(--tvo-sel-bg);
 }
 .tvo-chip-flt:hover { background: color-mix(in srgb, currentColor 22%, transparent); }
 .tvo-chip-ic { font-size: 11px; flex: 0 0 auto; }
@@ -2464,17 +2475,14 @@ const rsVO_CSS = `
 /* The hit itself, painted through the Custom Highlight API — no node is ever
  * added to a line. Accent at low strength so the word stays readable and the
  * mark reads as the same green as everything else the module lights up. */
-/* HIS EXACT VALUE, given as a hex after three wrong guesses from me: a deep
- * green of my choosing, then the criteria pill's own colour, then the app's
- * --selection-bg. Do not "improve" it back into a variable.
- * The TEXT is set too, not just the plate: left alone, a marked word kept
- * whatever colour the line gave it (a link teal, a hashtag, plain body text),
- * so the same mark read differently from word to word. White is what the app's
- * own selection uses against a plate this dark.
- * The pill in the chip is NOT this colour and must stay as it was. */
+/* Identical to the criteria pill, plate AND text. Four colours were tried
+ * before this: an accent wash, a deep green of mine, the app's --selection-bg,
+ * and a #313E44 plate with white text. Every one of them differed from the pill
+ * the user is looking at while they read the result, which is the thing it has
+ * to agree with. Keep both halves pointing at the shared variables. */
 ::highlight(tvo-filter-hit) {
-	background-color: #313E44;
-	color: #FFFFFF;
+	background-color: var(--tvo-sel-bg);
+	color: var(--tvo-sel-fg);
 }
 .tvo-filterhint { padding: 6px 2px 0; font-size: var(--text-size-smaller, 11px); opacity: .5; white-space: nowrap; }
 .tvo-menu {
