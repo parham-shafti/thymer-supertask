@@ -1571,8 +1571,7 @@ function rsVoOpenFilter(guid, anchor) {
 	input.addEventListener('keydown', (e) => {
 		if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); rsVoCloseFilter(); }
 	});
-	const r = anchor.getBoundingClientRect();
-	rsVoPlacePanel(box, r, true, null);
+	rsVoPlaceAbove(box, anchor.getBoundingClientRect());
 	setTimeout(() => { try { input.focus(); input.select(); } catch (e) {} }, 0);
 }
 
@@ -2105,6 +2104,31 @@ function rsVoSelect(it, ctx) {
 	/* who may show a chip can change with the pick itself (turning ordering off
 	 * on a heading with no bar takes its chip away), so re-place either way */
 	rsVoRefresh(true);
+}
+
+/* THE FILTER BOX OPENS ABOVE THE LINE, unlike the menu. A menu covers content
+ * while it is open and that is fine, because it closes on the first pick. This
+ * box STAYS open while you type and watch what survives, so opening downwards
+ * put it straight on top of the very children it was filtering (his report,
+ * 2026-08-13). It only drops below when there is no room above. */
+function rsVoPlaceAbove(panel, anchor) {
+	const w = panel.offsetWidth;
+	const h = panel.offsetHeight;
+	const vw = window.innerWidth;
+	const vh = window.innerHeight;
+	let top = anchor.top - h - 6;
+	if (top < 8) top = anchor.bottom + 6;
+	const wantTop = Math.max(8, Math.min(top, vh - h - 8));
+	const wantLeft = Math.max(8, Math.min(anchor.left, vw - w - 8));
+	panel.style.top = wantTop + 'px';
+	panel.style.left = wantLeft + 'px';
+	/* place-measure-correct, same reason as every other body-parented popup
+	 * here: a style.left in px does not necessarily land at that viewport x */
+	const got = panel.getBoundingClientRect();
+	const dx = wantLeft - got.left;
+	const dy = wantTop - got.top;
+	if (Math.abs(dx) > 0.5) panel.style.left = ((parseFloat(panel.style.left) || 0) + dx) + 'px';
+	if (Math.abs(dy) > 0.5) panel.style.top = ((parseFloat(panel.style.top) || 0) + dy) + 'px';
 }
 
 /* Positioned ONCE per render against a rect that is already on screen, and
