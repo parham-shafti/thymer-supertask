@@ -701,6 +701,27 @@ html.is-dark {
 .rs-p-secbox .rs-p-sec { margin: 0; }
 .rs-p-secbox .rs-p-secsub { margin: 8px 0 10px; }
 .rs-p-secbox .rs-p-list { margin-bottom: 0; }
+/* per-collection toggles as wrapping pills — a stack of full rows does not
+ * scale past a handful of collections (his call) */
+.rs-pcgrid { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.rs-pcpill {
+	display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px;
+	border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+	border-radius: 4px; cursor: pointer;
+	font-size: var(--text-size-smaller, .8125rem);
+}
+.rs-pcpill input { display: none; }
+.rs-pcpill .ti { font-size: 11px; opacity: 0; }
+.rs-pcpill.is-on {
+	color: color-mix(in srgb, var(--color-primary-500, #4caea1) 60%, var(--text-color));
+	border-color: color-mix(in srgb, var(--color-primary-500, #4caea1) 45%, transparent);
+}
+.rs-pcpill.is-on .ti { opacity: 1; }
+.rs-pc.rs-pc-on {
+	background: color-mix(in srgb, var(--color-primary-500, #4caea1) 85%, var(--text-color) 0%);
+	border-color: transparent;
+	color: var(--app-bg, #1a1a1e);
+}
 .rs-p-sub { opacity: .6; margin: 0 0 18px; font-size: var(--text-size-smaller, .8125rem); line-height: 1.5; }
 .rs-p-close {
 	position: absolute; top: 14px; right: 14px;
@@ -2641,6 +2662,37 @@ class Plugin extends AppPlugin {
 		 * before the source page is loaded — see loadProgCache */
 		this.loadProgCache();
 		this.loadSubCache();
+		/* page checkboxes (his 2026-08-13 feature): per-record overlay boxes.
+		 * pcWire: collGuid -> wiring or null (null = resolved, unusable);
+		 * pcPend: optimistic overlay on the property (props-loss doctrine). */
+		this.pageChecks = false;
+		this.pageCheckCols = {};
+		this.pcWire = new Map();
+		this.pcPend = new Map();
+		this.pcColNames = {};
+		this.tbWire = new Map(); /* page-timeblock value maps, per collection+field */
+		/* the box is drawn INLINE, as a ::before in the line's own text flow —
+		 * his correction after v1: a floating box sat outside the editor. A
+		 * pseudo-element scrolls and indents with the line for free, and it can
+		 * wear Thymer's own --ed-check-* variables so it is pixel-identical to
+		 * a todo's checkbox. Clicks are taken by a window-CAPTURE intercept
+		 * over the box's band (the proven inline-link pattern) — capture runs
+		 * before the editor's own element handlers, so a swallowed press never
+		 * places the caret or follows the reference. */
+		this.pcStyle = document.createElement('style');
+		document.head.appendChild(this.pcStyle);
+		this.pcLit = new Map(); /* domGuid -> {recGuid, checked} */
+		this.pcPress = (e) => {
+			const hit = this.pcHitTest(e);
+			if (!hit) return;
+			e.preventDefault(); e.stopPropagation();
+			if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+			if (e.type === 'pointerdown') this.pcToggle(hit.g, hit.info).catch(() => {});
+		};
+		window.addEventListener('pointerdown', this.pcPress, true);
+		window.addEventListener('pointerup', this.pcPress, true);
+		window.addEventListener('click', this.pcPress, true);
+		this.pcFillNames(); /* so Settings shows real collection names, not guid tails */
 		/* guid → {to, at}: the last advance we performed. Third layer of the
 		 * no-double-advance defence (with the recurBusy burst guard and the
 		 * status re-check): a replayed done-event whose line already sits on
@@ -2938,6 +2990,15 @@ class Plugin extends AppPlugin {
 		this.progLit = null;
 		this.subKnown = null;
 		this.subRemembered = null;
+		try { window.removeEventListener('pointerdown', this.pcPress, true); } catch (e) {}
+		try { window.removeEventListener('pointerup', this.pcPress, true); } catch (e) {}
+		try { window.removeEventListener('click', this.pcPress, true); } catch (e) {}
+		try { if (this.pcStyle) this.pcStyle.remove(); } catch (e) {}
+		this.pcStyle = null;
+		this.pcLit = null;
+		this.pcWire = null;
+		this.pcPend = null;
+		this.tbWire = null;
 		this.progTried = null;
 		this.progQueue = null;
 		this.lastAdvance = null;
@@ -3087,6 +3148,8 @@ class Plugin extends AppPlugin {
 		 * to per-heading rs_order meta; ignored on read */
 		if (typeof p.progress === 'boolean') this.progressGlobal = p.progress;
 		if (typeof p.progressTodos === 'boolean') this.progressTodos = p.progressTodos;
+		if (typeof p.pageChecks === 'boolean') this.pageChecks = p.pageChecks;
+		if (p.pageCheckCols && typeof p.pageCheckCols === 'object') this.pageCheckCols = p.pageCheckCols;
 		if (Array.isArray(p.globalBins)) {
 			this.globalBins = p.globalBins.filter((k) => ORDER_BINS.some((b) => b.key === k));
 		}
@@ -3129,7 +3192,7 @@ class Plugin extends AppPlugin {
 	 * write-through to config for other devices. NOTE: saveConfiguration
 	 * reloads the plugin, so this is always the LAST thing an interaction does. */
 	async savePrefs() {
-		const p = { rev: Date.now(), slots: this.tbSlots, globalBins: (this.globalBins || []).slice(), progress: !!this.progressGlobal, progressTodos: !!this.progressTodos, pageRules: this.pageRules || {}, pageDefaults: this.pageDefaults || {} };
+		const p = { rev: Date.now(), slots: this.tbSlots, globalBins: (this.globalBins || []).slice(), progress: !!this.progressGlobal, progressTodos: !!this.progressTodos, pageChecks: !!this.pageChecks, pageCheckCols: this.pageCheckCols || {}, pageRules: this.pageRules || {}, pageDefaults: this.pageDefaults || {} };
 		this.prefsRev = p.rev;
 		try { localStorage.setItem('rs_prefs', JSON.stringify(p)); } catch (e) {}
 		try {
@@ -3203,7 +3266,7 @@ class Plugin extends AppPlugin {
 
 		/* both sections ALWAYS start collapsed (his call) — fold state lives
 		 * only for the life of the open modal, nothing persisted */
-		const fold = { progress: true, ordering: true, hashtags: true };
+		const fold = { progress: true, ordering: true, hashtags: true, pagechecks: true };
 		const sec = (id, label, extra) =>
 			'<div class="rs-p-sec rs-p-fold" data-sec="' + id + '">'
 			+ '<span class="rs-p-chev ti ' + (fold[id] ? 'ti-chevron-right' : 'ti-chevron-down') + '"></span>'
@@ -3247,6 +3310,29 @@ class Plugin extends AppPlugin {
 					+ '<label class="rs-p-row rs-p-switch">'
 					+ '<input type="checkbox" class="rs-pgt"' + (this.progressTodos ? ' checked' : '') + '>'
 					+ '<span class="rs-p-name">On every todo with sub-tasks</span></label>'
+					+ '</div>')
+				+ '</div>'
+				/* Page Checkboxes (his 2026-08-13 feature): one global switch, then
+				 * per-collection overrides — only collections whose status wiring is
+				 * KNOWN are listed, because a checkbox with no property to write is
+				 * a lie. Wiring is learned from the date box's page-repeat pickers. */
+				+ '<div class="rs-p-secbox">' + sec('pagechecks', 'Page Checkboxes')
+				+ (fold.pagechecks ? '' :
+					'<p class="rs-p-sub rs-p-secsub">A checkbox on page rows — lone references and live search results. '
+					+ 'Checked when the page’s status is Done or Dropped; unchecking writes the collection’s reset status. '
+					+ 'A collection appears here once its status wiring is known (set it once in the date box on any of its pages).</p>'
+					+ '<div class="rs-p-list">'
+					+ '<label class="rs-p-row rs-p-switch">'
+					+ '<input type="checkbox" class="rs-pcg"' + (this.pageChecks ? ' checked' : '') + '>'
+					+ '<span class="rs-p-name">On all pages</span></label>'
+					+ '</div>'
+					+ '<div class="rs-pcgrid">'
+					+ Object.keys(this.pageDefaults || {}).map((cg) => {
+						const nm = (this.pcColNames && this.pcColNames[cg]) || ('…' + cg.slice(-6));
+						return '<label class="rs-pcpill' + (this.pcEnabled(cg) ? ' is-on' : '') + '">'
+							+ '<input type="checkbox" class="rs-pcc" data-col="' + cg + '"' + (this.pcEnabled(cg) ? ' checked' : '') + '>'
+							+ '<span class="ti ti-check"></span>' + esc(nm) + '</label>';
+					}).join('')
 					+ '</div>')
 				+ '</div>'
 				+ '<div class="rs-p-secbox">' + sec('ordering', 'Task Status Settings') + orderingBody + '</div>'
@@ -3307,6 +3393,22 @@ class Plugin extends AppPlugin {
 				this.progRecheck();
 				this.refreshProgressStyle();
 				dirty = true;
+			}
+			if (cl && cl.contains('rs-pcg')) {
+				this.pageChecks = !!e.target.checked;
+				this.scheduleRepeatRefresh();
+				dirty = true;
+			}
+			if (cl && cl.contains('rs-pcc')) {
+				const cg = e.target.getAttribute('data-col');
+				const pill = e.target.closest('.rs-pcpill');
+				if (pill) pill.classList.toggle('is-on', !!e.target.checked);
+				if (cg) {
+					this.pageCheckCols = this.pageCheckCols || {};
+					this.pageCheckCols[cg] = !!e.target.checked;
+					this.scheduleRepeatRefresh();
+					dirty = true;
+				}
 			}
 			if (cl && cl.contains('rs-gb')) {
 				const key = e.target.getAttribute('data-k');
@@ -4244,6 +4346,9 @@ class Plugin extends AppPlugin {
 	}
 
 	async onRecordUpdated(ev) {
+		/* any record change can flip a checkbox somewhere on screen — the
+		 * cycle is debounced, so this is cheap */
+		this.scheduleRepeatRefresh();
 		const guid = ev && ev.recordGuid;
 		const rule = guid && this.pageRules && this.pageRules[guid];
 		if (!rule) return;
@@ -4717,9 +4822,324 @@ class Plugin extends AppPlugin {
 			 * notices a vacated claim (no polling interval anywhere) */
 			try { rsVoRefresh(true); } catch (e) {}
 			this.voSyncCommand(); /* ownership moves when a contributor comes or goes */
+			try { this.refreshPageChecks(); } catch (e) {}
 			this.arrivalScan();
 			this.drainDeferredArrivals();
 		}, 300);
+	}
+
+	// ---- page checkboxes ------------------------------------------------------
+	/* Pages get a checkbox, like todos have (his 2026-08-13 feature): on
+	 * lone-reference lines in documents and on page rows in live searches,
+	 * a box that READS the page's status property and WRITES it on click.
+	 * His read rule: checked = the status is Done or Dropped (any status
+	 * that is neither renders unchecked). Unchecking writes the collection's
+	 * reset value. The wiring is per collection — every collection names its
+	 * fields differently — and is SEEDED from pageDefaults, i.e. from what
+	 * the date box's page-repeat pickers already learned. A collection with
+	 * no wiring shows no checkbox until its wiring exists.
+	 * NOT rendered on inline references (his call): the lone-ref test only
+	 * matches a line whose sole content is the reference. */
+
+	/* Collection names for the Settings list, resolved once per load. */
+	async pcFillNames() {
+		try {
+			const cols = await this.data.getAllCollections();
+			for (const c of cols || []) {
+				let g = null; let nm = '';
+				try { g = c.guid || (c.getGuid && c.getGuid()); } catch (e) {}
+				try { nm = (c.getConfiguration && c.getConfiguration().name) || ''; } catch (e) {}
+				if (g && nm && this.pcColNames) this.pcColNames[g] = nm;
+			}
+		} catch (e) {}
+	}
+
+	pcEnabled(collGuid) {
+		const o = this.pageCheckCols || {};
+		if (collGuid && Object.prototype.hasOwnProperty.call(o, collGuid)) return !!o[collGuid];
+		return !!this.pageChecks;
+	}
+
+	pcAnyEnabled() {
+		if (this.pageChecks) return true;
+		const o = this.pageCheckCols || {};
+		for (const k in o) if (o[k]) return true;
+		return false;
+	}
+
+	/* Resolve a collection's wiring once per session. Async because it walks
+	 * collections; refreshPageChecks kicks it and repaints when it lands. */
+	async pcResolveWire(collGuid) {
+		if (!this.pcWire || this.pcWire.has(collGuid)) return;
+		this.pcWire.set(collGuid, null); /* resolving marker — stays null on failure */
+		const def = (this.pageDefaults || {})[collGuid];
+		if (!def || !def.sp || !def.dv) return;
+		try {
+			const cols = await this.data.getAllCollections();
+			const gOf = (c) => { try { return c.guid || (c.getGuid && c.getGuid()); } catch (e) { return null; } };
+			const coll = (cols || []).find((c) => gOf(c) === collGuid);
+			const conf = coll && coll.getConfiguration && coll.getConfiguration();
+			try { if (conf && conf.name) this.pcColNames[collGuid] = conf.name; } catch (e) {}
+			const f = conf && (conf.fields || []).find((x) => x.id === def.sp);
+			/* checked = the configured done value, plus any sibling status
+			 * whose NAME reads as dropped/canceled — his rule names Dropped
+			 * explicitly, and the guid differs per status collection */
+			const checked = new Set([def.dv]);
+			if (f && f.filter_colguid) {
+				const sc = (cols || []).find((c) => gOf(c) === f.filter_colguid);
+				/* AWAIT — the collection API's getAllRecords returns a PROMISE
+				 * (the sync one is DataAPI's). Iterating the promise threw, the
+				 * catch below swallowed it, and the wiring silently never
+				 * resolved — which was the whole "nothing happens" bug. */
+				let recs = sc && sc.getAllRecords ? sc.getAllRecords() : [];
+				if (recs && typeof recs.then === 'function') recs = await recs;
+				for (const r of recs || []) {
+					let nm = ''; let rg = null;
+					try { nm = r.getName ? r.getName() : ''; } catch (e) {}
+					try { rg = r.guid || (r._getRow && r._getRow().guid); } catch (e) {}
+					if (rg && /dropp|cancel/i.test(nm || '')) checked.add(String(rg));
+				}
+			}
+			this.pcWire.set(collGuid, {
+				sp: def.sp,
+				spType: (f && f.type) || 'record',
+				checked: checked,
+				on: def.dv,
+				off: def.rv && def.rv !== def.dv ? def.rv : null,
+				onLabel: def.dvl || 'Done',
+				offLabel: def.rvl || 'Reopened',
+			});
+			this.scheduleRepeatRefresh();
+		} catch (e) {}
+	}
+
+	/* Every rendered row that shows a PAGE: lone-ref document lines, ref/
+	 * transclusion lines, and virtual search rows whose target is a record.
+	 * Returns [{domGuid, recGuid}]. */
+	pcTargets() {
+		const out = [];
+		const seen = new Set();
+		const add = (domGuid, recGuid) => {
+			if (!domGuid || !recGuid || seen.has(domGuid)) return;
+			seen.add(domGuid);
+			out.push({ domGuid, recGuid });
+		};
+		const refGuidOf = (d) => {
+			if (typeof d === 'string') return d;
+			if (d && typeof d === 'object') return d.guid || d.itemref || null;
+			return null;
+		};
+		const byGuid = (window.g_universe && window.g_universe.itemsByGuid) || {};
+		for (const g in byGuid) {
+			const st = byGuid[g];
+			if (!st || st.is_trashed || st.is_deleted || st.is_virtual) continue;
+			/* ref/transclusion LINES: props.itemref is the target */
+			const iref = st.props && st.props.itemref;
+			if (iref && this.data.getRecord(iref)) { add(g, iref); continue; }
+			/* lone-ref TEXT lines: exactly one ref pair, no other visible text.
+			 * Inline references fail this on purpose (his call). */
+			const ts = st.text_segments || [];
+			let refG = null; let extras = false;
+			for (let i = 0; i + 1 < ts.length; i += 2) {
+				const ty = String(ts[i]);
+				if (ty === 'ref') {
+					if (refG) { extras = true; break; }
+					refG = refGuidOf(ts[i + 1]);
+				} else if (ty === 'text') {
+					if (typeof ts[i + 1] === 'string' && ts[i + 1].trim()) { extras = true; break; }
+				} else { extras = true; break; }
+			}
+			if (refG && !extras && this.data.getRecord(refG)) add(g, refG);
+		}
+		/* virtual search rows (page results): itemref is a RECORD guid */
+		try {
+			for (const lv of (window.g_universe && window.g_universe.listviews) || []) {
+				for (const cont of (lv.containers || [])) {
+					const map = cont.items_by_guid || {};
+					for (const vg in map) {
+						const st = map[vg] && map[vg].state;
+						const iref = st && st.props && st.props.itemref;
+						if (iref && this.data.getRecord(iref)) add(vg, iref);
+					}
+				}
+			}
+		} catch (e) {}
+		return out;
+	}
+
+	/* null = no box (no wiring, disabled, unreadable); else {checked, wire, collGuid} */
+	pcState(recGuid) {
+		const rec = this.data.getRecord(recGuid);
+		if (!rec) return null;
+		let collGuid = null;
+		try { collGuid = rec._getRow && rec._getRow().pguid; } catch (e) {}
+		if (!collGuid || !this.pcEnabled(collGuid)) return null;
+		if (!this.pcWire.has(collGuid)) { this.pcResolveWire(collGuid); return null; }
+		const wire = this.pcWire.get(collGuid);
+		if (!wire) return null;
+		let checked = false;
+		try {
+			const vals = this.pagePropValues(rec.prop(wire.sp));
+			checked = vals.some((v) => wire.checked.has(String(v)));
+		} catch (e) {}
+		/* optimistic overlay: our own write wins until the live read agrees
+		 * or it times out (the transient props-loss doctrine) */
+		const pend = this.pcPend && this.pcPend.get(recGuid);
+		if (pend) {
+			if (pend.v === checked || Date.now() - pend.at > 8000) this.pcPend.delete(recGuid);
+			else checked = pend.v;
+		}
+		return { checked, wire, collGuid };
+	}
+
+	refreshPageChecks() {
+		if (!this.pcStyle || !this.pcLit) return;
+		this.pcLit.clear();
+		if (this.pcAnyEnabled()) {
+			for (const t of this.pcTargets()) {
+				const st = this.pcState(t.recGuid);
+				if (st) this.pcLit.set(t.domGuid, { recGuid: t.recGuid, checked: st.checked });
+			}
+		}
+		/* one sheet, two rule groups; the pseudo-element is appended to EVERY
+		 * selector (the v0.9.5 trap). All metrics and colours are Thymer's own
+		 * --ed-check-* variables, so the box matches todo checkboxes on any
+		 * theme, including his. */
+		const un = []; const on = [];
+		for (const [g, info] of this.pcLit) {
+			(info.checked ? on : un).push('.listitem[data-guid="' + g + '"] .line-div::before');
+		}
+		/* SIZE: his theme defines --ed-checkbox-size as 1em, and em resolves
+		 * against the element's OWN font — our .85em (the glyph size the native
+		 * check uses for its icon) therefore shrank the whole box by 15% (his
+		 * report: "de behöver vara lika stora"). The native check dodges this by
+		 * being TWO elements; a pseudo has one font-size, so the dims divide the
+		 * shrink back out. Trade-off, documented: on a theme that defines the
+		 * size in px this renders ~18% large — consistently in both states, and
+		 * exact on em-based themes like his. */
+		const base = '{content:"";display:inline-flex;align-items:center;justify-content:center;'
+			+ 'box-sizing:border-box;width:calc(var(--ed-checkbox-size,15px)/0.85);height:calc(var(--ed-checkbox-size,15px)/0.85);'
+			+ 'border:2px solid var(--ed-check-div-border);border-radius:var(--ed-checkbox-radius,4px);'
+			+ 'margin-right:1ch;vertical-align:text-bottom;cursor:pointer;'
+			+ 'font-family:var(--ed-check-icon-font);font-size:.85em;line-height:.85em;font-weight:700}';
+		let css = '';
+		if (un.length) css += un.join(',') + base + '\n';
+		if (on.length) {
+			css += on.join(',') + base + '\n'
+				+ on.join(',') + '{content:var(--ed-check-done-icon,"\\2713");'
+				+ 'color:var(--ed-check-done-fg);background:var(--ed-check-done-bg);'
+				+ 'border-color:var(--ed-check-done-bg)}\n';
+		}
+		if (this.pcStyle.textContent !== css) this.pcStyle.textContent = css;
+	}
+
+	/* Is this press on a page-checkbox band? The box is the first ~20px of
+	 * the line's own text flow, on the first text line of the row. */
+	pcHitTest(e) {
+		if (!this.pcLit || !this.pcLit.size) return null;
+		const row = e.target && e.target.closest && e.target.closest('.listitem[data-guid]');
+		if (!row) return null;
+		const g = row.getAttribute('data-guid');
+		const info = this.pcLit.get(g);
+		if (!info) return null;
+		const ld = row.querySelector('.line-div');
+		if (!ld) return null;
+		const r = ld.getBoundingClientRect();
+		if (e.clientX < r.left - 2 || e.clientX > r.left + 22) return null;
+		if (e.clientY < r.top || e.clientY > r.top + Math.min(r.height, 28)) return null;
+		return { g, info };
+	}
+
+	async pcToggle(domGuid, info) {
+		const st = info && this.pcState(info.recGuid);
+		if (!st) return;
+		const next = !st.checked;
+		this.pcPend.set(info.recGuid, { v: next, at: Date.now() });
+		this.refreshPageChecks(); /* repaint every rendering of this record at once */
+		try {
+			const rec = this.data.getRecord(info.recGuid);
+			const prop = rec && rec.prop(st.wire.sp);
+			if (!prop) return;
+			await this.setPagePropValue(prop, st.wire.spType, next ? st.wire.on : st.wire.off);
+			this.toast((rec.getName() || 'Page') + ' · ' + (next ? st.wire.onLabel : st.wire.offLabel));
+		} catch (e) {}
+	}
+
+	/* ---- page timeblocks --------------------------------------------------
+	 * The ⌘-digit chords on a PAGE write the collection's "Timeblock"
+	 * property (looked up BY NAME, like Due Date — every collection may name
+	 * its fields differently, but the convention is the name "Timeblock").
+	 * Its values are expected to be named like his slots; matching is
+	 * forgiving: case, spaces, dashes and the # are all ignored, and both
+	 * the slot's tag and its title are tried. Same chord again clears, the
+	 * same contract as on lines. */
+	async setPageTimeblock(recGuid, tb) {
+		const rec = this.data.getRecord(recGuid);
+		if (!rec) { this.toast('Could not read that page.'); return; }
+		const { fields } = await this.pageFields(rec);
+		const f = (fields || []).find((x) => x && x.active !== false
+			&& /^\s*timeblock\s*$/i.test(String(x.label || x.name || x.id || '')));
+		if (!f) { this.toast('No “Timeblock” property in this collection.'); return; }
+		const prop = rec.prop(f.id);
+		if (!prop) { this.toast('No “Timeblock” property in this collection.'); return; }
+		const val = await this.tbPageValue(rec, f, prop, tb);
+		if (!val) { this.toast('Timeblock has no “' + (tb.label || tb.tag) + '” value.'); return; }
+		const cur = this.pagePropValues(prop).map(String);
+		if (cur.indexOf(String(val)) >= 0) {
+			await this.setPagePropValue(prop, f.type, null);
+			this.toast((rec.getName() || 'Page') + ' · Timeblock cleared');
+		} else {
+			await this.setPagePropValue(prop, f.type, val);
+			this.toast((rec.getName() || 'Page') + ' · ' + (tb.label || tb.tag));
+		}
+	}
+
+	/* slot -> the property's value id, cached per collection+field. Handles
+	 * both shapes: a CHOICE field (options in the schema or via choices())
+	 * and a RECORD field (values are pages in the linked collection — their
+	 * getAllRecords is a PROMISE, the documented trap). */
+	async tbPageValue(rec, f, prop, tb) {
+		const norm = (x) => String(x || '').toLowerCase().replace(/[#\s_-]/g, '');
+		let collGuid = null;
+		try { collGuid = rec._getRow && rec._getRow().pguid; } catch (e) {}
+		const key = collGuid + '|' + f.id;
+		if (!this.tbWire) this.tbWire = new Map();
+		let map = this.tbWire.get(key);
+		if (!map) {
+			map = new Map();
+			if (f.type === 'choice') {
+				let opts = Array.isArray(f.choices) ? f.choices : null;
+				if (!opts) { try { opts = prop.choices(); } catch (e) {} }
+				for (const o of opts || []) {
+					if (typeof o === 'string') map.set(norm(o), o);
+					else if (o) {
+						const label = o.label !== undefined ? o.label : (o.name !== undefined ? o.name : o.text);
+						const id = o.id !== undefined ? o.id : (o.value !== undefined ? o.value : null);
+						if (label != null && id != null) map.set(norm(label), id);
+					}
+				}
+			} else if (f.filter_colguid) {
+				try {
+					const cols = await this.data.getAllCollections();
+					const sc = (cols || []).find((c) => {
+						try { return (c.guid || (c.getGuid && c.getGuid())) === f.filter_colguid; } catch (e) { return false; }
+					});
+					let recs = sc && sc.getAllRecords ? sc.getAllRecords() : [];
+					if (recs && typeof recs.then === 'function') recs = await recs;
+					for (const r of recs || []) {
+						let nm = ''; let g = null;
+						try { nm = r.getName ? r.getName() : ''; } catch (e) {}
+						try { g = r.guid || (r._getRow && r._getRow().guid); } catch (e) {}
+						if (g && nm) map.set(norm(nm), String(g));
+					}
+				} catch (e) {}
+			}
+			this.tbWire.set(key, map);
+		}
+		for (const w of [norm(tb.tag), norm(tb.label)]) {
+			if (w && map.has(w)) return map.get(w);
+		}
+		return null;
 	}
 
 	// ---- order by status ------------------------------------------------------
@@ -6799,8 +7219,16 @@ class Plugin extends AppPlugin {
 	 * hashtags (#recurring and the rest) are never touched. Pressing the same
 	 * one again clears it. */
 	async setTimeblock(tb) {
-		const line = this.lineSelection();
-		if (line && line.recordGuid) { this.toast('That row is a page, and timeblocks live on lines.'); return; }
+		/* PAGES take the chord too (his 2026-08-14 ask): resolved with the
+		 * SAME order the date commands use — focused collection row, page
+		 * from a live search, lone page reference — writing the collection's
+		 * "Timeblock" property instead of a hashtag. dateTarget is reused so
+		 * the two families can never disagree about what a chord acts on. */
+		const t = this.dateTarget();
+		if (t && t.err) { this.toast(t.err); return; }
+		if (t && t.kind === 'record') { await this.setPageTimeblock(t.guid, tb); return; }
+		const line = t && t.kind === 'line' ? t.line : this.lineSelection();
+		if (line && line.recordGuid) { await this.setPageTimeblock(line.recordGuid, tb); return; }
 		if (!line || !line.lineGuid || !line.pageGuid) { this.toast('Put the caret on a line first.'); return; }
 		const li = await this.lineItem(line);
 		if (!li) { this.toast('Could not read that line.'); return; }
