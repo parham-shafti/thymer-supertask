@@ -4078,7 +4078,14 @@ class Plugin extends AppPlugin {
 				const keys = a.filter((k) => this.binRank(k) >= 0);
 				conf = keys.length ? { m: 'g', k: keys } : null;
 			} else if (a && (a.m === 'g' || a.m === 's' || a.m === 'h')) {
-				conf = { m: a.m, k: (Array.isArray(a.k) ? a.k : []).filter((k) => this.binRank(k) >= 0) };
+				let keys = (Array.isArray(a.k) ? a.k : []).filter((k) => this.binRank(k) >= 0);
+				/* NORMALISE ON READ: `tasks` (the Todo roof) is a STATUS group
+				 * and never belonged in hashtag mode. Dropping it here rather
+				 * than only in the menu means sections he already grouped by
+				 * hashtag lose the stray roof on the next sweep, instead of
+				 * keeping it until he happens to toggle the mode twice. */
+				if (a.m === 'h') keys = keys.filter((k) => k !== 'tasks');
+				conf = { m: a.m, k: keys };
 			}
 			/* cache every SUCCESSFUL read: a later transient props loss must
 			 * return this, not fall through to the GLOBAL conf — that fall-
@@ -5625,7 +5632,12 @@ class Plugin extends AppPlugin {
 				const next = m === 's'
 					? { m: 's', k: cur.k.indexOf('done') >= 0 ? ['done'] : [] }
 					: m === 'h'
-						? { m: 'h', k: (this.tbSlots || []).map((s) => s.tag).concat(['tasks', 'done']) }
+						/* hashtag mode groups by HASHTAG. `tasks` (Todo) is a
+						 * status roof and has no business here — his call,
+						 * 2026-08-13. Done survives as the same bottom group
+						 * Order by Status offers, so finished work still files
+						 * itself out of the way. */
+						? { m: 'h', k: (this.tbSlots || []).map((s) => s.tag).concat(['done']) }
 						: { m: 'g', k: ORDER_BINS.map((b) => b.key) };
 				this.voSetOrder(c, next);
 			},
@@ -5650,10 +5662,13 @@ class Plugin extends AppPlugin {
 			for (const b of ORDER_BINS) sub.push(keyRow(b.key, b.icon, b.label));
 		} else if (cur.m === 'h') {
 			/* the ⌘1-9 slots from settings, in slot order — never other
-			 * hashtags — plus the same Tasks/Done closers as group mode */
+			 * hashtags. NO Todo roof: that is a STATUS group and it does not
+			 * belong under a grouping by hashtag (his report, 2026-08-13).
+			 * Done stays, worded and separated exactly as in sort mode, so
+			 * finished work still collects at the bottom. */
 			for (const s of (this.tbSlots || [])) sub.push(keyRow(s.tag, 'ti-tag', s.title || s.tag.slice(1)));
-			sub.push(keyRow('tasks', 'ti-checkbox', 'Todo'));
-			sub.push(keyRow('done', 'ti-check', 'Done'));
+			sub.push({ sep: true });
+			sub.push(keyRow('done', 'ti-check', 'Done group at the bottom'));
 		} else {
 			/* the Done row wears the same icon + accent treatment as its
 			 * group-mode sibling (his call) */
