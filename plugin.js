@@ -1369,10 +1369,10 @@ function rsVoMenuColors() {
 		document.documentElement.style.setProperty('--tvo-menu-fg', dark
 			? '#D5D4D4'
 			: 'var(--cmdpal-fg-color, var(--text-color, #333))');
-		/* NOTE the filter hit's colour is NOT set here. It is one CSS variable
-		 * shared with the criteria pill (see --tvo-hit-bg in the stylesheet), so
-		 * the mark on the line and the pill in the chip cannot drift apart. An
-		 * inline value written here would beat that rule. */
+		/* NOTE the filter hit's colour is NOT set here: it comes from Thymer's
+		 * own --selection-bg / --selection-fg in the stylesheet, so the mark is
+		 * literally the app's text-selection green. An inline value written
+		 * here would beat that. */
 	} catch (e) {}
 }
 
@@ -2425,17 +2425,6 @@ function rsVoPlacePanel(panel, anchor, below, keep) {
  * on light themes and lightens on dark ones, where --color-primary-500 alone
  * washes out. 4px radius on boxes and row fills, per the standing rule. */
 const rsVO_CSS = `
-/* THE SELECTION GREEN, defined ONCE and used by both the criteria pill in the
- * chip and the mark on the line (his call: the same colour in both places).
- * It is the accent leaned towards the theme's text colour and then laid on at
- * low strength, which is what the pill has always been — written out here as an
- * expression instead of riding currentColor, because a ::highlight() cannot see
- * the pill's colour and currentColor there would resolve to the line's text. */
-:root {
-	--tvo-hit-bg: color-mix(in srgb,
-		color-mix(in srgb, var(--color-primary-500, #3aa37f) 70%, var(--text-color, #dddddd)) 14%,
-		transparent);
-}
 .tvo-chip { display: flex; align-items: center; gap: 4px; cursor: pointer; }
 /* Self-mixed from the line's own colour, NOT the backlink pill's variables.
  * Matching --ed-backlink-bg exactly was tried on 2026-08-13 and he rejected the
@@ -2458,7 +2447,7 @@ const rsVO_CSS = `
 	border-radius: 4px; box-sizing: border-box;
 	font-family: inherit; font-size: var(--text-size-smaller, 11px);
 	color: color-mix(in srgb, var(--color-primary-500, #3aa37f) 70%, var(--text-color, currentColor));
-	background: var(--tvo-hit-bg);
+	background: color-mix(in srgb, currentColor 14%, transparent);
 }
 .tvo-chip-flt:hover { background: color-mix(in srgb, currentColor 22%, transparent); }
 .tvo-chip-ic { font-size: 11px; flex: 0 0 auto; }
@@ -2475,8 +2464,15 @@ const rsVO_CSS = `
 /* The hit itself, painted through the Custom Highlight API — no node is ever
  * added to a line. Accent at low strength so the word stays readable and the
  * mark reads as the same green as everything else the module lights up. */
+/* THYMER'S OWN TEXT-SELECTION COLOUR — the green you get when the criteria in
+ * the filter field is selected (his call, and the third colour tried: a deep
+ * green of my choosing was wrong, and so was borrowing the criteria pill's).
+ * --selection-bg / --selection-fg are what the app's own inputs use, so the
+ * mark on the line is literally a selection and tracks every theme for free.
+ * The pill in the chip is NOT this colour and must stay as it was. */
 ::highlight(tvo-filter-hit) {
-	background-color: var(--tvo-hit-bg);
+	background-color: var(--selection-bg, rgba(14, 40, 25, .5));
+	color: var(--selection-fg, #fff);
 }
 .tvo-filterhint { padding: 6px 2px 0; font-size: var(--text-size-smaller, 11px); opacity: .5; white-space: nowrap; }
 .tvo-menu {
