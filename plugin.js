@@ -2464,15 +2464,14 @@ const rsVO_CSS = `
 /* The hit itself, painted through the Custom Highlight API — no node is ever
  * added to a line. Accent at low strength so the word stays readable and the
  * mark reads as the same green as everything else the module lights up. */
-/* THYMER'S OWN TEXT-SELECTION COLOUR — the green you get when the criteria in
- * the filter field is selected (his call, and the third colour tried: a deep
- * green of my choosing was wrong, and so was borrowing the criteria pill's).
- * --selection-bg / --selection-fg are what the app's own inputs use, so the
- * mark on the line is literally a selection and tracks every theme for free.
+/* HIS EXACT VALUE, given as a hex after three wrong guesses from me: a deep
+ * green of my choosing, then the criteria pill's own colour, then the app's
+ * --selection-bg. Do not "improve" it back into a variable.
+ * Background ONLY — every time he described this he said background, so the
+ * text keeps the colour the line already gives it.
  * The pill in the chip is NOT this colour and must stay as it was. */
 ::highlight(tvo-filter-hit) {
-	background-color: var(--selection-bg, rgba(14, 40, 25, .5));
-	color: var(--selection-fg, #fff);
+	background-color: #313E44;
 }
 .tvo-filterhint { padding: 6px 2px 0; font-size: var(--text-size-smaller, 11px); opacity: .5; white-space: nowrap; }
 .tvo-menu {
