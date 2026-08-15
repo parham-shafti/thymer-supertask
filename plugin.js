@@ -752,28 +752,7 @@ html.is-dark {
 	box-shadow: 0 24px 64px rgba(0,0,0,.5);
 	font-size: var(--text-size-small, .875rem);
 	color: var(--cmdpal-fg-color, var(--text-color, inherit));
-	font-family: var(--rs-font);
 }
-/* HIS DESIGN'S TYPE, 2026-08-15. The panel inherited whatever the app runs
- * on, which on his setup is Cascadia Code, and his mockup is Space Grotesk.
- * That is Thymer's OWN face, not something we ship: the app declares exactly
- * one @font-face for the family "Space Grotesk" (the variable 100-700 TTF)
- * and hands it to --font-sans on its Sans themes. His machine carries the same
- * family, so it resolves either way.
- * THERE IS NO "Space Grotesk Mono" — not in Thymer's bundle, not among the
- * faces the running app has loaded, and not in his Font Book. Space Grotesk
- * IS the mono-flavoured grotesque of that family (it descends from Space
- * Mono), which is the font his mockup is set in.
- * Scoped to the settings panel and nothing else: every other surface this
- * plugin draws (the date box, the pickers, the option menu) deliberately
- * borrows Thymer's own chrome and must keep the app's font with it. */
-.rs-panel { --rs-font: "Space Grotesk", var(--font-sans); }
-/* the icon spans are Tabler glyphs living in the same subtree, and a glyph
- * font is not a typeface choice — put them back explicitly rather than trust
- * the font-chooser plugin's !important rule, which is his and may go away */
-.rs-panel .ti,
-.rs-panel [class^="ti-"],
-.rs-panel [class*=" ti-"] { font-family: "tabler-icons"; }
 /* HIS PALETTE, 2026-08-15 (design mockup). Four values, named once and used
  * everywhere, so the panel reads as one surface instead of a pile of
  * color-mix() guesses. Dark themes only: a #1A1A1E plate under light-theme
