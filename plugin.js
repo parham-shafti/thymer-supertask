@@ -790,8 +790,14 @@ html.is-dark {
 	.rs-pcd-pop { background: var(--rs-panel-bg); }
 /* Header: title + version, a rule under it, then 22px of air (his mockup). */
 .rs-panel h1 {
-	font-size: 1.0625rem; font-weight: 600; margin: 0 0 22px;
-	padding: 0 0 16px; border-bottom: 1px solid var(--rs-line);
+	font-size: 1.0625rem; font-weight: 600;
+	/* edge to edge: the rule belongs to the PANEL, not to the text, so the
+	 * heading is pulled out through the panel's 24px padding and given it back
+	 * as its own — otherwise the divider stops short at both ends (his call) */
+	/* 22 above the rule and 22 below it: the title sits off the divider by the
+	 * same distance the first group does (his call) */
+	margin: 0 -24px 22px; padding: 0 24px 22px;
+	border-bottom: 1px solid var(--rs-line);
 }
 /* the running version, trailing the title on the same line so it costs no
  * vertical space: quiet weight and opacity, it is a fact to look up, not a
