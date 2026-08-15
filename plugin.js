@@ -6267,11 +6267,22 @@ class Plugin extends AppPlugin {
 	}
 
 	/* How far right of the todo column this row's box would sit if left alone:
-	 * `.line-div`'s own content edge, measured against the row's. Read fresh
-	 * every build and never cached — it costs two rects, and the answer differs
-	 * between a live query (4px) and References/Embeds (2px), which is exactly
-	 * the kind of context difference a cache would smear. Returns 0 when there
-	 * is nothing to correct, which emits no rule at all. */
+	 * exactly `.line-div`'s OWN padding, because the box is the first thing
+	 * inside it and a todo's `.line-check-div` is the same element's sibling,
+	 * starting where `.line-div` starts. Read fresh every build and never
+	 * cached — it costs one computed style, and the answer differs between a
+	 * live query (4px) and References/Embeds (2px), which is exactly the kind
+	 * of context difference a cache would smear. Returns 0 when there is
+	 * nothing to correct, which emits no rule at all.
+	 *
+	 * MEASURED AGAINST `.line-div`, NEVER AGAINST THE ROW (his 2026-08-16
+	 * report: "när man skapar en referens av en Page på indenterad nivå så
+	 * fastnar checkboxen längst till vänster"). The first version took the
+	 * distance from the ROW's content edge, which is the same number only at
+	 * the top level: Thymer indents a nested line by moving `.line-div`, not by
+	 * padding the row, so on an indented row that distance IS the indent and
+	 * the box was pulled all the way back to the row's left edge while the text
+	 * stayed indented. The row's edge is not a column anything lines up with. */
 	pcBoxPull(domGuid) {
 		try {
 			const row = document.querySelector('.listitem[data-guid="' + domGuid + '"]');
@@ -6285,9 +6296,7 @@ class Plugin extends AppPlugin {
 			 * column to line up with there in the first place. His rule: leave
 			 * it native there, as long as Live Queries keep the alignment. */
 			if (row.closest('listview-editor.listview-search-results')) return 0;
-			const rowPad = parseFloat(getComputedStyle(row).paddingLeft) || 0;
-			const ldPad = parseFloat(getComputedStyle(ld).paddingLeft) || 0;
-			const d = (ld.getBoundingClientRect().left + ldPad) - (row.getBoundingClientRect().left + rowPad);
+			const d = parseFloat(getComputedStyle(ld).paddingLeft) || 0;
 			return d > 0.05 ? Math.round(d * 10) / 10 : 0;
 		} catch (e) { return 0; }
 	}
@@ -6305,7 +6314,13 @@ class Plugin extends AppPlugin {
 	 * - the target is the todo's TEXT BOX, not a todo's ink. A todo's own
 	 *   first glyph has a bearing too, but it depends on which letter that
 	 *   todo happens to start with — an unstable target. The box is within a
-	 *   fraction of a pixel of it and never moves.
+	 *   fraction of a pixel of it and never moves;
+	 * - both distances are measured FROM THE CHECKBOX, not from the row. The
+	 *   reference todo and this row are rarely at the same indent, and Thymer
+	 *   indents by moving `.line-div`, so anything row-relative carries the
+	 *   indent into the number (the same mistake pcBoxPull made, 2026-08-16).
+	 *   Checkbox-edge to first-ink is the one distance that is the same on
+	 *   every level.
 	 *
 	 * Cached per icon class + size, and the cache is filled from a row that
 	 * has no shift applied yet, so the measurement can never chase its own
@@ -6357,8 +6372,10 @@ class Plugin extends AppPlugin {
 				const rrow = ref && ref.parentElement;
 				const rld = rrow && rrow.querySelector(':scope > .line-div');
 				if (!rld) return null; /* nothing to align to in here yet */
-				box.textX = (rld.getBoundingClientRect().left - rrow.getBoundingClientRect().left)
-					+ (parseFloat(getComputedStyle(rld).paddingLeft) || 0);
+				/* from the todo's own checkbox to where its text starts */
+				box.textX = (rld.getBoundingClientRect().left
+					+ (parseFloat(getComputedStyle(rld).paddingLeft) || 0))
+					- ref.getBoundingClientRect().left;
 				box.body = this.pcBodyBearing(rld);
 			}
 			/* className is free to read; getComputedStyle on a pseudo forces a
@@ -6375,12 +6392,15 @@ class Plugin extends AppPlugin {
 			if (!ch) return 0;
 			const bearing = this.pcBearing(ch, cs);
 			if (bearing == null) return 0;
-			const rr = row.getBoundingClientRect();
+			/* our own box's left edge: `.line-div`'s content edge, less whatever
+			 * pcBoxPull moved the pseudo by. Same source as the emitted rule, so
+			 * the two cannot drift, and no second pseudo style read. */
+			const boxLeft = contentX - this.pcBoxPull(domGuid);
 			/* ink to ink. Measured on his live query: icon box and todo text box
 			 * both start at 34.1 — the boxes were never the problem — but the ⚡
 			 * carries 2.63px of side bearing against the body font's ~1, so the
 			 * first INK on the row sat 1.5px right of the todo's below it. */
-			const inkX = (natural - rr.left) + bearing;
+			const inkX = (natural - boxLeft) + bearing;
 			/* never past the checkbox: the whole gap between box and text is
 			 * m.mr, and eating it would put the glyph on top of the tick */
 			const px = Math.round(Math.max(0, Math.min(inkX - (box.textX + box.body), m.mr - 1)) * 10) / 10;
@@ -6432,18 +6452,18 @@ class Plugin extends AppPlugin {
 		const g = row.getAttribute('data-guid');
 		const info = this.pcLit.get(g);
 		if (!info) return null;
-		/* HORIZONTALLY the box sits on the todo column — the row's own content
-		 * edge, which is where pcBoxPull puts it — and runs one checkbox wide.
-		 * VERTICALLY it is the first text line, so the band comes off
-		 * `.line-div` and not off a row that may be several lines tall. */
+		/* HORIZONTALLY the box starts at `.line-div`'s content edge less the
+		 * pull, and runs one checkbox wide — the same two numbers the sheet is
+		 * built from, so the band follows the box to any indent level.
+		 * VERTICALLY it is the first text line, so it comes off `.line-div` and
+		 * not off a row that may be several lines tall. */
 		const ld = row.querySelector(':scope > .line-div');
 		if (!ld) return null;
-		const rr = row.getBoundingClientRect();
 		const r = ld.getBoundingClientRect();
 		let padL = 0;
-		try { padL = parseFloat(getComputedStyle(row).paddingLeft) || 0; } catch (e2) {}
+		try { padL = parseFloat(getComputedStyle(ld).paddingLeft) || 0; } catch (e2) {}
 		const m = this.pcMetrics();
-		const x0 = rr.left + padL;
+		const x0 = r.left + padL - this.pcBoxPull(g);
 		if (e.clientX < x0 - 3 || e.clientX > x0 + (m ? m.w : 18) + 3) return null;
 		if (e.clientY < r.top || e.clientY > r.top + Math.min(r.height, 30)) return null;
 		return { g, info };
