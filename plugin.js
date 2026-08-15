@@ -2888,6 +2888,256 @@ const rsVO_CSS = `
 `;
 // >>>SHARED
 
+// <<<SHARED option-menu — GENERATED, DO NOT EDIT HERE.
+// Source: shared/option-menu.js  |  regenerate: node tools/sync-option-menu.mjs
+const rsM = { el: null, key: null, outside: null, type: '', typeAt: 0, focusAfter: null, closeExtra: null };
+
+const rsENUM_COLORS = ["red", "orange", "green", "cyan", "blue", "purple", "pink",
+	"fuchsia", "rose", "stone", "teal", "sky", "indigo", "zinc", "yellow"];
+
+function rsEnumVar(idx) {
+	const n = rsENUM_COLORS[parseInt(idx, 10)] || "zinc";
+	return "var(--enum-" + n + "-fg)";
+}
+
+function rsMenu(anchor, items, current, onPick, cfg) {
+	rsCloseMenu();
+	cfg = cfg || {};
+	anchor.classList.add("qb-open");
+	// Picking with the MOUSE leaves focus on <body>, so the rebuild that follows
+	// has nothing to restore and Tab starts over from the top of the panel.
+	// Remember the control the menu belongs to and hand focus back to it, so Tab
+	// carries on to the next column from where you just were.
+	rsM.focusAfter = (cfg.controlRef ? cfg.controlRef(anchor) : null);
+	// Thymer's own picker markup, class for class — the app styles it for us.
+	const menu = document.createElement("div");
+	menu.className = "cmdpal--inline active qb-menu" + (cfg.dark ? " qb-menu-dark" : "");
+	menu.style.position = "fixed";
+	menu.addEventListener("mousedown", (e) => e.stopPropagation());
+	rsM.el = menu;
+
+	let search = null;
+	if (cfg.search) {
+		const ic = document.createElement("div");
+		ic.className = "cmdpal--inline-input-container";
+		const row = document.createElement("div");
+		row.className = "cmdpal--inline-input-row";
+		search = document.createElement("input");
+		search.className = "cmdpal--inline-input";
+		search.type = "text";
+		search.spellcheck = false;
+		search.placeholder = cfg.searchPlaceholder || "Search option ...";
+		search.addEventListener("keydown", (e) => {
+			// arrows + Enter belong to the list; the rest is typing
+			if (["ArrowDown", "ArrowUp", "Enter", "Escape"].indexOf(e.key) < 0) e.stopPropagation();
+		});
+		search.addEventListener("input", () => paint());
+		row.appendChild(search);
+		ic.appendChild(row);
+		menu.appendChild(ic);
+	}
+	const scroller = document.createElement("div");
+	scroller.className = "autocomplete clickable";
+	scroller.style.position = "relative";
+	scroller.style.overflow = "hidden";
+	const vnode = document.createElement("div");
+	vnode.className = "vscroll-node";
+	vnode.style.height = "100%";
+	const list = document.createElement("div");
+	list.className = "vcontent";
+	vnode.appendChild(list);
+	scroller.appendChild(vnode);
+	menu.appendChild(scroller);
+
+	let cells = [], active = -1;
+	// Native marks the row under the cursor with `autocomplete--option-selected`
+	// — the green fill and light text. Walking the list moves that mark, so the
+	// row you are on always reads in the contrast colour, never grey.
+	const highlight = (i, scroll) => {
+		if (!cells.length) return;
+		active = (i + cells.length) % cells.length;
+		cells.forEach((c, k) => c.classList.toggle("autocomplete--option-selected", k === active));
+		if (scroll !== false && cells[active].scrollIntoView) cells[active].scrollIntoView({ block: "nearest" });
+	};
+	const paint = () => {
+		const q = (search && search.value || "").trim();
+		// "+" is an AND across parts, and ranking is prefix-first — the same
+		// contract as the Move To / Quick Capture picker.
+		const parts = q ? q.toLowerCase().split("+").map((s) => s.trim()).filter(Boolean) : [];
+		const scored = [];
+		for (const it of items) {
+			// Match against the label plus any alternate text (a keyword's @form).
+			const lab = ((it.label || "") + (it.alt ? " " + it.alt : "")).toLowerCase();
+			if (!parts.length) { scored.push({ it, s: 0 }); continue; }
+			let total = 0, ok = true;
+			for (const p of parts) {
+				let s = 0;
+				if (lab === p) s = 100;
+				else if (lab.indexOf(p) === 0) s = 45;
+				else if (new RegExp("\\b" + p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).test(lab)) s = 25;
+				else if (lab.indexOf(p) >= 0) s = 8;
+				if (!s) { ok = false; break; }
+				total += s;
+			}
+			if (ok) scored.push({ it, s: total });
+		}
+		if (parts.length) scored.sort((a, b) => b.s - a.s || a.it.label.length - b.it.label.length || a.it.label.localeCompare(b.it.label));
+		list.innerHTML = "";
+		cells = [];
+		if (!scored.length) {
+			const e = document.createElement("div");
+			e.className = "qb-menu-empty";
+			e.textContent = "No matches";
+			list.appendChild(e);
+			return;
+		}
+		scored.slice(0, 200).forEach(({ it }) => {
+			const row = document.createElement("div");
+			row.className = "autocomplete--option";
+			row.setAttribute("data-v", it.v == null ? "" : String(it.v));
+			if (cfg.dots !== false || it.icon || it.glyph) {
+				const ic = document.createElement("span");
+				ic.className = "autocomplete--option-icon";
+				if (it.glyph) {
+					ic.textContent = it.glyph;
+				} else if (it.icon) {
+					const g = document.createElement("span");
+					g.className = "ti " + it.icon;
+					ic.appendChild(g);
+				} else {
+					// No glyph on this option — a dot in its enum colour, like native.
+					const d = document.createElement("span");
+					d.className = "qb-mi-dot";
+					d.style.color = rsEnumVar(it.color);
+					ic.appendChild(d);
+				}
+				row.appendChild(ic);
+			}
+			const lb = document.createElement("span");
+			lb.className = "autocomplete--option-label";
+			lb.textContent = it.label;
+			row.appendChild(lb);
+			row.addEventListener("mouseenter", () => highlight(cells.indexOf(row), false));
+			row.addEventListener("click", (e) => {
+				e.stopPropagation();
+				rsCloseMenu();
+				onPick(it.v);
+			});
+			list.appendChild(row);
+			cells.push(row);
+		});
+		// Start on whatever is already chosen, else the first row.
+		const at = cells.findIndex((c) => c.getAttribute("data-v") === String(current == null ? "" : current));
+		highlight(at >= 0 ? at : 0, false);
+	};
+	paint();
+
+	// Up/Down walk the list, Enter takes the highlighted row — the menu is
+	// keyboard-drivable whether or not it has a search box.
+	const onKey = (e) => {
+		if (!rsM.el) return;
+		if (e.key === "ArrowDown") { e.preventDefault(); e.stopPropagation(); highlight(active + 1); }
+		else if (e.key === "ArrowUp") { e.preventDefault(); e.stopPropagation(); highlight(active - 1); }
+		else if (e.key === "Enter") {
+			if (active < 0 || !cells[active]) return;
+			e.preventDefault(); e.stopPropagation();
+			cells[active].dispatchEvent(new MouseEvent("click", { bubbles: true }));
+		} else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); rsCloseMenu(); }
+		else if (!search && e.key && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+			// TYPE-AHEAD for the menus that have no search box — the joiner
+			// (AND/OR/NOT), Show/NOT, the operators. They are three or four
+			// items wide, so a search row would dwarf them, but a keyboard
+			// user still has to be able to say which one ("man ska kunna
+			// skriva AND/OR/NOT", his ask 2026-08-15). Same behaviour as a
+			// native select: the letters pick the first label that starts
+			// with what you typed, Enter takes it.
+			const now = Date.now();
+			if (now - (rsM.typeAt || 0) > 800) rsM.type = "";
+			rsM.typeAt = now;
+			rsM.type = (rsM.type || "") + e.key.toLowerCase();
+			const hit = cells.findIndex((c) =>
+				(c.textContent || "").trim().toLowerCase().indexOf(rsM.type) === 0);
+			// One repeated letter walks the matches, the way a select does.
+			if (hit < 0 && rsM.type.length > 1
+				&& rsM.type.split("").every((ch) => ch === rsM.type[0])) {
+				rsM.type = e.key.toLowerCase();
+				const from = active + 1;
+				const n = cells.length;
+				for (let k = 0; k < n; k++) {
+					const idx = (from + k) % n;
+					if ((cells[idx].textContent || "").trim().toLowerCase().indexOf(rsM.type) === 0) {
+						e.preventDefault(); e.stopPropagation(); highlight(idx);
+						return;
+					}
+				}
+				return;
+			}
+			if (hit >= 0) { e.preventDefault(); e.stopPropagation(); highlight(hit); }
+		}
+	};
+	rsM.key = onKey;
+	rsM.type = ""; rsM.typeAt = 0;
+	document.addEventListener("keydown", onKey, true);
+
+	document.body.appendChild(menu);
+	const r = anchor.getBoundingClientRect();
+	const M = 8;
+	// Native picker width, never narrower than the control it belongs to.
+	menu.style.width = Math.max(r.width, cfg.width != null ? cfg.width : 320) + "px";
+	menu.style.maxWidth = "calc(100vw - 20px)";
+	// The list scrolls at the native 350px, or shrinks to fit a short one. Measured
+	// from the rendered content, not counted: native rows are 26px and the estimate
+	// here was 30, which left a visible strip of dead space under a short list.
+	const wanted = list.scrollHeight || (list.children.length * 26);
+	scroller.style.height = Math.min(350, Math.max(30, wanted)) + "px";
+	const h = menu.offsetHeight;
+	// Value menus align on their RIGHT edge with the control; the rest hang left.
+	const left = cfg.alignRight ? (r.right - menu.offsetWidth) : r.left;
+	menu.style.left = Math.max(M, Math.min(left, window.innerWidth - menu.offsetWidth - M)) + "px";
+	let top = r.bottom + 4;
+	if (top + h > window.innerHeight - M) top = Math.max(M, r.top - 4 - h);
+	menu.style.top = top + "px";
+	if (search) search.focus();
+
+	rsM.outside = (e) => {
+		if (menu.contains(e.target) || anchor.contains(e.target)) return;
+		rsCloseMenu();
+	};
+	document.addEventListener("mousedown", rsM.outside, true);
+}
+
+function rsCloseMenu() {
+	if (rsM.closeExtra) { try { rsM.closeExtra(); } catch (e) {} }
+	if (rsM.key) { document.removeEventListener("keydown", rsM.key, true); rsM.key = null; }
+	if (rsM.outside) { document.removeEventListener("mousedown", rsM.outside, true); rsM.outside = null; }
+	if (rsM.el) { rsM.el.remove(); rsM.el = null; }
+	document.querySelectorAll(".qb-sel.qb-open").forEach((b) => b.classList.remove("qb-open"));
+}
+
+// The menu's stylesheet, appended to the host's CSS string.
+const rsMENU_CSS = `
+.qb-sel.qb-open, .qb-val:focus { border-color: var(--ed-button-primary-bg, #4caea1); }
+.qb-menu { z-index: 100002; padding-bottom: 10px; border-radius: 4px; }
+.qb-menu .vscroll-node { overflow-y: auto; scrollbar-width: none; }
+.qb-menu .vscroll-node::-webkit-scrollbar { width: 0; height: 0; }
+.qb-menu .autocomplete--option { cursor: pointer; }
+.qb-menu .autocomplete--option { gap: 11px; }
+.qb-menu .cmdpal--inline-input { font-size: var(--text-size-smaller, .8125rem); }
+.qb-menu-empty { padding: 6px 10px; opacity: .6; }
+.qb-menu .autocomplete--option-icon {
+	flex: 0 0 16px; width: 16px; min-width: 16px; height: 16px;
+	display: inline-flex; align-items: center; justify-content: center;
+}
+.qb-menu .autocomplete--option-icon > .ti { line-height: 1; }
+.qb-mi-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.qb-menu.qb-menu-dark .autocomplete--option { color: #AFAFB0; justify-content: center; font-weight: 600; letter-spacing: .04em; }
+.qb-menu.qb-menu-dark .autocomplete--option:hover { background: #3B3B42; }
+.qb-menu.qb-menu-dark .autocomplete--option-selected:hover { background: #313E44; color: var(--ed-button-primary-bg, #4caea1); }
+.qb-menu.qb-menu-dark .autocomplete--option-selected[data-v="NOT"]:hover { color: var(--enum-red-fg, #e06c6c); }
+`;
+// >>>SHARED
+
+
 class Plugin extends AppPlugin {
 	onLoad() {
 		this.busy = false;
@@ -3047,7 +3297,7 @@ class Plugin extends AppPlugin {
 		} catch (e) {}
 		this.style = document.createElement('style');
 		this.style.setAttribute('data-rs-supertask', '1');
-		this.style.textContent = CSS;
+		this.style.textContent = CSS + (typeof rsMENU_CSS === 'string' ? rsMENU_CSS : '');
 		document.head.appendChild(this.style);
 		this.refreshMenuColors();
 		/* THEME SWITCHES AT RUNTIME (his 2026-08-10 report: the box went light
@@ -4086,7 +4336,7 @@ class Plugin extends AppPlugin {
 			if (!this.settingsEls) return;
 			if (e.key === 'Escape') {
 				e.preventDefault(); e.stopPropagation();
-				if (this.pcPop) { this.pcClosePop(); return; } /* a picker closes before the panel does */
+				if (rsM.el) { rsCloseMenu(); return; } /* a picker closes before the panel does */
 				if (editIdx >= 0) { commitEdit(); render(); return; } /* first Esc just leaves edit mode */
 				this.closeSettings();
 			} else if (e.key === 'Enter') {
@@ -4124,7 +4374,7 @@ class Plugin extends AppPlugin {
 
 	closeSettings() {
 		const pendingSave = this.settingsEls ? this.settingsSave : null;
-		this.pcClosePop();
+		rsCloseMenu();
 		this.pcHost = null; this.pcRepaint = null; this.pcTouch = null;
 		if (this.settingsKeys) { window.removeEventListener('keydown', this.settingsKeys, true); this.settingsKeys = null; }
 		if (this.settingsEls) { for (const el of this.settingsEls) { try { el.remove(); } catch (e) {} } this.settingsEls = null; }
@@ -6189,87 +6439,65 @@ class Plugin extends AppPlugin {
 		if (f) await this.pcFieldValues(collGuid, f);
 	}
 
+	/* Every page-checkbox picker goes through the SHARED option menu now — it is
+	 * Thymer's own command-palette markup, so an icon, a search field and the
+	 * native selection state come from the app rather than from us. This
+	 * replaced the hand-rolled pcPopover, which had no callers left. */
+	pcMenu(anchor, items, current, onPick, extra) {
+		rsMenu(anchor, items, current, onPick, Object.assign({
+			search: items.length > 8,
+			searchPlaceholder: 'Search option ...',
+			alignRight: false,
+			controlRef: () => anchor,
+		}, extra || {}));
+	}
+
 	pcOpenCollPicker(anchor) {
-		this.pcPopover(anchor, 280, (pop) => {
-			const mk = this.pcMk.bind(this);
-			const search = mk('div', 'rs-pcd-search');
-			const input = document.createElement('input');
-			input.type = 'text';
-			input.placeholder = 'Search collections...';
-			search.appendChild(input);
-			pop.appendChild(search);
-			const list = mk('div', 'rs-pcd-poplist');
-			pop.appendChild(list);
-			const fill = () => {
-				list.innerHTML = '';
-				const q = input.value.trim().toLowerCase();
-				const items = (this.pcCat || []).filter((c) => !this.pcCfg()[c.guid]
-					&& c.fields.length && (!q || c.name.toLowerCase().indexOf(q) >= 0));
-				for (const c of items) {
-					const it = mk('div', 'rs-pcd-popitem');
-					it.appendChild(mk('span', 'nm', c.name));
-					it.appendChild(mk('span', 'tag', c.fields.length + ' props'));
-					it.addEventListener('click', () => {
-						/* seed from the repeat wiring when this collection already
-						 * has one: those pickers learned it once already */
-						const def = (this.pageDefaults || {})[c.guid] || {};
-						this.pcCfg()[c.guid] = {
-							sp: def.sp || null,
-							on: def.dv ? [String(def.dv)] : [],
-							off: def.rv && def.rv !== def.dv ? [String(def.rv)] : [],
-						};
-						this.pcOpenRow = c.guid;
-						this.pcTouch();
-						const f = def.sp && c.fields.find((x) => x.id === def.sp);
-						if (f) this.pcFieldValues(c.guid, f).then(() => this.pcRepaint());
-						this.pcClosePop();
-						this.pcRepaint();
-					});
-					list.appendChild(it);
-				}
-				if (!items.length) list.appendChild(mk('div', 'rs-pcd-empty', q ? 'No matches.' : 'All collections added.'));
+		const items = (this.pcCat || [])
+			.filter((c) => !this.pcCfg()[c.guid] && c.fields.length)
+			.map((c) => ({ v: c.guid, label: c.name, icon: 'ti-folder' }));
+		this.pcMenu(anchor, items, null, (guid) => {
+			const c = (this.pcCat || []).find((x) => x.guid === guid);
+			if (!c) return;
+			/* seed from the repeat wiring when this collection already has one:
+			 * those pickers learned it once already */
+			const def = (this.pageDefaults || {})[guid] || {};
+			this.pcCfg()[guid] = {
+				sp: def.sp || null,
+				map: def.dv ? { done: [String(def.dv)] } : {},
+				off: def.rv && def.rv !== def.dv ? [String(def.rv)] : [],
 			};
-			fill();
-			input.addEventListener('input', fill);
-		});
+			this.pcOpenRow = guid;
+			this.pcTouch();
+			const f = def.sp && c.fields.find((x) => x.id === def.sp);
+			if (f) this.pcFieldValues(guid, f).then(() => this.pcRepaint && this.pcRepaint());
+			this.pcRepaint();
+		}, { search: true, searchPlaceholder: 'Search collections ...' });
 	}
 
 	/* Which status this row means. On the empty row it just arms the row; on a
 	 * row that already holds values it MOVES them, so a value landing in the
 	 * wrong bucket is one pick to fix rather than a delete and a re-add. */
 	pcOpenStatusPicker(anchor, collGuid, curKey, done) {
-		this.pcPopover(anchor, 240, (pop) => {
-			const mk = this.pcMk.bind(this);
-			const list = mk('div', 'rs-pcd-poplist');
-			pop.appendChild(list);
-			const cfg = this.pcCfgFor(collGuid);
-			const map = this.pcMap(cfg);
-			for (const st of PC_STATES) {
-				if (st.key === 'done' || st.key === 'tasks') continue; /* fixed rows, not choosable */
-				if (st.key !== curKey && (map[st.key] || []).length) continue; /* one row per status */
-				if (st.key !== curKey && this.pcNewRow && this.pcNewRow.key === st.key) continue;
-				const it = mk('div', 'rs-pcd-popitem' + (st.key === curKey ? ' is-sel' : ''));
-				const nm = mk('span', 'nm');
-				nm.appendChild(mk('span', 'rs-p-ic ti ' + st.icon));
-				nm.appendChild(document.createTextNode(' ' + st.label));
-				it.appendChild(nm);
-				it.addEventListener('click', () => {
-					if (curKey && curKey !== st.key) {
-						map[st.key] = (map[curKey] || []).slice();
-						delete map[curKey];
-						this.pcTouch();
-						if (this.pcNewRow && this.pcNewRow.key === curKey) this.pcNewRow.key = st.key;
-					} else if (!curKey) {
-						/* arm the pending row; nothing is written until a value
-						 * lands on it, so an abandoned row leaves no config */
-						this.pcNewRow = { col: collGuid, key: st.key };
-					}
-					this.pcClosePop();
-					done();
-				});
-				list.appendChild(it);
+		const cfg = this.pcCfgFor(collGuid);
+		const map = this.pcMap(cfg);
+		const items = PC_STATES.filter((st) => {
+			if (st.key === 'done' || st.key === 'tasks') return false; /* fixed rows */
+			if (st.key === curKey) return true;
+			if ((map[st.key] || []).length) return false; /* one row per status */
+			return !(this.pcNewRow && this.pcNewRow.key === st.key);
+		}).map((st) => ({ v: st.key, label: st.label, icon: st.icon }));
+		this.pcMenu(anchor, items, curKey, (key) => {
+			if (curKey && curKey !== key) {
+				/* MOVE the values rather than making him delete and re-add */
+				map[key] = (map[curKey] || []).slice();
+				delete map[curKey];
+				this.pcTouch();
+				if (this.pcNewRow && this.pcNewRow.key === curKey) this.pcNewRow.key = key;
+			} else if (!curKey) {
+				this.pcNewRow = { col: collGuid, key };
 			}
-			if (!list.childElementCount) list.appendChild(mk('div', 'rs-pcd-empty', 'Every status is already mapped.'));
+			done();
 		});
 	}
 
@@ -6278,144 +6506,67 @@ class Plugin extends AppPlugin {
 	 * gesture as a collection, but the thing picked is a name, which is what
 	 * makes the rule global. The count says how far each one reaches. */
 	pcOpenGlobalPropPicker(anchor, done) {
-		this.pcPopover(anchor, 300, (pop) => {
-			const mk = this.pcMk.bind(this);
-			const list = mk('div', 'rs-pcd-poplist');
-			pop.appendChild(list);
-			const byName = new Map();
-			for (const c of (this.pcCat || [])) {
-				for (const f of c.fields) {
-					const k = String(f.label || '').trim();
-					if (!k) continue;
-					if (!byName.has(k)) byName.set(k, 0);
-					byName.set(k, byName.get(k) + 1);
-				}
+		const byName = new Map();
+		for (const c of (this.pcCat || [])) {
+			for (const f of c.fields) {
+				const k = String(f.label || '').trim();
+				if (!k) continue;
+				byName.set(k, (byName.get(k) || 0) + 1);
 			}
-			const items = [...byName.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-			for (const [name, n] of items) {
-				const it = mk('div', 'rs-pcd-popitem');
-				it.appendChild(mk('span', 'nm', name));
-				it.appendChild(mk('span', 'tag', n + (n === 1 ? ' collection' : ' collections')));
-				it.addEventListener('click', () => {
-					const g = this.pcCfgFor('*');
-					if (g.name !== name) { g.name = name; g.map = {}; g.off = []; }
-					this.pcTouch();
-					this.pcClosePop();
-					done();
-				});
-				list.appendChild(it);
-			}
-			if (!items.length) list.appendChild(mk('div', 'rs-pcd-empty', 'No record or choice properties in this workspace.'));
-		});
+		}
+		const gl = this.pageCheckGlobal || {};
+		const items = [...byName.entries()]
+			.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+			.map(([name, n]) => ({ v: name, label: name, icon: 'ti-tag',
+				hint: n + (n === 1 ? ' collection' : ' collections') }));
+		this.pcMenu(anchor, items, gl.name || null, (name) => {
+			const g = this.pcCfgFor('*');
+			if (g.name !== name) { g.name = name; g.map = {}; g.off = []; }
+			this.pcTouch();
+			done();
+		}, { search: true, searchPlaceholder: 'Search properties ...' });
 	}
 
 	pcOpenFieldPicker(anchor, collGuid, fields) {
-		this.pcPopover(anchor, 260, (pop) => {
-			const mk = this.pcMk.bind(this);
-			const list = mk('div', 'rs-pcd-poplist');
-			pop.appendChild(list);
-			for (const f of fields) {
-				const it = mk('div', 'rs-pcd-popitem');
-				it.appendChild(mk('span', 'nm', f.label));
-				it.appendChild(mk('span', 'tag', f.type));
-				it.addEventListener('click', async () => {
-					const cfg = this.pcCfg()[collGuid];
-					if (!cfg) return;
-					if (cfg.sp !== f.id) { cfg.sp = f.id; cfg.on = []; cfg.off = []; }
-					this.pcTouch();
-					this.pcClosePop();
-					this.pcRepaint();
-					await this.pcFieldValues(collGuid, f);
-					this.pcRepaint();
-				});
-				list.appendChild(it);
-			}
-			if (!fields.length) list.appendChild(mk('div', 'rs-pcd-empty', 'No record or choice properties here.'));
+		const items = (fields || []).map((f) => ({ v: f.id, label: f.label, icon: 'ti-tag' }));
+		const cfg = this.pcCfgFor(collGuid);
+		this.pcMenu(anchor, items, cfg ? cfg.sp : null, async (id) => {
+			const f = fields.find((x) => x.id === id);
+			if (!f || !cfg) return;
+			if (cfg.sp !== f.id) { cfg.sp = f.id; cfg.map = {}; cfg.off = []; }
+			this.pcTouch();
+			this.pcRepaint();
+			await this.pcFieldValues(collGuid, f);
+			this.pcRepaint();
 		});
 	}
 
 	pcOpenValuePicker(anchor, collGuid, fld, which, valueColl) {
-		this.pcPopover(anchor, 260, (pop) => {
-			const mk = this.pcMk.bind(this);
-			const list = mk('div', 'rs-pcd-poplist');
-			list.appendChild(mk('div', 'rs-pcd-empty', 'Loading...'));
-			pop.appendChild(list);
-			this.pcFieldValues(valueColl || collGuid, fld).then((vals) => {
-				list.innerHTML = '';
-				const cfg = this.pcCfgFor(collGuid);
-				if (!cfg) return;
-				/* Exclusivity holds WITHIN the statuses — a value can only draw
-				 * one glyph — but NOT across to the reset value, which is a
-				 * different axis entirely: "In Progress" can perfectly well be
-				 * both the status a page displays and the value unticking
-				 * writes. Making them share one pool locked every value inside
-				 * "Unchecking writes" and left the status pickers empty, which
-				 * is what he hit ("finns ingenstans i Settings att göra dessa
-				 * ändringar"). */
-				const map = this.pcMap(cfg);
-				const taken = which === 'off'
-					? new Set()
-					: new Set([].concat(...PC_STATES.map((st) => map[st.key] || [])));
-				const items = vals.filter((v) => !taken.has(v.id));
-				for (const v of items) {
-					const it = mk('div', 'rs-pcd-popitem');
-					it.appendChild(mk('span', 'nm', v.label));
-					it.addEventListener('click', () => {
-						if (which === 'off') cfg.off = [v.id]; /* one value, it is what gets written */
-						else {
-							const map2 = this.pcMap(cfg);
-							map2[which] = (map2[which] || []).concat([v.id]);
-							if (this.pcNewRow && this.pcNewRow.key === which) this.pcNewRow = null;
-						}
-						this.pcTouch();
-						this.pcClosePop();
-						this.pcRepaint();
-					});
-					list.appendChild(it);
+		this.pcFieldValues(valueColl || collGuid, fld).then((vals) => {
+			const cfg = this.pcCfgFor(collGuid);
+			if (!cfg) return;
+			/* exclusivity holds WITHIN the statuses; the reset value is a
+			 * different axis and shares nothing with them */
+			const map = this.pcMap(cfg);
+			const taken = which === 'off'
+				? new Set()
+				: new Set([].concat(...PC_STATES.map((st) => map[st.key] || [])).map(String));
+			const items = vals.filter((v) => !taken.has(String(v.id)))
+				.map((v) => ({ v: v.id, label: v.label, icon: v.icon || 'ti-point' }));
+			this.pcMenu(anchor, items, null, (id) => {
+				if (which === 'off') cfg.off = [id]; /* one value: it is what gets written */
+				else {
+					const m = this.pcMap(cfg);
+					m[which] = (m[which] || []).concat([id]);
+					if (this.pcNewRow && this.pcNewRow.key === which) this.pcNewRow = null;
 				}
-				if (!items.length) list.appendChild(mk('div', 'rs-pcd-empty', vals.length ? 'All values used.' : 'This property has no values.'));
-			});
+				this.pcTouch();
+				this.pcRepaint();
+			}, { search: items.length > 8 });
 		});
 	}
 
-	pcPopover(anchor, width, build) {
-		this.pcClosePop();
-		const pop = this.pcMk('div', 'rs-pcd-pop');
-		pop.style.width = width + 'px';
-		build(pop);
-		/* keys aimed at a plugin input are eaten by whatever Thymer component
-		 * still holds component focus unless we starve the dispatcher at our
-		 * own surface — the key-pipeline doctrine, and this popover is now a
-		 * child of the settings backdrop rather than its own dialog */
-		for (const t of ['keydown', 'keypress', 'keyup']) {
-			pop.addEventListener(t, (e) => {
-				const n = e.target && e.target.tagName;
-				if (n === 'INPUT' || n === 'TEXTAREA') e.stopPropagation();
-			});
-		}
-		(this.pcHost || document.body).appendChild(pop);
-		const r = anchor.getBoundingClientRect();
-		const left = Math.min(Math.max(8, r.left), window.innerWidth - width - 8);
-		const ph = pop.offsetHeight || 240;
-		const below = window.innerHeight - r.bottom;
-		pop.style.left = left + 'px';
-		pop.style.top = (below < ph + 12 && r.top > below
-			? Math.max(8, r.top - ph - 6)
-			: Math.min(r.bottom + 6, window.innerHeight - ph - 8)) + 'px';
-		this.pcPop = pop;
-		this.pcPopOut = (e) => {
-			if (pop.contains(e.target) || anchor.contains(e.target)) return;
-			this.pcClosePop();
-		};
-		setTimeout(() => document.addEventListener('pointerdown', this.pcPopOut, true), 0);
-		const inp = pop.querySelector('input');
-		if (inp) inp.focus();
-	}
 
-	pcClosePop() {
-		if (this.pcPopOut) { try { document.removeEventListener('pointerdown', this.pcPopOut, true); } catch (e) {} this.pcPopOut = null; }
-		if (this.pcPop) { this.pcPop.remove(); this.pcPop = null; }
-	}
 
 	/* ---- page timeblocks --------------------------------------------------
 	 * The ⌘-digit chords on a PAGE write the collection's "Timeblock"
