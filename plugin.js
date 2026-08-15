@@ -384,14 +384,16 @@ const ORDER_BINS = [
  * "om det inte finns Någon Action Status satt av mig, då är checkboxen inte
  * aktiverad". `decl` mirrors Thymer's own rule for that state verbatim; where
  * it sets a literal (alert's transparent border) we set the literal too.
- * alert's `font-size:1.2em` is relative to the check div, and our glyph runs
- * at .85em, so it is folded to 1.02em to keep the same ratio. */
+ * GLYPH SIZE IS NOT IN THIS TABLE — it is measured off the live cascade per
+ * status (see pcGlyph), because Thymer, the theme and his own Custom CSS all
+ * have a say in it and a hardcoded number goes stale the moment any of them
+ * moves. That is what left Important 29% small. */
 const PC_STATES = [
 	{ key: 'tasks', label: 'Not Done', icon: 'ti-checkbox', tc: null },
 	{ key: 'started', label: 'In Progress', icon: 'ti-player-play', tc: 'started' },
 	{ key: 'important', label: 'Important', icon: 'ti-alert-square', tc: 'exclaim' },
 	{ key: 'alert', label: 'Alert', icon: 'ti-alert-triangle', tc: 'alert',
-		extra: 'font-weight:bolder;font-size:1.02em;border-color:transparent;background-color:transparent' },
+		extra: 'font-weight:bolder;border-color:transparent;background-color:transparent' },
 	{ key: 'starred', label: 'Starred', icon: 'ti-star', tc: 'starred' },
 	{ key: 'billable', label: 'Billable', icon: 'ti-currency-dollar', tc: 'dollar' },
 	{ key: 'discuss', label: 'Discuss', icon: 'ti-help', tc: 'question' },
@@ -3379,7 +3381,9 @@ class Plugin extends AppPlugin {
 			 * is stale for the same reason — and so is the icon-ink shift,
 			 * which is measured in the very font the theme just swapped */
 			this.pcM = null;
+			this.pcGl = null; /* per-state glyph scale, read off the live cascade */
 			this.pcInk = null; /* a WeakMap of per-listview measurements */
+			this.pcRetry = 0; /* a theme swap earns the deferred pass a fresh budget */
 			if (!this.dead) { try { this.refreshPageChecks(); } catch (e) {} }
 		};
 		try { document.addEventListener('themecsschange', this.themeHandler); } catch (e) {}
@@ -3594,6 +3598,8 @@ class Plugin extends AppPlugin {
 		try { window.removeEventListener('pointerdown', this.pcPress, true); } catch (e) {}
 		try { window.removeEventListener('pointerup', this.pcPress, true); } catch (e) {}
 		try { window.removeEventListener('click', this.pcPress, true); } catch (e) {}
+		try { if (this.pcAgain) clearTimeout(this.pcAgain); } catch (e) {}
+		this.pcAgain = null;
 		try { if (this.pcStyle) this.pcStyle.remove(); } catch (e) {}
 		this.pcStyle = null;
 		this.pcLit = null;
@@ -6122,7 +6128,7 @@ class Plugin extends AppPlugin {
 		for (const [g, info] of this.pcLit) {
 			const k = info.state || 'tasks';
 			if (!groups.has(k)) groups.set(k, []);
-			groups.get(k).push('.listitem[data-guid="' + g + '"]::before');
+			groups.get(k).push('.listitem[data-guid="' + g + '"] > .line-div::before');
 		}
 		/* SIZE: his theme defines --ed-checkbox-size as 1em, and em resolves
 		 * against the element's OWN font — our .85em (the glyph size the native
@@ -6132,41 +6138,45 @@ class Plugin extends AppPlugin {
 		 * shrink back out. Trade-off, documented: on a theme that defines the
 		 * size in px this renders ~18% large — consistently in both states, and
 		 * exact on em-based themes like his. */
-		/* ANCHORED ON THE ROW, not on .line-div. `.listitem` is `display:flex`
-		 * and a todo's real `.line-check-div` is its FIRST flex child, so a
-		 * ::before on the row lands in exactly that slot. Inside .line-div it
-		 * instead sat after the row's `padding-left:10px` and .line-div's own
-		 * `padding:0 2px`, which is the air he saw in a live search. `.listitem`
-		 * ::before is unused by Thymer (only .listitem-debug), and the progress
-		 * bar's rules on the same pseudo key on LINE guids while these are page
-		 * rows, so the two can never meet.
-		 * EVERY em/ch length here is divided by .85 for one reason: the glyph
+		/* IN THE LINE'S OWN FLOW, inside `.line-div` (2026-08-15, his call after
+		 * the absolute version shipped). The absolute version anchored the box
+		 * on the ROW and pushed only the text across with `padding-left` on
+		 * `> .line-div`. It bought the grabber its slot, but it cost the two
+		 * things he then reported:
+		 *   1. it MOVED THE ROW. "Det var ingen bra lösning" — the row's own
+		 *      geometry is Thymer's, and a decoration must not relayout it;
+		 *   2. it silently did nothing in References and Embeds. Those render
+		 *      in a `listview-search-results` editor, where Thymer's own
+		 *      `listview-editor.listview-search-results .listitem-ref>.line-div
+		 *      {padding:0 2px}` (0,3,1) OUTRANKS our `.listitem[data-guid]
+		 *      > .line-div` (0,3,0) — so the text never moved while the box was
+		 *      drawn anyway, and the two sat on top of each other ("det är
+		 *      inget space mellan de längre").
+		 * In flow there is no padding to win and nothing to outrank: the box
+		 * takes its own width inside `.line-div`, on every surface, and the
+		 * text lands exactly where a todo's does — a todo is
+		 * pad + w + mr + (.line-div's own 2px), a page row is
+		 * pad + 2px + w + mr. Same sum, no rule of ours involved.
+		 * THE GRABBER IS THEREFORE BACK ON OUR BOX on a page row (Thymer parks
+		 * the handle just left of the row's first REAL child, and a pseudo is
+		 * invisible to that logic, so it measures `.line-div` and lands on the
+		 * box). That is an OPEN problem again, deliberately: his call is that
+		 * the row must not move, so the handle is what has to, and that is a
+		 * separate piece of work.
+		 * The em/ch fallbacks are divided by .85 for one reason: the glyph
 		 * font-size shrinks the element's own em, so dividing restores the
-		 * parent's scale uniformly — the box, its gap and its top offset all
-		 * land where the native one does. */
+		 * parent's scale. The measured px readings need no such correction. */
 		const m = this.pcMetrics();
 		const dim = m ? m.w + 'px' : 'calc(var(--ed-checkbox-size,15px)/0.85)';
 		const gap = m ? m.mr + 'px' : 'calc(1ch/0.85)';
-		const top = m ? m.mt + 'px' : 'calc((var(--ed-line-height,1.5em) - var(--ed-checkbox-size,1em))/2/0.85)';
 		const rad = m ? m.radius : 'var(--ed-checkbox-radius,4px)';
 		const bw = m ? m.bw + 'px' : '2px';
-		/* OUT OF THE FLOW, ON PURPOSE. Thymer parks the drag handle just left
-		 * of the row's first ELEMENT child — the check div on a todo (measured
-		 * -18.8→3.2), `.line-div` otherwise. A pseudo-element is invisible to
-		 * that logic, so keeping the box in flex flow pushed `.line-div` right
-		 * and the handle landed ON the box (4.2→26.2, his report). The handle
-		 * also lives in `listview-overlaybuttons`, positioned by transform, so
-		 * it cannot be nudged from a rule scoped to the row.
-		 * So: the box is absolutely positioned in the row's own left edge
-		 * (`.listitem` is position:relative), `.line-div` keeps its natural
-		 * x=10 and the handle therefore lands exactly where it does on a todo,
-		 * and only the TEXT is pushed across with padding. */
-		const shift = m ? (m.w + m.mr) : 24;
-		const base = '{content:"";position:absolute;left:' + (m ? m.pad : 10) + 'px;top:' + top + ';'
-			+ 'display:inline-flex;align-items:center;justify-content:center;z-index:2;'
+		const base = '{content:"";display:inline-flex;align-items:center;justify-content:center;'
 			+ 'box-sizing:border-box;width:' + dim + ';height:' + dim + ';'
-			+ 'border:' + bw + ' solid var(--ed-check-div-border);border-radius:' + rad + ';cursor:pointer;'
+			+ 'border:' + bw + ' solid var(--ed-check-div-border);border-radius:' + rad + ';'
+			+ 'margin-right:' + gap + ';vertical-align:text-bottom;cursor:pointer;'
 			+ 'font-family:var(--ed-check-icon-font);font-size:.85em;line-height:.85em;font-weight:700}';
+		const glyph = this.pcGlyph();
 		let css = '';
 		for (const [k, sels] of groups) {
 			if (!sels.length) continue;
@@ -6175,33 +6185,44 @@ class Plugin extends AppPlugin {
 			const st = PC_STATE(k);
 			if (!st || !st.tc) continue; /* 'tasks' is the plain box: base only */
 			const t = st.tc;
+			/* whatever Thymer (and his Custom CSS) draw this status's glyph at —
+			 * see pcGlyph. Emitted only when it differs from the base, so the
+			 * seven statuses that use .85em keep a one-line rule. */
+			const gl = glyph.get(k);
+			const scale = gl && (Math.abs(gl.fs - 0.85) > 0.005 || Math.abs(gl.lh - 0.85) > 0.005)
+				? ';font-size:' + gl.fs + 'em;line-height:' + gl.lh + 'em' : '';
 			css += sel + '{content:var(--ed-check-' + t + '-icon,"\\2713");'
 				+ 'color:var(--ed-check-' + t + '-fg);'
 				+ (t === 'done'
 					? 'background:var(--ed-check-done-bg);border-color:var(--ed-check-done-bg)'
 					: 'background:var(--ed-check-' + t + '-bg);border-color:var(--ed-check-' + t + '-border)')
-				+ (st.extra ? ';' + st.extra : '') + '}\n';
+				+ (st.extra ? ';' + st.extra : '') + scale + '}\n';
 		}
-		/* THE GRABBER. Thymer parks the drag handle just left of the row's
-		 * first REAL child — the check div on a todo, which is why a todo's
-		 * handle sits outside the row (measured: -18.8 to 3.2). A pseudo-
-		 * element is invisible to that, so on our rows it measured .line-div
-		 * instead and landed ON the checkbox (4.2 to 26.2, his report). Give
-		 * it back the width our box occupies. Only on rows we decorate. */
-		if (this.pcLit.size) {
-			/* make room for the box without moving .line-div's own left edge —
-			 * padding, not margin, so wrapped lines align like a todo's do */
-			css += [...this.pcLit.keys()]
-				.map((g) => '.listitem[data-guid="' + g + '"] > .line-div').join(',')
-				/* exactly the slot the box occupies. NOT plus .line-div's own
-				 * 4px: this rule REPLACES that padding, and adding it again is
-				 * what left the text 4px right of a todo's. */
-				+ '{padding-left:' + shift.toFixed(1) + 'px}\n';
+		/* THE BOX'S OWN LEFT EDGE (his 2026-08-15 report, the two red bars:
+		 * "checkboxen på Referenses i Live Queries ligger inte i linje med
+		 * övriga checkboxar"). A todo's `.line-check-div` is the row's first
+		 * child, so it starts at the row's `padding-left` exactly. Ours starts
+		 * one `.line-div` padding further in — 4px in a live query, 2px in
+		 * References and Embeds, which is why this is measured per row and not
+		 * assumed. Pull the box back by that padding and hand the same amount
+		 * to its margin-right, so the box lands on the todo column while the
+		 * text after it does not move a pixel: total advance stays w + mr, and
+		 * the icon ink he confirmed as correct is untouched. */
+		const byPull = new Map();
+		for (const g of this.pcLit.keys()) {
+			const px = this.pcBoxPull(g);
+			if (!px) continue;
+			if (!byPull.has(px)) byPull.set(px, []);
+			byPull.get(px).push(g);
+		}
+		for (const [px, guids] of byPull) {
+			css += guids.map((g) => '.listitem[data-guid="' + g + '"] > .line-div::before').join(',')
+				+ '{margin-left:-' + px + 'px;margin-right:' + ((m ? m.mr : 8) + px).toFixed(2) + 'px}\n';
 		}
 		/* THE LEADING ICON'S INK (his 2026-08-15 report, the red line down his
 		 * screenshot: "inte alignad i linje med texten i en todo"). The row's
-		 * content BLOCK already starts exactly where a todo's text does — that
-		 * is what the padding above buys — but the first thing in it on a page
+		 * content BLOCK already starts exactly where a todo's text does — the
+		 * box and its margin see to that — but the first thing in it on a page
 		 * row is a glyph, and a glyph's ink starts wherever its side bearing
 		 * puts it. Measured off his live query: the ⚡ ink sat 2px right of the
 		 * todo's text ink on the row below it.
@@ -6210,8 +6231,10 @@ class Plugin extends AppPlugin {
 		 * glyph, so there is no constant to hardcode here. Grouped by shift so
 		 * the sheet stays one rule per distinct value. */
 		const byShift = new Map();
+		let pending = false;
 		for (const g of this.pcLit.keys()) {
 			const px = this.pcIconShift(g);
+			if (px == null) { pending = true; continue; } /* not measurable YET */
 			if (!px) continue;
 			if (!byShift.has(px)) byShift.set(px, []);
 			byShift.get(px).push(g);
@@ -6221,6 +6244,41 @@ class Plugin extends AppPlugin {
 				+ '{margin-left:-' + px + 'px}\n';
 		}
 		if (this.pcStyle.textContent !== css) this.pcStyle.textContent = css;
+		/* ONE MORE PASS, because the ink shift cannot be measured on the build
+		 * that creates the box: the icon only reaches its real x once this very
+		 * sheet is in the document. The old code just hoped a later refresh
+		 * would come along, and after a plugin reload none did — the box and the
+		 * `.line-div` pull landed on the first build and the icon then sat
+		 * unshifted for the rest of the session (measured 2026-08-15: rules
+		 * present, icon margin 0, and one hand-called refreshPageChecks over CDP
+		 * fixed it instantly).
+		 * Bounded, because a lit row inside a collapsed panel measures zero
+		 * forever and would otherwise reschedule for as long as the app is open. */
+		if (pending && !this.pcAgain && (this.pcRetry || 0) < 12) {
+			this.pcRetry = (this.pcRetry || 0) + 1;
+			this.pcAgain = setTimeout(() => {
+				this.pcAgain = null;
+				if (!this.dead) { try { this.refreshPageChecks(); } catch (e) {} }
+			}, 50);
+		} else if (!pending) this.pcRetry = 0;
+	}
+
+	/* How far right of the todo column this row's box would sit if left alone:
+	 * `.line-div`'s own content edge, measured against the row's. Read fresh
+	 * every build and never cached — it costs two rects, and the answer differs
+	 * between a live query (4px) and References/Embeds (2px), which is exactly
+	 * the kind of context difference a cache would smear. Returns 0 when there
+	 * is nothing to correct, which emits no rule at all. */
+	pcBoxPull(domGuid) {
+		try {
+			const row = document.querySelector('.listitem[data-guid="' + domGuid + '"]');
+			const ld = row && row.querySelector(':scope > .line-div');
+			if (!ld) return 0;
+			const rowPad = parseFloat(getComputedStyle(row).paddingLeft) || 0;
+			const ldPad = parseFloat(getComputedStyle(ld).paddingLeft) || 0;
+			const d = (ld.getBoundingClientRect().left + ldPad) - (row.getBoundingClientRect().left + rowPad);
+			return d > 0.05 ? Math.round(d * 10) / 10 : 0;
+		} catch (e) { return 0; }
 	}
 
 	/* How far left this row's leading icon must move for its INK to start
@@ -6240,31 +6298,46 @@ class Plugin extends AppPlugin {
 	 *
 	 * Cached per icon class + size, and the cache is filled from a row that
 	 * has no shift applied yet, so the measurement can never chase its own
-	 * output. Returns 0 when anything is missing, which is the old behaviour. */
+	 * output.
+	 *
+	 * TWO KINDS OF ZERO, and the caller needs them apart: `0` means there is
+	 * nothing to correct on this row (no icon at all — a page row can be a
+	 * plain reference), while `null` means NOT YET — the box has not landed,
+	 * the reference todo has not rendered, the rects are all zero. Only `null`
+	 * earns another build; conflating the two is what let the shift go missing
+	 * for a whole session. */
 	pcIconShift(domGuid) {
 		try {
 			const m = this.pcMetrics();
-			if (!m) return 0;
+			if (!m) return null;
 			const row = document.querySelector('.listitem[data-guid="' + domGuid + '"]');
-			const el = row && row.querySelector('.lineitem-ref-icon');
-			if (!el) return 0;
-			/* NOT BEFORE OUR OWN PADDING HAS LANDED. This runs while the sheet
-			 * is being BUILT, so on the first pass the row still wears Thymer's
-			 * padding and the icon sits ~22px left of where it will end up. The
-			 * first build measured that, got a negative, clamped it to 0 and
-			 * cached the 0 for good — which is exactly why his second and third
-			 * screenshots were identical. The row's padding is the readiness
-			 * signal: it is set by the very rule above this one. */
+			if (!row) return null; /* not rendered yet */
+			const el = row.querySelector('.lineitem-ref-icon');
+			if (!el) return 0; /* no leading icon: nothing to align */
+			/* NOT BEFORE OUR OWN BOX HAS LANDED. This runs while the sheet is
+			 * being BUILT, so on the first pass the row has no box yet and the
+			 * icon sits ~22px left of where it will end up. The first build
+			 * measured that, got a negative, clamped it to 0 and cached the 0
+			 * for good — which is exactly why his second and third screenshots
+			 * were identical. The readiness signal is the icon's own distance
+			 * from `.line-div`'s content edge: a box wide plus its gap once the
+			 * pseudo above is in the flow, ~0 before it. */
 			const ld = row.querySelector(':scope > .line-div');
-			const padL = ld ? (parseFloat(getComputedStyle(ld).paddingLeft) || 0) : 0;
-			if (Math.abs(padL - (m.w + m.mr)) > 0.5) return 0; /* not yet — and do not cache */
+			if (!ld) return null;
+			const ldPad = parseFloat(getComputedStyle(ld).paddingLeft) || 0;
+			const contentX = ld.getBoundingClientRect().left + ldPad;
+			const applied = parseFloat(getComputedStyle(el).marginLeft) || 0;
+			/* undo any shift we have already applied — the natural position is
+			 * what says whether the box is there, and it must not chase itself */
+			const natural = el.getBoundingClientRect().left - applied;
+			if (natural - contentX < (m.w + m.mr) - 1) return null; /* not yet — and do not cache */
 			/* THE REFERENCE TODO MUST BE IN THIS ROW'S OWN LISTVIEW. The first
 			 * build took it from document.querySelectorAll, i.e. whatever todo
 			 * the document held first — in his layout one in the note beside
 			 * the query, not one in it. Measured in one context, applied in
 			 * another. So the reference, and the cache, are per listview. */
 			const scope = row.closest('.listview-items') || row.parentElement;
-			if (!scope) return 0;
+			if (!scope) return null;
 			if (!this.pcInk) this.pcInk = new WeakMap();
 			let box = this.pcInk.get(scope);
 			if (!box) { box = { textX: null, body: 0, by: new Map() }; this.pcInk.set(scope, box); }
@@ -6272,7 +6345,7 @@ class Plugin extends AppPlugin {
 				const ref = scope.querySelector('.listitem-task > .line-check-div');
 				const rrow = ref && ref.parentElement;
 				const rld = rrow && rrow.querySelector(':scope > .line-div');
-				if (!rld) return 0; /* nothing to align to in here yet */
+				if (!rld) return null; /* nothing to align to in here yet */
 				box.textX = (rld.getBoundingClientRect().left - rrow.getBoundingClientRect().left)
 					+ (parseFloat(getComputedStyle(rld).paddingLeft) || 0);
 				box.body = this.pcBodyBearing(rld);
@@ -6292,13 +6365,11 @@ class Plugin extends AppPlugin {
 			const bearing = this.pcBearing(ch, cs);
 			if (bearing == null) return 0;
 			const rr = row.getBoundingClientRect();
-			const er = el.getBoundingClientRect();
-			const applied = parseFloat(getComputedStyle(el).marginLeft) || 0;
 			/* ink to ink. Measured on his live query: icon box and todo text box
 			 * both start at 34.1 — the boxes were never the problem — but the ⚡
 			 * carries 2.63px of side bearing against the body font's ~1, so the
 			 * first INK on the row sat 1.5px right of the todo's below it. */
-			const inkX = (er.left - rr.left) - applied + bearing;
+			const inkX = (natural - rr.left) + bearing;
 			/* never past the checkbox: the whole gap between box and text is
 			 * m.mr, and eating it would put the glyph on top of the tick */
 			const px = Math.round(Math.max(0, Math.min(inkX - (box.textX + box.body), m.mr - 1)) * 10) / 10;
@@ -6350,14 +6421,19 @@ class Plugin extends AppPlugin {
 		const g = row.getAttribute('data-guid');
 		const info = this.pcLit.get(g);
 		if (!info) return null;
-		/* the box occupies the row's own leading slot: after `padding-left`,
-		 * about a checkbox wide. Measured off the ROW now that the pseudo is
-		 * the row's first flex child. */
-		const r = row.getBoundingClientRect();
-		let padL = 10;
-		try { padL = parseFloat(getComputedStyle(row).paddingLeft) || 10; } catch (e2) {}
-		const x0 = r.left + padL;
-		if (e.clientX < x0 - 3 || e.clientX > x0 + 20) return null;
+		/* HORIZONTALLY the box sits on the todo column — the row's own content
+		 * edge, which is where pcBoxPull puts it — and runs one checkbox wide.
+		 * VERTICALLY it is the first text line, so the band comes off
+		 * `.line-div` and not off a row that may be several lines tall. */
+		const ld = row.querySelector(':scope > .line-div');
+		if (!ld) return null;
+		const rr = row.getBoundingClientRect();
+		const r = ld.getBoundingClientRect();
+		let padL = 0;
+		try { padL = parseFloat(getComputedStyle(row).paddingLeft) || 0; } catch (e2) {}
+		const m = this.pcMetrics();
+		const x0 = rr.left + padL;
+		if (e.clientX < x0 - 3 || e.clientX > x0 + (m ? m.w : 18) + 3) return null;
 		if (e.clientY < r.top || e.clientY > r.top + Math.min(r.height, 30)) return null;
 		return { g, info };
 	}
@@ -6455,6 +6531,54 @@ class Plugin extends AppPlugin {
 	 * native 4.9px, which is the misalignment he saw). A live `.line-check-div`
 	 * settles both numbers exactly, on any theme. Cached, re-measured when the
 	 * theme changes. */
+	/* HOW BIG THYMER DRAWS EACH STATUS'S GLYPH, as a multiple of the row's font.
+	 * Not every status renders its icon at the base `.85em`: Thymer's own sheet
+	 * puts `exclaim` and `canceled` at `1.2em` and `alert` at `1.2em` bolder, and
+	 * Parham's Custom CSS then takes cancelled back down to `.8em`. We rendered
+	 * every status at `.85em` (bar a hardcoded 1.02em for alert that was itself
+	 * a fifth too small), so Important came out 29% smaller than the identical
+	 * todo beside it — his "alla ikoner är inte lika stora".
+	 *
+	 * The numbers are READ OFF THE LIVE CASCADE rather than copied: a throwaway
+	 * `.listitem-task.state-X > .line-check-div` rig, off-screen in the body,
+	 * resolves exactly the rules a real todo of that status resolves — Thymer's,
+	 * the theme's and his own — so this stays right when any of the three
+	 * changes, which a hardcoded table cannot. Body-level is enough: every rule
+	 * involved is scoped to `html[data-theme]` at most.
+	 *
+	 * Returned as RATIOS, not px. Our pseudo hangs on `.line-div` and the native
+	 * one on `.line-check-div`, and both inherit the row's font-size (measured:
+	 * 15.2px on both), so the same multiple lands on the same pixels — while a
+	 * px reading taken here would be the body's font, not the row's. Font-size
+	 * and line-height are measured separately because they genuinely differ:
+	 * alert scales the glyph but keeps the base line-height. */
+	pcGlyph() {
+		if (this.pcGl) return this.pcGl;
+		const out = new Map();
+		let probe = null;
+		try {
+			probe = document.createElement('div');
+			probe.style.cssText = 'position:fixed;left:-9999px;top:0;visibility:hidden;pointer-events:none';
+			document.body.appendChild(probe);
+			for (const st of PC_STATES) {
+				probe.innerHTML = '<div class="listitem listitem-task' + (st.tc ? ' state-' + st.tc : '')
+					+ '"><div class="line-check-div"></div></div>';
+				const chk = probe.querySelector('.line-check-div');
+				if (!chk) continue;
+				const f = parseFloat(getComputedStyle(chk).fontSize);
+				const b = parseFloat(getComputedStyle(chk, '::before').fontSize);
+				const l = parseFloat(getComputedStyle(chk, '::before').lineHeight);
+				if (!(f > 0) || !(b > 0)) continue;
+				out.set(st.key, {
+					fs: Math.round((b / f) * 1000) / 1000,
+					lh: l > 0 ? Math.round((l / b) * 1000) / 1000 : 0.85,
+				});
+			}
+		} catch (e) {} finally { try { if (probe) probe.remove(); } catch (e2) {} }
+		if (out.size) this.pcGl = out; /* only cache a real reading */
+		return out;
+	}
+
 	pcMetrics() {
 		if (this.pcM) return this.pcM;
 		let m = null;
