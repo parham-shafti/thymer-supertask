@@ -717,6 +717,107 @@ html.is-dark {
 	border-color: color-mix(in srgb, var(--color-primary-500, #4caea1) 45%, transparent);
 }
 .rs-pcpill.is-on .ti { opacity: 1; }
+/* the Page Checkboxes dialog — Smart Titles' two-pane shape, his own
+ * established form for per-collection configuration */
+.rs-pcd {
+	margin-top: 6vh; width: 900px; max-width: calc(100vw - 32px);
+	max-height: calc(100vh - 64px);
+	display: flex; flex-direction: column; overflow: hidden;
+	background: var(--cmdpal-bg-color, var(--app-bg, #26262b));
+	color: var(--cmdpal-fg-color, var(--text-color, inherit));
+	border: 1px solid color-mix(in srgb, var(--text-color) 30%, transparent);
+	border-radius: 4px;
+	box-shadow: 0 24px 64px rgba(0,0,0,.5);
+	font-size: var(--text-size-small, .875rem);
+}
+.rs-pcd-head { padding: 20px 22px 16px; border-bottom: 1px solid color-mix(in srgb, currentColor 16%, transparent); }
+.rs-pcd-title { margin: 0 0 6px; font-size: var(--text-size-large, 1.0625rem); font-weight: 700; }
+.rs-pcd-desc { margin: 0; opacity: .6; line-height: 1.5; font-size: var(--text-size-smaller, .8125rem); }
+.rs-pcd-body { display: flex; flex: 1; min-height: 0; }
+.rs-pcd-rail {
+	width: 260px; flex: none; display: flex; flex-direction: column; min-height: 0;
+	border-right: 1px solid color-mix(in srgb, currentColor 16%, transparent);
+}
+.rs-pcd-railhead { display: flex; align-items: center; justify-content: space-between; padding: 14px 14px 8px; }
+.rs-pcd-label { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .14em; opacity: .75; }
+.rs-pcd-pill, .rs-pcd-badge {
+	font-size: 10.5px; padding: 1px 7px; border-radius: 4px;
+	background: color-mix(in srgb, currentColor 12%, transparent); opacity: .8;
+}
+.rs-pcd-search { padding: 0 12px 8px; }
+.rs-pcd-search input, .rs-pcd-pop .rs-pcd-search input {
+	width: 100%; box-sizing: border-box; padding: 6px 9px; border-radius: 4px;
+	border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+	background: transparent; color: inherit; font: inherit; outline: none;
+}
+.rs-pcd-raillist { flex: 1; overflow-y: auto; padding: 0 8px 8px; }
+.rs-pcd-railrow {
+	width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+	padding: 7px 10px; border: 0; border-radius: 4px; background: transparent;
+	color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+.rs-pcd-railrow:hover { background: color-mix(in srgb, currentColor 10%, transparent); }
+.rs-pcd-railrow.is-sel { background: color-mix(in srgb, var(--color-primary-500, #4caea1) 18%, transparent); }
+.rs-pcd-railrow .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rs-pcd-add {
+	margin: 8px 12px 12px; padding: 7px 10px; border-radius: 4px; cursor: pointer;
+	border: 1px dashed color-mix(in srgb, currentColor 30%, transparent);
+	background: transparent; color: inherit; font: inherit;
+}
+.rs-pcd-add:hover { background: color-mix(in srgb, currentColor 10%, transparent); }
+.rs-pcd-detail { flex: 1; min-width: 0; overflow-y: auto; padding: 16px 22px 22px; }
+.rs-pcd-edhead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.rs-pcd-edname { font-size: var(--text-size-large, 1.0625rem); font-weight: 700; }
+.rs-pcd-remove {
+	border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+	background: transparent; color: inherit; font: inherit;
+	padding: 4px 10px; border-radius: 4px; cursor: pointer; opacity: .7;
+}
+.rs-pcd-remove:hover { opacity: 1; }
+.rs-pcd-sec { margin: 18px 0 8px; }
+.rs-pcd-hint { margin: -4px 0 8px; opacity: .55; font-size: var(--text-size-smaller, .8125rem); line-height: 1.45; }
+.rs-pcd-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.rs-pcd-chip {
+	display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px;
+	border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+	border-radius: 4px; background: transparent; color: inherit; font: inherit; cursor: pointer;
+}
+.rs-pcd-chip.is-set, .rs-pcd-chip.is-val {
+	color: color-mix(in srgb, var(--color-primary-500, #4caea1) 60%, var(--text-color));
+	border-color: color-mix(in srgb, var(--color-primary-500, #4caea1) 45%, transparent);
+}
+.rs-pcd-chip .x { border: 0; background: transparent; color: inherit; cursor: pointer; opacity: .55; font-size: 10px; padding: 0; }
+.rs-pcd-chip .x:hover { opacity: 1; }
+.rs-pcd-addval { border-style: dashed; opacity: .8; }
+.rs-pcd-empty { opacity: .5; padding: 10px 2px; font-size: var(--text-size-smaller, .8125rem); }
+.rs-pcd-foot {
+	display: flex; justify-content: flex-end; gap: 8px; padding: 14px 22px;
+	border-top: 1px solid color-mix(in srgb, currentColor 16%, transparent);
+}
+.rs-pcd-btn {
+	padding: 7px 16px; border-radius: 4px; cursor: pointer; font: inherit;
+	border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+	background: transparent; color: inherit;
+}
+.rs-pcd-primary {
+	background: var(--color-primary-500, #4caea1); border-color: transparent;
+	color: var(--app-bg, #1a1a1e); font-weight: 600;
+}
+.rs-pcd-pop {
+	position: fixed; z-index: 100000; max-height: 320px; overflow: hidden;
+	display: flex; flex-direction: column; padding: 8px;
+	background: var(--cmdpal-bg-color, var(--app-bg, #26262b));
+	border: 1px solid color-mix(in srgb, var(--text-color) 30%, transparent);
+	border-radius: 4px; box-shadow: 0 18px 40px rgba(0,0,0,.5);
+	font-size: var(--text-size-small, .875rem);
+}
+.rs-pcd-poplist { overflow-y: auto; }
+.rs-pcd-popitem {
+	display: flex; align-items: center; justify-content: space-between; gap: 10px;
+	padding: 7px 9px; border-radius: 4px; cursor: pointer;
+}
+.rs-pcd-popitem:hover { background: color-mix(in srgb, currentColor 12%, transparent); }
+.rs-pcd-popitem .tag { font-size: 10.5px; opacity: .5; }
 .rs-pc.rs-pc-on {
 	background: color-mix(in srgb, var(--color-primary-500, #4caea1) 85%, var(--text-color) 0%);
 	border-color: transparent;
@@ -2667,6 +2768,7 @@ class Plugin extends AppPlugin {
 		 * pcPend: optimistic overlay on the property (props-loss doctrine). */
 		this.pageChecks = false;
 		this.pageCheckCols = {};
+		this.pageCheckCfg = {};
 		this.pcWire = new Map();
 		this.pcPend = new Map();
 		this.pcColNames = {};
@@ -2813,6 +2915,10 @@ class Plugin extends AppPlugin {
 			 * are re-measured by the shared view-options module, which watches
 			 * the theme itself — whichever plugin is hosting it. */
 			if (!this.dead) { try { this.refreshProgressStyle(); } catch (e) {} }
+			/* the page checkbox copies the native check's measured px, so it
+			 * is stale for the same reason */
+			this.pcM = null;
+			if (!this.dead) { try { this.refreshPageChecks(); } catch (e) {} }
 		};
 		try { document.addEventListener('themecsschange', this.themeHandler); } catch (e) {}
 		try {
@@ -2999,6 +3105,7 @@ class Plugin extends AppPlugin {
 		this.pcWire = null;
 		this.pcPend = null;
 		this.tbWire = null;
+		this.pcM = null;
 		this.progTried = null;
 		this.progQueue = null;
 		this.lastAdvance = null;
@@ -3150,6 +3257,7 @@ class Plugin extends AppPlugin {
 		if (typeof p.progressTodos === 'boolean') this.progressTodos = p.progressTodos;
 		if (typeof p.pageChecks === 'boolean') this.pageChecks = p.pageChecks;
 		if (p.pageCheckCols && typeof p.pageCheckCols === 'object') this.pageCheckCols = p.pageCheckCols;
+		if (p.pageCheckCfg && typeof p.pageCheckCfg === 'object') this.pageCheckCfg = p.pageCheckCfg;
 		if (Array.isArray(p.globalBins)) {
 			this.globalBins = p.globalBins.filter((k) => ORDER_BINS.some((b) => b.key === k));
 		}
@@ -3192,7 +3300,7 @@ class Plugin extends AppPlugin {
 	 * write-through to config for other devices. NOTE: saveConfiguration
 	 * reloads the plugin, so this is always the LAST thing an interaction does. */
 	async savePrefs() {
-		const p = { rev: Date.now(), slots: this.tbSlots, globalBins: (this.globalBins || []).slice(), progress: !!this.progressGlobal, progressTodos: !!this.progressTodos, pageChecks: !!this.pageChecks, pageCheckCols: this.pageCheckCols || {}, pageRules: this.pageRules || {}, pageDefaults: this.pageDefaults || {} };
+		const p = { rev: Date.now(), slots: this.tbSlots, globalBins: (this.globalBins || []).slice(), progress: !!this.progressGlobal, progressTodos: !!this.progressTodos, pageChecks: !!this.pageChecks, pageCheckCols: this.pageCheckCols || {}, pageCheckCfg: this.pageCheckCfg || {}, pageRules: this.pageRules || {}, pageDefaults: this.pageDefaults || {} };
 		this.prefsRev = p.rev;
 		try { localStorage.setItem('rs_prefs', JSON.stringify(p)); } catch (e) {}
 		try {
@@ -3327,12 +3435,12 @@ class Plugin extends AppPlugin {
 					+ '<span class="rs-p-name">On all pages</span></label>'
 					+ '</div>'
 					+ '<div class="rs-pcgrid">'
-					+ Object.keys(this.pageDefaults || {}).map((cg) => {
-						const nm = (this.pcColNames && this.pcColNames[cg]) || ('…' + cg.slice(-6));
-						return '<label class="rs-pcpill' + (this.pcEnabled(cg) ? ' is-on' : '') + '">'
-							+ '<input type="checkbox" class="rs-pcc" data-col="' + cg + '"' + (this.pcEnabled(cg) ? ' checked' : '') + '>'
-							+ '<span class="ti ti-check"></span>' + esc(nm) + '</label>';
-					}).join('')
+					+ '<button type="button" class="rs-pcconf rs-pcpill' + (Object.keys(this.pcCfg()).length ? ' is-on' : '') + '">'
+					+ '<span class="ti ti-adjustments"></span>'
+					+ (Object.keys(this.pcCfg()).length
+						? 'Configure collections (' + Object.keys(this.pcCfg()).length + ')'
+						: 'Configure collections…')
+					+ '</button>'
 					+ '</div>')
 				+ '</div>'
 				+ '<div class="rs-p-secbox">' + sec('ordering', 'Task Status Settings') + orderingBody + '</div>'
@@ -3421,6 +3529,7 @@ class Plugin extends AppPlugin {
 		});
 		panel.addEventListener('click', (e) => {
 			const t = e.target.closest ? e.target.closest('button') : null;
+			if (t && t.classList.contains('rs-pcconf')) { this.pcOpenDialog().catch(() => {}); return; }
 			if (!t) {
 				const h = e.target.closest ? e.target.closest('.rs-p-fold') : null;
 				if (h) {
@@ -4855,6 +4964,9 @@ class Plugin extends AppPlugin {
 	}
 
 	pcEnabled(collGuid) {
+		/* an explicit configuration always wins; otherwise the global switch
+		 * decides, using whatever repeat wiring that collection happens to have */
+		if (collGuid && this.pcCfg()[collGuid]) return true;
 		const o = this.pageCheckCols || {};
 		if (collGuid && Object.prototype.hasOwnProperty.call(o, collGuid)) return !!o[collGuid];
 		return !!this.pageChecks;
@@ -4862,6 +4974,7 @@ class Plugin extends AppPlugin {
 
 	pcAnyEnabled() {
 		if (this.pageChecks) return true;
+		if (Object.keys(this.pcCfg()).length) return true;
 		const o = this.pageCheckCols || {};
 		for (const k in o) if (o[k]) return true;
 		return false;
@@ -4871,6 +4984,35 @@ class Plugin extends AppPlugin {
 	 * collections; refreshPageChecks kicks it and repaints when it lands. */
 	async pcResolveWire(collGuid) {
 		if (!this.pcWire || this.pcWire.has(collGuid)) return;
+		/* CONFIGURED collections need no discovery: the dialog already said
+		 * which property and which values mean what. */
+		const cfg = this.pcCfg()[collGuid];
+		if (cfg && cfg.sp && (cfg.on || []).length) {
+			let type = 'record';
+			try {
+				const info = (this.pcCat || []).find((c) => c.guid === collGuid);
+				const f = info && info.fields.find((x) => x.id === cfg.sp);
+				if (f) type = f.type;
+			} catch (e) {}
+			this.pcWire.set(collGuid, {
+				sp: cfg.sp,
+				spType: type,
+				checked: new Set((cfg.on || []).map(String)),
+				on: String(cfg.on[0]),
+				off: (cfg.off || []).length ? String(cfg.off[0]) : null,
+				onLabel: 'Checked',
+				offLabel: 'Unchecked',
+			});
+			/* the schema tells us the real field type; fetch it once in the
+			 * background and correct the entry if it was not a record field */
+			this.pcCatalog().then((cat) => {
+				const info = cat.find((c) => c.guid === collGuid);
+				const f = info && info.fields.find((x) => x.id === cfg.sp);
+				const w = this.pcWire && this.pcWire.get(collGuid);
+				if (f && w && w.spType !== f.type) { w.spType = f.type; }
+			});
+			return;
+		}
 		this.pcWire.set(collGuid, null); /* resolving marker — stays null on failure */
 		const def = (this.pageDefaults || {})[collGuid];
 		if (!def || !def.sp || !def.dv) return;
@@ -5007,7 +5149,7 @@ class Plugin extends AppPlugin {
 		 * theme, including his. */
 		const un = []; const on = [];
 		for (const [g, info] of this.pcLit) {
-			(info.checked ? on : un).push('.listitem[data-guid="' + g + '"] .line-div::before');
+			(info.checked ? on : un).push('.listitem[data-guid="' + g + '"]::before');
 		}
 		/* SIZE: his theme defines --ed-checkbox-size as 1em, and em resolves
 		 * against the element's OWN font — our .85em (the glyph size the native
@@ -5017,10 +5159,40 @@ class Plugin extends AppPlugin {
 		 * shrink back out. Trade-off, documented: on a theme that defines the
 		 * size in px this renders ~18% large — consistently in both states, and
 		 * exact on em-based themes like his. */
-		const base = '{content:"";display:inline-flex;align-items:center;justify-content:center;'
-			+ 'box-sizing:border-box;width:calc(var(--ed-checkbox-size,15px)/0.85);height:calc(var(--ed-checkbox-size,15px)/0.85);'
-			+ 'border:2px solid var(--ed-check-div-border);border-radius:var(--ed-checkbox-radius,4px);'
-			+ 'margin-right:1ch;vertical-align:text-bottom;cursor:pointer;'
+		/* ANCHORED ON THE ROW, not on .line-div. `.listitem` is `display:flex`
+		 * and a todo's real `.line-check-div` is its FIRST flex child, so a
+		 * ::before on the row lands in exactly that slot. Inside .line-div it
+		 * instead sat after the row's `padding-left:10px` and .line-div's own
+		 * `padding:0 2px`, which is the air he saw in a live search. `.listitem`
+		 * ::before is unused by Thymer (only .listitem-debug), and the progress
+		 * bar's rules on the same pseudo key on LINE guids while these are page
+		 * rows, so the two can never meet.
+		 * EVERY em/ch length here is divided by .85 for one reason: the glyph
+		 * font-size shrinks the element's own em, so dividing restores the
+		 * parent's scale uniformly — the box, its gap and its top offset all
+		 * land where the native one does. */
+		const m = this.pcMetrics();
+		const dim = m ? m.w + 'px' : 'calc(var(--ed-checkbox-size,15px)/0.85)';
+		const gap = m ? m.mr + 'px' : 'calc(1ch/0.85)';
+		const top = m ? m.mt + 'px' : 'calc((var(--ed-line-height,1.5em) - var(--ed-checkbox-size,1em))/2/0.85)';
+		const rad = m ? m.radius : 'var(--ed-checkbox-radius,4px)';
+		const bw = m ? m.bw + 'px' : '2px';
+		/* OUT OF THE FLOW, ON PURPOSE. Thymer parks the drag handle just left
+		 * of the row's first ELEMENT child — the check div on a todo (measured
+		 * -18.8→3.2), `.line-div` otherwise. A pseudo-element is invisible to
+		 * that logic, so keeping the box in flex flow pushed `.line-div` right
+		 * and the handle landed ON the box (4.2→26.2, his report). The handle
+		 * also lives in `listview-overlaybuttons`, positioned by transform, so
+		 * it cannot be nudged from a rule scoped to the row.
+		 * So: the box is absolutely positioned in the row's own left edge
+		 * (`.listitem` is position:relative), `.line-div` keeps its natural
+		 * x=10 and the handle therefore lands exactly where it does on a todo,
+		 * and only the TEXT is pushed across with padding. */
+		const shift = m ? (m.w + m.mr) : 24;
+		const base = '{content:"";position:absolute;left:' + (m ? m.pad : 10) + 'px;top:' + top + ';'
+			+ 'display:inline-flex;align-items:center;justify-content:center;z-index:2;'
+			+ 'box-sizing:border-box;width:' + dim + ';height:' + dim + ';'
+			+ 'border:' + bw + ' solid var(--ed-check-div-border);border-radius:' + rad + ';cursor:pointer;'
 			+ 'font-family:var(--ed-check-icon-font);font-size:.85em;line-height:.85em;font-weight:700}';
 		let css = '';
 		if (un.length) css += un.join(',') + base + '\n';
@@ -5029,6 +5201,22 @@ class Plugin extends AppPlugin {
 				+ on.join(',') + '{content:var(--ed-check-done-icon,"\\2713");'
 				+ 'color:var(--ed-check-done-fg);background:var(--ed-check-done-bg);'
 				+ 'border-color:var(--ed-check-done-bg)}\n';
+		}
+		/* THE GRABBER. Thymer parks the drag handle just left of the row's
+		 * first REAL child — the check div on a todo, which is why a todo's
+		 * handle sits outside the row (measured: -18.8 to 3.2). A pseudo-
+		 * element is invisible to that, so on our rows it measured .line-div
+		 * instead and landed ON the checkbox (4.2 to 26.2, his report). Give
+		 * it back the width our box occupies. Only on rows we decorate. */
+		if (this.pcLit.size) {
+			/* make room for the box without moving .line-div's own left edge —
+			 * padding, not margin, so wrapped lines align like a todo's do */
+			css += [...this.pcLit.keys()]
+				.map((g) => '.listitem[data-guid="' + g + '"] > .line-div').join(',')
+				/* exactly the slot the box occupies. NOT plus .line-div's own
+				 * 4px: this rule REPLACES that padding, and adding it again is
+				 * what left the text 4px right of a todo's. */
+				+ '{padding-left:' + shift.toFixed(1) + 'px}\n';
 		}
 		if (this.pcStyle.textContent !== css) this.pcStyle.textContent = css;
 	}
@@ -5042,11 +5230,15 @@ class Plugin extends AppPlugin {
 		const g = row.getAttribute('data-guid');
 		const info = this.pcLit.get(g);
 		if (!info) return null;
-		const ld = row.querySelector('.line-div');
-		if (!ld) return null;
-		const r = ld.getBoundingClientRect();
-		if (e.clientX < r.left - 2 || e.clientX > r.left + 22) return null;
-		if (e.clientY < r.top || e.clientY > r.top + Math.min(r.height, 28)) return null;
+		/* the box occupies the row's own leading slot: after `padding-left`,
+		 * about a checkbox wide. Measured off the ROW now that the pseudo is
+		 * the row's first flex child. */
+		const r = row.getBoundingClientRect();
+		let padL = 10;
+		try { padL = parseFloat(getComputedStyle(row).paddingLeft) || 10; } catch (e2) {}
+		const x0 = r.left + padL;
+		if (e.clientX < x0 - 3 || e.clientX > x0 + 20) return null;
+		if (e.clientY < r.top || e.clientY > r.top + Math.min(r.height, 30)) return null;
 		return { g, info };
 	}
 
@@ -5063,6 +5255,436 @@ class Plugin extends AppPlugin {
 			await this.setPagePropValue(prop, st.wire.spType, next ? st.wire.on : st.wire.off);
 			this.toast((rec.getName() || 'Page') + ' · ' + (next ? st.wire.onLabel : st.wire.offLabel));
 		} catch (e) {}
+	}
+
+	/* ---- Page Checkboxes: the configuration dialog -----------------------
+	 * His 2026-08-14 verdict on the first settings pass: "duger inte alls" —
+	 * it listed only collections that happened to have repeat wiring, showed
+	 * guid tails instead of names, and gave no say over WHICH property or
+	 * values drive the box. This is the rebuild, on Smart Titles' two-pane
+	 * shape (his own established form for exactly this): a rail of configured
+	 * collections with a picker over the WHOLE workspace, and per collection
+	 * a property plus the value sets that mean checked and unchecked.
+	 *
+	 * Model: pageCheckCfg[collGuid] = { sp, on:[valueId], off:[valueId] }.
+	 * `on` is the SET of values that render the box checked; `off` is the
+	 * same for unchecked, and its FIRST entry is what unchecking writes. */
+
+	pcCfg() { return this.pageCheckCfg || (this.pageCheckCfg = {}); }
+
+	/* MEASURE THE REAL THING rather than recompute it. The box used to derive
+	 * its size and gap from --ed-checkbox-size and `1ch`, divided by the glyph
+	 * font shrink. The size came out right; the GAP did not, because `ch` is a
+	 * property of the FONT, and the box sets font-family to the icon font — so
+	 * its `ch` is the icon font's, not the row's (measured 7.6px against the
+	 * native 4.9px, which is the misalignment he saw). A live `.line-check-div`
+	 * settles both numbers exactly, on any theme. Cached, re-measured when the
+	 * theme changes. */
+	pcMetrics() {
+		if (this.pcM) return this.pcM;
+		let m = null;
+		try {
+			for (const el of document.querySelectorAll('.listitem-task > .line-check-div')) {
+				const b = el.getBoundingClientRect();
+				if (!b.width || !b.height) continue;
+				const cs = getComputedStyle(el);
+				const row = el.parentElement;
+				const rcs = row ? getComputedStyle(row) : null;
+				m = {
+					w: b.width,
+					mr: parseFloat(cs.marginRight) || 0,
+					mt: parseFloat(cs.marginTop) || 0,
+					radius: cs.borderRadius,
+					bw: parseFloat(cs.borderTopWidth) || 2,
+					pad: rcs ? (parseFloat(rcs.paddingLeft) || 10) : 10,
+				};
+				break;
+			}
+		} catch (e) {}
+		if (m) this.pcM = m; /* only cache a real reading */
+		return m;
+	}
+
+	/* Collections + their fields, cheap (schema only, no records). */
+	async pcCatalog() {
+		if (this.pcCat) return this.pcCat;
+		const out = [];
+		try {
+			const cols = await this.data.getAllCollections();
+			for (const c of cols || []) {
+				let g = null; let conf = null;
+				try { g = c.guid || (c.getGuid && c.getGuid()); } catch (e) {}
+				try { conf = c.getConfiguration && c.getConfiguration(); } catch (e) {}
+				if (!g || !conf) continue;
+				const fields = (conf.fields || [])
+					.filter((f) => f && f.active !== false && (f.type === 'record' || f.type === 'choice'))
+					.map((f) => ({ id: f.id, label: f.label || f.name || f.id, type: f.type,
+						choices: f.choices || null, link: f.filter_colguid || null }));
+				out.push({ guid: g, name: conf.name || ('...' + g.slice(-6)), fields });
+				if (this.pcColNames) this.pcColNames[g] = conf.name || '';
+			}
+		} catch (e) {}
+		out.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+		this.pcCat = out;
+		return out;
+	}
+
+	/* The pickable VALUES of one field. Choice fields carry them in the
+	 * schema; a record field means pages in a linked collection, whose
+	 * getAllRecords is a PROMISE (the documented trap). Cached per field. */
+	async pcFieldValues(collGuid, f) {
+		if (!this.pcVals) this.pcVals = new Map();
+		const key = collGuid + '|' + f.id;
+		if (this.pcVals.has(key)) return this.pcVals.get(key);
+		let out = [];
+		try {
+			if (f.type === 'choice') {
+				out = (f.choices || []).map((c) => (typeof c === 'string'
+					? { id: c, label: c }
+					: { id: String(c.id !== undefined ? c.id : c.value), label: String(c.label !== undefined ? c.label : (c.name || c.id)) }));
+			} else if (f.link) {
+				const cols = await this.data.getAllCollections();
+				const sc = (cols || []).find((c) => {
+					try { return (c.guid || (c.getGuid && c.getGuid())) === f.link; } catch (e) { return false; }
+				});
+				let recs = sc && sc.getAllRecords ? sc.getAllRecords() : [];
+				if (recs && typeof recs.then === 'function') recs = await recs;
+				for (const r of recs || []) {
+					let g = null; let nm = '';
+					try { g = r.guid || (r._getRow && r._getRow().guid); } catch (e) {}
+					try { nm = r.getName ? r.getName() : ''; } catch (e) {}
+					if (g) out.push({ id: String(g), label: nm || String(g).slice(-6) });
+				}
+				out.sort((a, b) => String(a.label).localeCompare(String(b.label)));
+			}
+		} catch (e) {}
+		this.pcVals.set(key, out);
+		return out;
+	}
+
+	pcLabelFor(collGuid, fieldId, valueId) {
+		const vals = (this.pcVals && this.pcVals.get(collGuid + '|' + fieldId)) || [];
+		const hit = vals.find((v) => v.id === valueId);
+		return hit ? hit.label : String(valueId || '').slice(-6);
+	}
+
+	async pcOpenDialog() {
+		this.closeSettings();
+		await this.pcCatalog();
+		this.pcDraft = JSON.parse(JSON.stringify(this.pcCfg()));
+		this.pcSel = Object.keys(this.pcDraft)[0] || null;
+		this.pcRailQ = '';
+		const back = document.createElement('div');
+		back.className = 'rs-back';
+		const shell = document.createElement('div');
+		shell.className = 'rs-pcd';
+		back.appendChild(shell);
+		document.body.appendChild(back);
+		this.pcDlg = back;
+		this.pcShell = shell;
+		back.addEventListener('pointerdown', (e) => { if (e.target === back) this.pcCloseDialog(); });
+		this.pcKeys = (e) => {
+			if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); this.pcCloseDialog(); }
+		};
+		window.addEventListener('keydown', this.pcKeys, true);
+		/* collection views eat keys aimed at plugin inputs unless we shield
+		 * them at our own surface (the key-pipeline doctrine) */
+		for (const t of ['keydown', 'keypress', 'keyup']) {
+			shell.addEventListener(t, (e) => {
+				const n = e.target && e.target.tagName;
+				if (n === 'INPUT' || n === 'TEXTAREA') e.stopPropagation();
+			});
+		}
+		/* pre-load the values of everything already configured, so chips read
+		 * as names on first paint instead of guid tails */
+		for (const g of Object.keys(this.pcDraft)) {
+			const info = (this.pcCat || []).find((c) => c.guid === g);
+			const f = info && info.fields.find((x) => x.id === this.pcDraft[g].sp);
+			if (f) this.pcFieldValues(g, f).then(() => this.pcRenderDialog());
+		}
+		this.pcRenderDialog();
+	}
+
+	pcCloseDialog() {
+		this.pcClosePop();
+		try { window.removeEventListener('keydown', this.pcKeys, true); } catch (e) {}
+		if (this.pcDlg) { this.pcDlg.remove(); this.pcDlg = null; }
+		this.pcShell = null;
+	}
+
+	pcRenderDialog() {
+		const shell = this.pcShell;
+		if (!shell) return;
+		this.pcClosePop();
+		shell.innerHTML = '';
+		const mk = (tag, cls, text) => {
+			const el = document.createElement(tag);
+			if (cls) el.className = cls;
+			if (text != null) el.textContent = text;
+			return el;
+		};
+		this.pcMk = mk;
+
+		const head = mk('div', 'rs-pcd-head');
+		head.appendChild(mk('h2', 'rs-pcd-title', 'Page Checkboxes'));
+		head.appendChild(mk('p', 'rs-pcd-desc',
+			'A checkbox on page rows: lone references, live search results and transclusions. '
+			+ 'Add a collection, pick the property that drives the box, then say which values mean checked and which one unchecking writes.'));
+		shell.appendChild(head);
+
+		const body = mk('div', 'rs-pcd-body');
+		body.appendChild(this.pcRenderRail());
+		body.appendChild(this.pcRenderDetail());
+		shell.appendChild(body);
+
+		const foot = mk('div', 'rs-pcd-foot');
+		const cancel = mk('button', 'rs-pcd-btn', 'Cancel');
+		cancel.addEventListener('click', () => this.pcCloseDialog());
+		const save = mk('button', 'rs-pcd-btn rs-pcd-primary', 'Save');
+		save.addEventListener('click', () => this.pcSaveDialog());
+		foot.append(cancel, save);
+		shell.appendChild(foot);
+	}
+
+	pcRenderRail() {
+		const mk = this.pcMk;
+		const rail = mk('div', 'rs-pcd-rail');
+		const head = mk('div', 'rs-pcd-railhead');
+		head.appendChild(mk('span', 'rs-pcd-label', 'Collections'));
+		head.appendChild(mk('span', 'rs-pcd-pill', String(Object.keys(this.pcDraft).length)));
+		rail.appendChild(head);
+
+		const search = mk('div', 'rs-pcd-search');
+		const input = document.createElement('input');
+		input.type = 'text';
+		input.placeholder = 'Find a collection...';
+		input.value = this.pcRailQ || '';
+		search.appendChild(input);
+		rail.appendChild(search);
+
+		const list = mk('div', 'rs-pcd-raillist');
+		const fill = () => {
+			list.innerHTML = '';
+			const q = (this.pcRailQ || '').trim().toLowerCase();
+			for (const g of Object.keys(this.pcDraft)) {
+				const info = (this.pcCat || []).find((c) => c.guid === g);
+				const nm = (info && info.name) || ('...' + g.slice(-6));
+				if (q && nm.toLowerCase().indexOf(q) < 0) continue;
+				const cfg = this.pcDraft[g];
+				const fld = info && info.fields.find((f) => f.id === cfg.sp);
+				const row = mk('button', 'rs-pcd-railrow' + (g === this.pcSel ? ' is-sel' : ''));
+				row.appendChild(mk('span', 'nm', nm));
+				row.appendChild(mk('span', 'rs-pcd-badge', fld ? fld.label : 'not set'));
+				row.addEventListener('click', () => { this.pcSel = g; this.pcRenderDialog(); });
+				list.appendChild(row);
+			}
+			if (!list.childElementCount) {
+				list.appendChild(mk('div', 'rs-pcd-empty',
+					Object.keys(this.pcDraft).length ? 'No matches.' : 'Nothing configured yet.'));
+			}
+		};
+		fill();
+		input.addEventListener('input', () => { this.pcRailQ = input.value; fill(); });
+		rail.appendChild(list);
+
+		const add = mk('button', 'rs-pcd-add', '+ Add collection');
+		add.addEventListener('click', () => this.pcOpenCollPicker(add));
+		rail.appendChild(add);
+		return rail;
+	}
+
+	pcRenderDetail() {
+		const mk = this.pcMk;
+		const d = mk('div', 'rs-pcd-detail');
+		const g = this.pcSel;
+		const cfg = g && this.pcDraft[g];
+		if (!cfg) {
+			d.appendChild(mk('div', 'rs-pcd-empty', 'Add a collection to give its pages a checkbox.'));
+			return d;
+		}
+		const info = (this.pcCat || []).find((c) => c.guid === g);
+		const fields = (info && info.fields) || [];
+		const fld = fields.find((f) => f.id === cfg.sp) || null;
+
+		const head = mk('div', 'rs-pcd-edhead');
+		head.appendChild(mk('div', 'rs-pcd-edname', (info && info.name) || g));
+		const rm = mk('button', 'rs-pcd-remove', '✕ Remove');
+		rm.addEventListener('click', () => {
+			delete this.pcDraft[g];
+			this.pcSel = Object.keys(this.pcDraft)[0] || null;
+			this.pcRenderDialog();
+		});
+		head.appendChild(rm);
+		d.appendChild(head);
+
+		d.appendChild(mk('div', 'rs-pcd-label rs-pcd-sec', 'Property'));
+		const prow = mk('div', 'rs-pcd-chips');
+		const pbtn = mk('button', 'rs-pcd-chip' + (fld ? ' is-set' : ''), fld ? fld.label : 'Choose a property...');
+		pbtn.addEventListener('click', () => this.pcOpenFieldPicker(pbtn, g, fields));
+		prow.appendChild(pbtn);
+		d.appendChild(prow);
+
+		if (!fld) {
+			d.appendChild(mk('div', 'rs-pcd-empty', 'Pick the property that says whether a page is done.'));
+			return d;
+		}
+
+		const valueBlock = (which, label, hint) => {
+			d.appendChild(mk('div', 'rs-pcd-label rs-pcd-sec', label));
+			d.appendChild(mk('p', 'rs-pcd-hint', hint));
+			const wrap = mk('div', 'rs-pcd-chips');
+			for (const v of (cfg[which] || [])) {
+				const chip = mk('span', 'rs-pcd-chip is-val');
+				chip.appendChild(mk('span', 'lbl', this.pcLabelFor(g, fld.id, v)));
+				const x = mk('button', 'x', '✕');
+				x.addEventListener('click', () => {
+					cfg[which] = (cfg[which] || []).filter((y) => y !== v);
+					this.pcRenderDialog();
+				});
+				chip.appendChild(x);
+				wrap.appendChild(chip);
+			}
+			const add = mk('button', 'rs-pcd-chip rs-pcd-addval', '+ Add value');
+			add.addEventListener('click', () => this.pcOpenValuePicker(add, g, fld, which));
+			wrap.appendChild(add);
+			d.appendChild(wrap);
+		};
+		valueBlock('on', 'Checked when', 'The box shows a tick while the property holds any of these.');
+		valueBlock('off', 'Unchecking writes', 'The first value here is written when you uncheck. Leave it empty to clear the property instead.');
+		return d;
+	}
+
+	pcOpenCollPicker(anchor) {
+		this.pcPopover(anchor, 280, (pop) => {
+			const mk = this.pcMk;
+			const search = mk('div', 'rs-pcd-search');
+			const input = document.createElement('input');
+			input.type = 'text';
+			input.placeholder = 'Search collections...';
+			search.appendChild(input);
+			pop.appendChild(search);
+			const list = mk('div', 'rs-pcd-poplist');
+			pop.appendChild(list);
+			const fill = () => {
+				list.innerHTML = '';
+				const q = input.value.trim().toLowerCase();
+				const items = (this.pcCat || []).filter((c) => !this.pcDraft[c.guid]
+					&& c.fields.length && (!q || c.name.toLowerCase().indexOf(q) >= 0));
+				for (const c of items) {
+					const it = mk('div', 'rs-pcd-popitem');
+					it.appendChild(mk('span', 'nm', c.name));
+					it.appendChild(mk('span', 'tag', c.fields.length + ' props'));
+					it.addEventListener('click', () => {
+						/* seed from the repeat wiring when this collection already
+						 * has one: those pickers learned it once already */
+						const def = (this.pageDefaults || {})[c.guid] || {};
+						this.pcDraft[c.guid] = {
+							sp: def.sp || null,
+							on: def.dv ? [String(def.dv)] : [],
+							off: def.rv && def.rv !== def.dv ? [String(def.rv)] : [],
+						};
+						this.pcSel = c.guid;
+						const f = def.sp && c.fields.find((x) => x.id === def.sp);
+						if (f) this.pcFieldValues(c.guid, f).then(() => this.pcRenderDialog());
+						this.pcRenderDialog();
+					});
+					list.appendChild(it);
+				}
+				if (!items.length) list.appendChild(mk('div', 'rs-pcd-empty', q ? 'No matches.' : 'All collections added.'));
+			};
+			fill();
+			input.addEventListener('input', fill);
+		});
+	}
+
+	pcOpenFieldPicker(anchor, collGuid, fields) {
+		this.pcPopover(anchor, 260, (pop) => {
+			const mk = this.pcMk;
+			const list = mk('div', 'rs-pcd-poplist');
+			pop.appendChild(list);
+			for (const f of fields) {
+				const it = mk('div', 'rs-pcd-popitem');
+				it.appendChild(mk('span', 'nm', f.label));
+				it.appendChild(mk('span', 'tag', f.type));
+				it.addEventListener('click', async () => {
+					const cfg = this.pcDraft[collGuid];
+					if (cfg.sp !== f.id) { cfg.sp = f.id; cfg.on = []; cfg.off = []; }
+					await this.pcFieldValues(collGuid, f);
+					this.pcRenderDialog();
+				});
+				list.appendChild(it);
+			}
+			if (!fields.length) list.appendChild(mk('div', 'rs-pcd-empty', 'No record or choice properties here.'));
+		});
+	}
+
+	pcOpenValuePicker(anchor, collGuid, fld, which) {
+		this.pcPopover(anchor, 260, (pop) => {
+			const mk = this.pcMk;
+			const list = mk('div', 'rs-pcd-poplist');
+			list.appendChild(mk('div', 'rs-pcd-empty', 'Loading...'));
+			pop.appendChild(list);
+			this.pcFieldValues(collGuid, fld).then((vals) => {
+				list.innerHTML = '';
+				const cfg = this.pcDraft[collGuid];
+				const taken = new Set([].concat(cfg.on || [], cfg.off || []));
+				const items = vals.filter((v) => !taken.has(v.id));
+				for (const v of items) {
+					const it = mk('div', 'rs-pcd-popitem');
+					it.appendChild(mk('span', 'nm', v.label));
+					it.addEventListener('click', () => {
+						cfg[which] = (cfg[which] || []).concat([v.id]);
+						this.pcRenderDialog();
+					});
+					list.appendChild(it);
+				}
+				if (!items.length) list.appendChild(mk('div', 'rs-pcd-empty', vals.length ? 'All values used.' : 'This property has no values.'));
+			});
+		});
+	}
+
+	pcPopover(anchor, width, build) {
+		this.pcClosePop();
+		const pop = this.pcMk('div', 'rs-pcd-pop');
+		pop.style.width = width + 'px';
+		build(pop);
+		this.pcDlg.appendChild(pop);
+		const r = anchor.getBoundingClientRect();
+		const left = Math.min(Math.max(8, r.left), window.innerWidth - width - 8);
+		const ph = pop.offsetHeight || 240;
+		const below = window.innerHeight - r.bottom;
+		pop.style.left = left + 'px';
+		pop.style.top = (below < ph + 12 && r.top > below
+			? Math.max(8, r.top - ph - 6)
+			: Math.min(r.bottom + 6, window.innerHeight - ph - 8)) + 'px';
+		this.pcPop = pop;
+		this.pcPopOut = (e) => {
+			if (pop.contains(e.target) || anchor.contains(e.target)) return;
+			this.pcClosePop();
+		};
+		setTimeout(() => document.addEventListener('pointerdown', this.pcPopOut, true), 0);
+		const inp = pop.querySelector('input');
+		if (inp) inp.focus();
+	}
+
+	pcClosePop() {
+		if (this.pcPopOut) { try { document.removeEventListener('pointerdown', this.pcPopOut, true); } catch (e) {} this.pcPopOut = null; }
+		if (this.pcPop) { this.pcPop.remove(); this.pcPop = null; }
+	}
+
+	async pcSaveDialog() {
+		const clean = {};
+		for (const g of Object.keys(this.pcDraft || {})) {
+			const c = this.pcDraft[g];
+			/* a box with nothing to read from is a lie — drop half-finished rows */
+			if (!c || !c.sp || !(c.on || []).length) continue;
+			clean[g] = { sp: c.sp, on: c.on.slice(), off: (c.off || []).slice() };
+		}
+		this.pageCheckCfg = clean;
+		this.pcWire = new Map(); /* configs changed: drop resolved wiring */
+		this.pcCloseDialog();
+		this.scheduleRepeatRefresh();
+		await this.savePrefs(); /* LAST — reloads the plugin */
 	}
 
 	/* ---- page timeblocks --------------------------------------------------
