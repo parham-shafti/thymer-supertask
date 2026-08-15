@@ -3680,7 +3680,11 @@ class Plugin extends AppPlugin {
 			const d = +code.slice(5);
 			const key = this.statusChords()[(d === 0 ? 10 : d) - 1];
 			const b = key && ORDER_BINS.find((x) => x.key === key);
-			if (b) return { kind: 'status', status: b.key === 'tasks' ? 'none' : b.statuses[0], label: b.label };
+			/* `key` is OUR bin key and rides along because a page has no task
+			 * status to set: it has a property whose values are mapped to these
+			 * same keys (see setPageStatus). `status` stays the Thymer status a
+			 * LINE takes. One chord, two vocabularies. */
+			if (b) return { kind: 'status', key: b.key, status: b.key === 'tasks' ? 'none' : b.statuses[0], label: b.label };
 		}
 		/* '?' is deliberately NOT accepted — on Swedish Pro that is Shift on
 		 * the + key, and ⌃⇧? is Thymer's own fold shortcut */
@@ -3706,13 +3710,24 @@ class Plugin extends AppPlugin {
 		}
 	}
 
-	/* ⌃digit: set the caret line's task status. Same status again clears it
-	 * (the timeblock toggle idiom, flagged as my call); Todo (⌃8) is an
-	 * explicit clear. The write fires the normal status event, so recurrence
-	 * advance and the ordering sweeps run exactly as if the status was set
-	 * by hand. Works on virtual live-search rows via editorSelection's remap. */
+	/* ⌃digit: set the status of the LINE the caret is on, or of the PAGE the
+	 * chord resolves to. Same status again clears it (the timeblock toggle
+	 * idiom, flagged as my call); Todo (⌃8) is an explicit clear. On a line the
+	 * write fires the normal status event, so recurrence advance and the
+	 * ordering sweeps run exactly as if the status was set by hand; on a page
+	 * it goes through the collection's status property, see setPageStatus.
+	 * Works on virtual live-search rows via editorSelection's remap. */
 	async setStatus(act) {
-		const line = this.lineSelection();
+		/* PAGES TAKE THE CHORD TOO (his 2026-08-15 ask: "det borde gå eftersom
+		 * hashtags funkar både på todo's och pages"). Resolved through the very
+		 * same dateTarget the ⌘digit hashtag chords use — focused collection
+		 * row, page row in a live search, lone page reference — so the three
+		 * chord families can never disagree about what a keypress acts on. */
+		const t = this.dateTarget();
+		if (t && t.err) { this.toast(t.err); return; }
+		if (t && t.kind === 'record') { await this.setPageStatus(t.guid, act); return; }
+		const line = t && t.kind === 'line' ? t.line : this.lineSelection();
+		if (line && line.recordGuid) { await this.setPageStatus(line.recordGuid, act); return; }
 		if (!line || !line.lineGuid || !line.pageGuid) { this.toast('Put the caret on a task line first.'); return; }
 		const pl = await this.pageLines(line.pageGuid);
 		const li = pl && pl.byG.get(line.lineGuid);
@@ -5964,6 +5979,11 @@ class Plugin extends AppPlugin {
 				sp: cfg.sp,
 				spType: type,
 				states: this.pcValueStates(cfg),
+				/* the same wiring READ BACKWARDS: status key -> the values that
+				 * mean it, in the order he arranged them. `states` answers
+				 * "what is this page", this answers "what do I write to make it
+				 * that", which is what the ⌃digit chords need on a page. */
+				map: map,
 				on: onV,
 				off: offV,
 				onLabel: (def.dvl && String(def.dv) === onV) ? def.dvl : 'Checked',
@@ -6274,6 +6294,14 @@ class Plugin extends AppPlugin {
 			const row = document.querySelector('.listitem[data-guid="' + domGuid + '"]');
 			const ld = row && row.querySelector(':scope > .line-div');
 			if (!ld) return 0;
+			/* NOT IN REFERENCES AND EMBEDS (his 2026-08-15 correction: "det var
+			 * ingen bra idé att dra tillbaka den, den går kant i kant med där
+			 * live embeden börjar"). Those render in a `listview-search-results`
+			 * editor whose rows start hard against the panel's own edge, so the
+			 * 2px this would win puts the box on that edge. There is no todo
+			 * column to line up with there in the first place. His rule: leave
+			 * it native there, as long as Live Queries keep the alignment. */
+			if (row.closest('listview-editor.listview-search-results')) return 0;
 			const rowPad = parseFloat(getComputedStyle(row).paddingLeft) || 0;
 			const ldPad = parseFloat(getComputedStyle(ld).paddingLeft) || 0;
 			const d = (ld.getBoundingClientRect().left + ldPad) - (row.getBoundingClientRect().left + rowPad);
@@ -6893,6 +6921,71 @@ class Plugin extends AppPlugin {
 			await this.setPagePropValue(prop, f.type, val);
 			this.toast((rec.getName() || 'Page') + ' · ' + (tb.label || tb.tag));
 		}
+	}
+
+	/* ---- page statuses ----------------------------------------------------
+	 * ⌃1-⌃9 on a PAGE writes the collection's status property, exactly as the
+	 * same chord sets a todo's status on a line. The mapping already exists and
+	 * is his: the Page Checkboxes configuration says which values of which
+	 * property mean In Progress, Important, Blocked and the rest, and the box
+	 * on a page row already READS it. This is that same table read the other
+	 * way, so a chord and a checkbox can never mean different things.
+	 *
+	 * Same-chord-again clears, the contract lines and timeblocks both keep. On
+	 * a page "cleared" is the Not Done bucket, because that is what an
+	 * unfinished page looks like here (the same answer unchecking the box
+	 * gives); a collection with no Not Done value empties the property instead.
+	 * ⌃8 (Todo) is an explicit Not Done and does not toggle. */
+	async setPageStatus(recGuid, act) {
+		const w = await this.pcWireOf(recGuid);
+		if (!w) { this.toast('Could not read that page.'); return; }
+		const name = (() => { try { return w.rec.getName() || 'Page'; } catch (e) { return 'Page'; } })();
+		if (!w.wire) {
+			this.toast(name + ' · no status wiring for this collection. Set it up under Page Checkboxes.');
+			return;
+		}
+		const wire = w.wire;
+		/* the configured map is the full table; the legacy repeat wiring knows
+		 * only done and its reset, so those two chords still work on a
+		 * collection that was never given a Page Checkboxes configuration */
+		const valueFor = (key) => {
+			if (wire.map) { const v = wire.map[key]; return (v && v.length) ? String(v[0]) : null; }
+			if (key === 'done') return wire.on || null;
+			if (key === 'tasks') return wire.off || null;
+			return null;
+		};
+		const cur = this.pcState(recGuid);
+		const same = cur && cur.state === act.key && act.key !== 'tasks';
+		const key = same ? 'tasks' : act.key;
+		const val = valueFor(key);
+		if (!val && key !== 'tasks') {
+			this.toast('No value is mapped to ' + (act.label || act.key) + ' for this collection.');
+			return;
+		}
+		/* optimistic overlay first, so every rendering of this page repaints
+		 * before the write lands — the same path pcToggle takes */
+		this.pcPend.set(recGuid, { v: val ? key : null, at: Date.now() });
+		try { this.refreshPageChecks(); } catch (e) {}
+		const prop = w.rec.prop(wire.sp);
+		if (!prop) { this.toast('Could not read that page’s status property.'); return; }
+		await this.setPagePropValue(prop, wire.spType, val);
+		const lbl = key === 'tasks' ? ((PC_STATE('tasks') || {}).label || 'Not Done') : (act.label || act.key);
+		this.toast(name + ' · ' + (val ? lbl : 'Status cleared'));
+	}
+
+	/* The status wiring of the collection a page belongs to, RESOLVED. pcState
+	 * answers "which state is this page in" and gives up while the wiring is
+	 * still being fetched, because it runs on every repaint and must not block;
+	 * a keyboard command has no such excuse, so this awaits the same
+	 * resolution. Returns null only when the record itself is unreadable. */
+	async pcWireOf(recGuid) {
+		const rec = this.data.getRecord(recGuid);
+		if (!rec) return null;
+		let collGuid = null;
+		try { collGuid = rec._getRow && rec._getRow().pguid; } catch (e) {}
+		if (!collGuid || !this.pcEnabled(collGuid)) return { rec, wire: null, collGuid };
+		if (!this.pcWire.has(collGuid)) { try { await this.pcResolveWire(collGuid); } catch (e) {} }
+		return { rec, wire: this.pcWire.get(collGuid) || null, collGuid };
 	}
 
 	/* slot -> the property's value id, cached per collection+field. Handles
