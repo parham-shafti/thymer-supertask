@@ -413,11 +413,25 @@ const STATUS_SHORTCUTS = ['started', 'important', 'alert', 'starred', 'billable'
  * on read, so a pref written by an older build — or one missing a status added
  * later — still yields all nine, in a sane order, exactly once. */
 function rsStatusOrder(stored) {
-	const out = [];
-	for (const k of (Array.isArray(stored) ? stored : [])) {
-		if (STATUS_SHORTCUTS.indexOf(k) >= 0 && out.indexOf(k) < 0) out.push(k);
+	/* TEN SLOTS, HOLES AND ALL — the same model the hashtags use, and for the
+	 * same reason: the chord IS the position, so without holes ⌃0 could only be
+	 * reached by filling the nine before it. Nine statuses into ten slots means
+	 * at least one hole by definition. Positions are preserved from the stored
+	 * array; anything missing drops into the first free slot, so a pref written
+	 * by an older build still yields all nine, exactly once. */
+	const out = new Array(TB_SLOTS).fill(null);
+	const seen = new Set();
+	const src = Array.isArray(stored) ? stored : [];
+	for (let i = 0; i < Math.min(src.length, TB_SLOTS); i++) {
+		const k = src[i];
+		if (STATUS_SHORTCUTS.indexOf(k) >= 0 && !seen.has(k)) { out[i] = k; seen.add(k); }
 	}
-	for (const k of STATUS_SHORTCUTS) if (out.indexOf(k) < 0) out.push(k);
+	for (const k of STATUS_SHORTCUTS) {
+		if (seen.has(k)) continue;
+		const free = out.indexOf(null);
+		if (free < 0) break;
+		out[free] = k; seen.add(k);
+	}
 	return out;
 }
 
@@ -431,13 +445,17 @@ function rsStatusOrder(stored) {
  * ctrl+alt together and matches nothing. */
 const IS_MAC = /Mac|iPhone|iPad|iPod/.test((navigator.platform || '') + (navigator.userAgent || ''));
 /* labels for settings, the shortcuts card and toasts */
-const KEY_TAG = (n) => (IS_MAC ? '⌘' : 'Ctrl+') + n;
-const KEY_STATUS = (n) => (IS_MAC ? '⌃' : 'Alt+') + n;
+/* SLOT 10 IS THE 0 KEY — it sits right after 9 on the keyboard, so the tenth
+ * slot is ⌘0 / ⌃0 rather than a chord nobody can reach (his 2026-08-15 ask). */
+const TB_SLOTS = 10; /* ⌘1-9 then ⌘0 — ten keys, ten slots, holes allowed */
+const KEY_N = (n) => (n >= 10 ? '0' : String(n));
+const KEY_TAG = (n) => (IS_MAC ? '⌘' : 'Ctrl+') + KEY_N(n);
+const KEY_STATUS = (n) => (IS_MAC ? '⌃' : 'Alt+') + KEY_N(n);
 /* The same chords, SPELLED OUT, for the settings chips. The glyphs are right
  * in running text next to the thing they act on, but a chip on its own has no
  * context — "Ctrl + 1" reads on any platform (his call 2026-08-15). */
-const KEY_TAG_TXT = (n) => (IS_MAC ? 'Meta + ' : 'Ctrl + ') + n;
-const KEY_STATUS_TXT = (n) => (IS_MAC ? 'Ctrl + ' : 'Alt + ') + n;
+const KEY_TAG_TXT = (n) => (IS_MAC ? 'Meta + ' : 'Ctrl + ') + KEY_N(n);
+const KEY_STATUS_TXT = (n) => (IS_MAC ? 'Ctrl + ' : 'Alt + ') + KEY_N(n);
 const KEY_BOX = IS_MAC ? '⌘⇧S' : 'Ctrl+Shift+S';
 const KEY_NUDGE = IS_MAC ? '⌃+ / ⌃−' : 'Alt++ / Alt+−';
 
@@ -825,6 +843,24 @@ html.is-dark {
 .rs-p-btn.is-hidden { visibility: hidden; }
 /* the accent link sits above the rows it adds to */
 .rs-p-secbox .rs-pc-link { display: block; margin: 16px 0; }
+.rs-p-savebar { display: flex; justify-content: flex-end; margin: 18px 0 0; }
+/* an unclaimed slot: present, quiet, and clickable — it owns its chord */
+.rs-p-secbox .rs-p-row.is-empty { opacity: .45; }
+.rs-p-secbox .rs-p-row.is-empty:hover { opacity: .8; }
+.rs-tb-claim {
+	flex: 1; min-width: 0; text-align: left; padding: 0;
+	border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer;
+}
+/* The primary button, on the shape Move To and Dumb Folders already use:
+ * Thymer's own --ed-button-primary-bg, white label, brightness on hover. Mine
+ * was a quiet outline, which read as secondary next to theirs. */
+.rs-p-done {
+	min-width: 96px; padding: 8px 18px; border-radius: 4px; cursor: pointer;
+	border: 1px solid transparent;
+	background: var(--ed-button-primary-bg, var(--color-primary-500, #3aa37f));
+	color: #fff; font: inherit; font-weight: 600;
+}
+.rs-p-done:hover { filter: brightness(1.18); }
 /* the tick is Thymer's accent, as he drew it */
 .rs-p-secbox .rs-p-row input[type="checkbox"] {
 	width: 17px; height: 17px; margin: 0; flex: 0 0 auto;
@@ -847,7 +883,7 @@ html.is-dark {
 .rs-p-secbox .rs-p-btn:hover { opacity: .95; background: color-mix(in srgb, currentColor 10%, transparent); }
 /* the picker button in a status row: icon, label and chevron each spaced */
 .rs-pcstat-pick .rs-p-ic { flex: 0 0 auto; }
-.rs-pcstat-pick.is-fixed { color: #69696C; cursor: default; }
+.rs-pcstat-pick.is-fixed { color: #8C8C92; cursor: default; }
 html.is-light .rs-pcstat-pick.is-fixed { color: color-mix(in srgb, currentColor 55%, transparent); }
 .rs-pcstat-pick .lbl { padding: 0 2px; }
 .rs-p-secbox .rs-p-sec { margin: 0; }
@@ -882,6 +918,8 @@ html.is-light .rs-pcstat-pick.is-fixed { color: color-mix(in srgb, currentColor 
 /* a collection is frozen while the global rule is on */
 .rs-pcrow.is-locked { opacity: .45; }
 .rs-pcrow.is-locked > .rs-pcrow-head { cursor: default; }
+.rs-pcrow-head.is-static { cursor: default; }
+.rs-pcrow-head.is-static:hover .rs-p-name { opacity: 1; }
 .rs-pcrow-head .rs-p-chev { font-size: 12px; opacity: .55; }
 .rs-pcrow-head .rs-p-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rs-pcrow-body { padding: 16px 16px 20px; }
@@ -3080,7 +3118,11 @@ function rsMenu(anchor, items, current, onPick, cfg) {
 	document.addEventListener("keydown", onKey, true);
 
 	document.body.appendChild(menu);
-	const r = anchor.getBoundingClientRect();
+	/* cfg.alignTo lets a host line the menu up with the FIELD rather than with
+	 * the control that opened it. A "+" button at the end of a row is a tiny
+	 * anchor, and hanging a 300px menu off its left edge puts the menu far out
+	 * to the right of the thing it belongs to (his 2026-08-15 report). */
+	const r = (cfg.alignTo || anchor).getBoundingClientRect();
 	const M = 8;
 	// Native picker width, never narrower than the control it belongs to.
 	menu.style.width = Math.max(r.width, cfg.width != null ? cfg.width : 320) + "px";
@@ -3438,6 +3480,8 @@ class Plugin extends AppPlugin {
 			this.upgradeBins().then(after).catch(after);
 		}, 2000);
 
+		this.pcCat = null; /* the catalog gained an `icon` field — never serve a stale shape */
+		this.rsReclaimCommands(); /* before registering ours, take back the old set */
 		this.cmd = this.rsCmd({
 			/* ti-calendar-clock is NOT in Thymer's Tabler subset (0 hits in
 			 * appui.css) — it rendered blank; calendar-bolt exists */
@@ -3481,7 +3525,7 @@ class Plugin extends AppPlugin {
 			icon: 'ti-tag',
 			/* preset built at CLICK time so it always reflects the current
 			 * ⌘1-9 slots from settings */
-			onSelected: () => this.toggleOrder({ m: 'h', k: (this.tbSlots || []).map((s) => s.tag).concat(['tasks', 'done']) }).catch(() => {}),
+			onSelected: () => this.toggleOrder({ m: 'h', k: (this.tbSlots || []).filter(Boolean).map((s) => s.tag).concat(['tasks', 'done']) }).catch(() => {}),
 		});
 	}
 
@@ -3494,13 +3538,30 @@ class Plugin extends AppPlugin {
 	rsCmd(opts) {
 		const c = this.ui.addCommandPaletteCommand(opts);
 		(this.cmds || (this.cmds = [])).push(c);
+		try { (window.__rsCmds || (window.__rsCmds = [])).push(c); } catch (e) {}
 		return c;
+	}
+
+	/* TAKE BACK EVERY COMMAND A PREVIOUS INSTANCE LEFT BEHIND.
+	 * Doing this in onUnload was not enough: a hot reload builds a NEW instance
+	 * and does not appear to unload the old one, so that path never ran and each
+	 * deploy still added a full duplicate set — every Supertask command several
+	 * times over, each copy bound to a DEAD instance, so picking one ran old
+	 * code. The register therefore lives on `window`, outside any instance,
+	 * exactly like the stylesheet eviction: whoever loads next owns the cleanup.
+	 * onUnload still clears it as well, for the genuine disable/remove case. */
+	rsReclaimCommands() {
+		let list = [];
+		try { list = window.__rsCmds || []; } catch (e) { return; }
+		for (const c of list) { try { if (c && c.remove) c.remove(); } catch (e) {} }
+		try { window.__rsCmds = []; } catch (e) {}
 	}
 
 	onUnload() {
 		this.dead = true; /* pending sweep/unsweep timers check this */
 		for (const c of (this.cmds || [])) { try { if (c && c.remove) c.remove(); } catch (e) {} }
 		this.cmds = null;
+		try { window.__rsCmds = []; } catch (e) {}
 		this.closeSettings();
 		this.closePicker();
 		try { if (this.recurHandler) this.events.off(this.recurHandler); } catch (e) {}
@@ -3603,8 +3664,9 @@ class Plugin extends AppPlugin {
 		if (tagMod && e.shiftKey && code === 'KeyS') return { kind: 'pick' };
 
 		if (!statusMod) return null;
-		if (!e.shiftKey && /^Digit[1-9]$/.test(code)) {
-			const key = this.statusChords()[+code.slice(5) - 1];
+		if (!e.shiftKey && /^Digit[0-9]$/.test(code)) {
+			const d = +code.slice(5);
+			const key = this.statusChords()[(d === 0 ? 10 : d) - 1];
 			const b = key && ORDER_BINS.find((x) => x.key === key);
 			if (b) return { kind: 'status', status: b.key === 'tasks' ? 'none' : b.statuses[0], label: b.label };
 		}
@@ -3658,11 +3720,16 @@ class Plugin extends AppPlugin {
 	 * TITLE is what the UI shows (rows, toasts, the shortcuts card); the tag
 	 * is what lands on the line. Older prefs stored bare strings or
 	 * {tag,label} — both migrate on read. */
+	/* TEN FIXED SLOTS, HOLES AND ALL. The chord IS the position, so compacting
+	 * the list the way this used to would make ⌘0 reachable only by filling the
+	 * nine before it (his 2026-08-15 question: "1-4 och sen 0, går det?"). An
+	 * empty slot is `null` and keeps its place; every consumer skips nulls. */
 	applySlots(slots) {
 		if (!Array.isArray(slots)) return;
-		const out = [];
-		for (const sIn of slots) {
-			if (out.length >= 9) break;
+		const out = new Array(TB_SLOTS).fill(null);
+		const seen = new Set();
+		for (let i = 0; i < Math.min(slots.length, TB_SLOTS); i++) {
+			const sIn = slots[i];
 			let tag = '';
 			let title = '';
 			if (typeof sIn === 'string') tag = sIn;
@@ -3670,11 +3737,16 @@ class Plugin extends AppPlugin {
 			tag = String(tag).trim().replace(/\s+/g, '');
 			if (!tag) continue;
 			if (tag[0] !== '#') tag = '#' + tag;
-			if (tag.length > 1 && !out.some((x) => x.tag === tag)) out.push({ tag, title });
+			if (tag.length < 2 || seen.has(tag)) continue;
+			seen.add(tag);
+			out[i] = { tag, title };
 		}
 		this.tbSlots = out;
-		this.timeblocks = out.map((s2, i) => ({ code: 'Digit' + (i + 1), tag: s2.tag, label: s2.title || s2.tag.slice(1) }));
-		this.timeblockTags = new Set(out.map((s2) => s2.tag));
+		/* slot 10 answers to Digit0, the key that actually sits after 9 */
+		this.timeblocks = out.map((s2, i) => (s2
+			? { code: 'Digit' + (i === 9 ? 0 : i + 1), tag: s2.tag, label: s2.title || s2.tag.slice(1) }
+			: null)).filter(Boolean);
+		this.timeblockTags = new Set(out.filter(Boolean).map((s2) => s2.tag));
 	}
 
 	applyPrefs(p) {
@@ -3752,7 +3824,7 @@ class Plugin extends AppPlugin {
 	 * write-through to config for other devices. NOTE: saveConfiguration
 	 * reloads the plugin, so this is always the LAST thing an interaction does. */
 	async savePrefs() {
-		const p = { rev: Date.now(), slots: this.tbSlots, globalBins: (this.globalBins || []).slice(), progress: !!this.progressGlobal, progressTodos: !!this.progressTodos, statusOrder: this.statusOrder || STATUS_SHORTCUTS.slice(), pageCheckGlobalOn: !!this.pageCheckGlobalOn, pageCheckGlobal: this.pageCheckGlobal || null, pageCheckCfg: this.pageCheckCfg || {}, pageRules: this.pageRules || {}, pageDefaults: this.pageDefaults || {} };
+		const p = { rev: Date.now(), slots: this.tbSlots, globalBins: (this.globalBins || []).slice(), progress: !!this.progressGlobal, progressTodos: !!this.progressTodos, statusOrder: this.statusOrder || rsStatusOrder(STATUS_SHORTCUTS), pageCheckGlobalOn: !!this.pageCheckGlobalOn, pageCheckGlobal: this.pageCheckGlobal || null, pageCheckCfg: this.pageCheckCfg || {}, pageRules: this.pageRules || {}, pageDefaults: this.pageDefaults || {} };
 		this.prefsRev = p.rev;
 		try { localStorage.setItem('rs_prefs', JSON.stringify(p)); } catch (e) {}
 		try {
@@ -3816,8 +3888,7 @@ class Plugin extends AppPlugin {
 			const tag = inp.value.trim();
 			const titleInp = panel.querySelector('.rs-tb-title');
 			const title = titleInp ? titleInp.value.trim() : '';
-			if (tag) draft.slots[i] = { tag, title };
-			else draft.slots.splice(i, 1);
+			draft.slots[i] = tag ? { tag, title } : null; /* a hole, never a shift */
 			dirty = true;
 			editIdx = -1;
 			this.applySlots(draft.slots);
@@ -3923,7 +3994,7 @@ class Plugin extends AppPlugin {
 							+ '<span class="lbl">' + st.label + '</span></span>'
 						: '<button type="button" class="rs-pcstat-pick rs-pc-spick" data-col="' + esc(g) + '" data-k="' + (st ? st.key : '') + '">'
 							+ '<span class="rs-p-ic ti ' + (st ? st.icon : 'ti-plus') + '"></span>'
-							+ '<span class="lbl">' + (st ? st.label : 'Choose a status') + '</span>'
+							+ '<span class="lbl">' + (st ? st.label : 'Choose a Status') + '</span>'
 							+ '<span class="rs-pcstat-chev ti ti-chevron-down"></span>'
 							+ '</button>')
 					+ (st ? (map[st.key] || []).map((v) =>
@@ -3944,16 +4015,7 @@ class Plugin extends AppPlugin {
 							+ unmapped.map((v) => esc(v.label)).join(', ')
 							+ '. A page with the property empty never gets one either.</p>'
 						: '')
-					+ '<div class="rs-pcd-label rs-pcd-sec">Unchecking writes</div>'
-					+ '<p class="rs-pcd-hint">The single value written when you untick a Done page.</p>'
-					+ '<div class="rs-pcd-chips">'
-					+ ((c.off || []).length
-						? '<span class="rs-pcd-chip is-val"><span class="lbl">' + esc(this.pcLabelFor(vc, fld.id, c.off[0])) + '</span>'
-							+ '<button type="button" class="x rs-pc-vx" data-col="' + esc(g) + '" data-w="off" data-v="' + esc(c.off[0]) + '">✕</button></span>'
-						: '<span class="rs-pcd-hint" style="margin:0 6px 0 0">Clears the property.</span>')
-					+ '<button type="button" class="rs-pcd-chip rs-pcd-addval rs-pc-vadd" data-col="' + esc(g) + '" data-w="off">'
-					+ ((c.off || []).length ? 'Change' : '+ Set value') + '</button>'
-					+ '</div>';
+					;
 			};
 
 			/* THE GLOBAL ROW, always first and always present (his ask). It is
@@ -3963,10 +4025,12 @@ class Plugin extends AppPlugin {
 			 * there is exactly one editor to maintain, not two. */
 			const gl = this.pageCheckGlobal || null;
 			const on = !!this.pageCheckGlobalOn;
-			const glOpen = this.pcOpenRow === '*';
+			/* while the switch is on this group has nothing to fold away from —
+			 * it IS the configuration, so it stays open (his call) */
+			const glOpen = true;
 			const glRow = !on ? '' : '<div class="rs-pcrow' + (glOpen ? ' is-open' : '') + '">'
-				+ '<div class="rs-pcrow-head" data-col="*">'
-				+ '<span class="rs-p-chev ti ' + (glOpen ? 'ti-chevron-down' : 'ti-chevron-right') + '"></span>'
+				+ '<div class="rs-pcrow-head is-static">'
+				+ '<span class="rs-p-chev ti ti-chevron-down"></span>'
 				+ '<span class="rs-p-name">Global Page Checkboxes</span>'
 				+ '</div>'
 				+ (glOpen
@@ -4028,13 +4092,21 @@ class Plugin extends AppPlugin {
 				+ 'the Done group starts collapsed. Nothing ticked turns it off, and a section’s ⋯ menu always overrides it. '
 				+ 'The ' + KEY_STATUS(1) + ' to ' + KEY_STATUS(9) + ' shortcuts set a line’s status anywhere, ticked or not; the same chord again clears it. '
 				+ 'The arrows decide which chord sets which status.</p>'
-				+ '<button type="button" class="rs-pc-link rs-so-reset">+ Map Status</button>'
 				+ '<div class="rs-p-list">'
 				+ (() => {
 					const ord = this.statusChords();
 					return ord.map((key, i) => {
-						const b = ORDER_BINS.find((x) => x.key === key);
-						if (!b) return '';
+						const b = key && ORDER_BINS.find((x) => x.key === key);
+						if (!b) {
+							/* An empty slot stays visible because it owns its chord — a
+							 * status is moved into it with the arrows. NOT "Unassigned":
+							 * that promises an assignment gesture there is none of, since
+							 * all nine statuses are always placed and no tenth exists.
+							 * "Unused" just states what is true of the key. */
+							return '<div class="rs-p-line"><div class="rs-p-row is-empty">'
+								+ '<span class="rs-p-name">Unused</span></div>'
+								+ '<span class="rs-p-key">' + KEY_STATUS_TXT(i + 1) + '</span></div>';
+						}
 						const on = (this.globalBins || []).indexOf(b.key) >= 0;
 						/* the label is NOT part of the row: a <label> would make the
 						 * arrows toggle the checkbox as well as move the row */
@@ -4094,11 +4166,8 @@ class Plugin extends AppPlugin {
 					'<p class="rs-p-sub rs-p-secsub">' + KEY_TAG(1) + ' to ' + KEY_TAG(9) + ' tag the current line; the row is the key. '
 					+ 'Use anything your flow sorts by: timeblocks, priorities, statuses. '
 					+ 'The arrows decide which chord tags with which hashtag.</p>'
-					+ (draft.slots.length < 9
-						? '<button type="button" class="rs-pc-link rs-tb-add">+ Map Hashtag</button>'
-						: '')
 					+ '<div class="rs-p-list">'
-				+ draft.slots.map((slot, i) => {
+				+ Array.from({ length: TB_SLOTS }, (_, i) => draft.slots[i]).map((slot, i) => {
 					const so = typeof slot === 'string' ? { tag: slot, title: '' } : (slot || { tag: '', title: '' });
 					return i === editIdx
 						/* edit mode is the SAME row, not a different shape: same
@@ -4112,18 +4181,28 @@ class Plugin extends AppPlugin {
 							+ '</span>'
 							+ '<span class="rs-p-acts"><button type="button" class="rs-p-btn rs-tb-ok ti ti-check"></button></span>'
 							+ '</div><span class="rs-p-key">' + KEY_TAG_TXT(i + 1) + '</span></div>'
-						: '<div class="rs-p-line"><div class="rs-p-row">'
+						: '<div class="rs-p-line"><div class="rs-p-row' + (slot ? '' : ' is-empty') + '" data-i="' + i + '">'
 							+ '<span class="rs-p-ic ti ti-hash"></span>'
-							+ '<span class="rs-p-name">' + esc(so.title || so.tag) + '</span>'
+							+ (slot
+								? '<span class="rs-p-name">' + esc(so.title || so.tag) + '</span>'
+								/* an empty slot still owns its chord — it is the row you
+								 * click to claim that key, which is what lets him use
+								 * 1-4 and then 0 without filling the six between */
+								: '<button type="button" class="rs-p-name rs-tb-claim" data-i="' + i + '">Add a hashtag</button>')
 							+ '<span class="rs-p-acts">'
-							+ arrows('rs-ho', i, draft.slots.length)
-							+ '<button type="button" class="rs-p-btn rs-tb-edit ti ti-pencil" data-i="' + i + '"></button>'
-							+ '<button type="button" class="rs-p-btn is-danger rs-tb-x ti ti-trash" data-i="' + i + '"></button>'
+							+ (slot ? arrows('rs-ho', i, TB_SLOTS) : '')
+							+ (slot ? '<button type="button" class="rs-p-btn rs-tb-edit ti ti-pencil" data-i="' + i + '"></button>' : '')
+							+ (slot ? '<button type="button" class="rs-p-btn is-danger rs-tb-x ti ti-trash" data-i="' + i + '"></button>' : '')
 							+ '</span></div><span class="rs-p-key">' + KEY_TAG_TXT(i + 1) + '</span></div>';
 				}).join('')
 				+ '</div>')
 				+ '</div>'
-				+ '<p class="rs-p-sub" style="margin:12px 0 0">Saved when this window closes.</p>';
+				/* One button, and its LABEL is the honest state: Save while there
+				 * is something to write, Done when there is not. The old line
+				 * ("Saved when this window closes") asked him to trust a promise
+				 * instead of showing him where he stood. */
+				+ '<div class="rs-p-savebar"><button type="button" class="rs-p-done">'
+				+ (dirty || this.pcChanged ? 'Save' : 'Done') + '</button></div>';
 			const inp = panel.querySelector('.rs-tb-tag');
 			if (inp) { inp.focus({ preventScroll: true }); inp.select(); }
 		};
@@ -4173,6 +4252,7 @@ class Plugin extends AppPlugin {
 				this.pcTouch(); dirty = true; render();
 				return;
 			}
+			syncFoot();
 			if (cl && cl.contains('rs-gb')) {
 				const key = e.target.getAttribute('data-k');
 				const cur = (this.globalBins || []).slice();
@@ -4184,6 +4264,7 @@ class Plugin extends AppPlugin {
 		});
 		panel.addEventListener('click', (e) => {
 			const t = e.target.closest ? e.target.closest('button') : null;
+			if (t && t.classList.contains('rs-p-done')) { this.closeSettings(); return; }
 			/* the page-checkbox rows, before the generic button handling below:
 			 * each one carries the collection guid on the button itself, and the
 			 * pickers anchor on the very button that was clicked */
@@ -4222,8 +4303,8 @@ class Plugin extends AppPlugin {
 				const g = t.getAttribute('data-col'); const w = t.getAttribute('data-w'); const v = t.getAttribute('data-v');
 				const c = this.pcCfgFor(g);
 				if (c) {
-					const bucket = w === 'off' ? c : this.pcMap(c);
-					bucket[w] = (bucket[w] || []).filter((y) => y !== v);
+					const m = this.pcMap(c);
+					m[w] = (m[w] || []).filter((y) => y !== v);
 				}
 				this.pcTouch(); render(); return;
 			}
@@ -4254,7 +4335,10 @@ class Plugin extends AppPlugin {
 				const list = t.classList.contains('rs-so')
 					? (this.statusOrder = this.statusChords().slice())
 					: draft.slots;
-				if (j < 0 || j >= list.length) return;
+				/* the bound is the SLOT COUNT, not the filled length: swapping with
+				 * an empty neighbour is exactly how a status reaches ⌃0 */
+				if (j < 0 || j >= TB_SLOTS) return;
+				while (list.length < TB_SLOTS) list.push(null);
 				const tmp = list[i]; list[i] = list[j]; list[j] = tmp;
 				if (t.classList.contains('rs-ho')) { this.applySlots(draft.slots); draft.slots = this.tbSlots.slice(); }
 				dirty = true;
@@ -4262,12 +4346,22 @@ class Plugin extends AppPlugin {
 				return;
 			}
 			if (t.classList.contains('rs-so-reset')) {
-				this.statusOrder = STATUS_SHORTCUTS.slice();
+				this.statusOrder = rsStatusOrder(STATUS_SHORTCUTS);
 				dirty = true; render(); return;
+			}
+
+			if (t.classList.contains('rs-tb-claim')) {
+				if (editIdx >= 0) commitEdit();
+				const k = +t.getAttribute('data-i');
+				draft.slots[k] = { tag: '', title: '' };
+				editIdx = k;
+				render();
+				return;
 			}
 			if (t.classList.contains('rs-tb-add')) {
 				if (editIdx >= 0) commitEdit();
-				if (draft.slots.length < 9) { draft.slots.push({ tag: '', title: '' }); editIdx = draft.slots.length - 1; }
+				const free = Array.from({ length: TB_SLOTS }, (_, k) => k).find((k) => !draft.slots[k]);
+				if (free !== undefined) { draft.slots[free] = { tag: '', title: '' }; editIdx = free; }
 				render();
 			} else if (t.classList.contains('rs-tb-edit')) {
 				if (editIdx >= 0) commitEdit();
@@ -4278,7 +4372,7 @@ class Plugin extends AppPlugin {
 				render();
 			} else if (t.classList.contains('rs-tb-x')) {
 				if (editIdx >= 0) commitEdit();
-				draft.slots.splice(+t.getAttribute('data-i'), 1);
+				draft.slots[+t.getAttribute('data-i')] = null;
 				dirty = true;
 				this.applySlots(draft.slots);
 				draft.slots = this.tbSlots.slice();
@@ -4291,7 +4385,17 @@ class Plugin extends AppPlugin {
 		/* the pickers live outside this closure (they are anchored popovers
 		 * shared with nothing else now), so they reach back in through these */
 		this.pcRepaint = () => { if (this.settingsEls) render(); };
-		this.pcTouch = () => { this.pcChanged = true; this.pcWire = new Map(); this.scheduleRepeatRefresh(); };
+		/* the footer label is the only thing a plain toggle changes, so update it
+		 * in place rather than rebuilding the panel under the pointer */
+		const syncFoot = () => {
+			const b = panel.querySelector('.rs-p-done');
+			if (b) b.textContent = (dirty || this.pcChanged) ? 'Save' : 'Done';
+		};
+		this.pcSyncFoot = syncFoot;
+		this.pcTouch = () => {
+			this.pcChanged = true; this.pcWire = new Map(); this.scheduleRepeatRefresh();
+			if (this.pcSyncFoot) this.pcSyncFoot();
+		};
 
 		/* the close-time persist: slots are already live via applySlots */
 		this.settingsSave = () => {
@@ -4309,7 +4413,7 @@ class Plugin extends AppPlugin {
 					/* a collection with no value mapped to anything draws no box
 					 * anywhere, so it is not a configuration — drop it */
 					if (!Object.keys(m).length) continue;
-					clean[g] = { sp: c.sp, map: m, off: (c.off || []).slice() };
+					clean[g] = { sp: c.sp, map: m };
 				}
 				this.pageCheckCfg = clean;
 				const gl = this.pageCheckGlobal;
@@ -4318,7 +4422,7 @@ class Plugin extends AppPlugin {
 					const m2 = {};
 					for (const st of PC_STATES) if ((gm[st.key] || []).length) m2[st.key] = gm[st.key].slice();
 					this.pageCheckGlobal = (String(gl.name || '').trim() && Object.keys(m2).length)
-						? { name: String(gl.name).trim(), map: m2, off: (gl.off || []).slice() }
+						? { name: String(gl.name).trim(), map: m2 }
 						: null;
 				}
 				this.pcWire = new Map();
@@ -4334,6 +4438,12 @@ class Plugin extends AppPlugin {
 		back.addEventListener('pointerdown', (e) => { if (e.target === back) this.closeSettings(); });
 		this.settingsKeys = (e) => {
 			if (!this.settingsEls) return;
+			/* THE MENU OWNS THE KEYBOARD WHILE IT IS OPEN. This handler is on the
+			 * window in CAPTURE phase and used to stopPropagation() Enter, which
+			 * starved the menu's own handler — arrows moved the highlight but
+			 * Enter never picked it, so a value could only be chosen with the
+			 * mouse (his report). Same trap as the popover Enter in v1.4.1. */
+			if (rsM.el && e.key !== 'Escape') return;
 			if (e.key === 'Escape') {
 				e.preventDefault(); e.stopPropagation();
 				if (rsM.el) { rsCloseMenu(); return; } /* a picker closes before the panel does */
@@ -5831,7 +5941,13 @@ class Plugin extends AppPlugin {
 			const def = (this.pageDefaults || {})[collGuid] || {};
 			const map = this.pcMap(cfg);
 			const onV = (map.done || []).length ? String(map.done[0]) : null;
-			const offV = (cfg.off || []).length ? String(cfg.off[0]) : null;
+			/* UNCHECKING WRITES NOT DONE. There is no separate reset value to
+			 * configure any more (his call 2026-08-15): the Not Done bucket
+			 * already says what an unfinished page looks like, so a second
+			 * setting for the same question was just a way to disagree with
+			 * yourself. A collection with no Not Done value clears instead,
+			 * which is the only case where there is nothing to write. */
+			const offV = (map.tasks || []).length ? String(map.tasks[0]) : null;
 			this.pcWire.set(collGuid, {
 				sp: cfg.sp,
 				spType: type,
@@ -6245,8 +6361,8 @@ class Plugin extends AppPlugin {
 		if (!st) return;
 		/* A click toggles DONE, from any state (his call). Every other status is
 		 * an indicator: it says what the page is, and clicking still means
-		 * "finish this". Unchecking writes the configured reset value, or
-		 * clears the property when none is set. */
+		 * "finish this". Unchecking writes the first Not Done value, or clears
+		 * the property when that bucket is empty. */
 		const next = st.state === 'done' ? null : 'done';
 		if (next === 'done' && !st.wire.on) { this.toast('No value is mapped to Done for this collection.'); return; }
 		this.pcPend.set(info.recGuid, { v: next, at: Date.now() });
@@ -6274,7 +6390,7 @@ class Plugin extends AppPlugin {
 	 * same for unchecked, and its FIRST entry is what unchecking writes. */
 
 	/* Which status each ⌃1-⌃9 chord sets, in chord order. */
-	statusChords() { return this.statusOrder && this.statusOrder.length ? this.statusOrder : STATUS_SHORTCUTS; }
+	statusChords() { return (this.statusOrder && this.statusOrder.length) ? this.statusOrder : rsStatusOrder(STATUS_SHORTCUTS); }
 
 	pcCfg() { return this.pageCheckCfg || (this.pageCheckCfg = {}); }
 
@@ -6310,7 +6426,7 @@ class Plugin extends AppPlugin {
 			/* `off` used to be "every value that means unchecked", of which
 			 * only the first was ever written. The statuses own the display
 			 * question now, so it collapses to the one value it always was. */
-			if ((cfg.off || []).length > 1) cfg.off = [cfg.off[0]];
+			delete cfg.off; /* the reset value is gone: Not Done answers for it */
 		}
 		return cfg.map;
 	}
@@ -6373,7 +6489,7 @@ class Plugin extends AppPlugin {
 					.filter((f) => f && f.active !== false && (f.type === 'record' || f.type === 'choice'))
 					.map((f) => ({ id: f.id, label: f.label || f.name || f.id, type: f.type,
 						choices: f.choices || null, link: f.filter_colguid || null }));
-				out.push({ guid: g, name: conf.name || ('...' + g.slice(-6)), fields });
+				out.push({ guid: g, name: conf.name || ('...' + g.slice(-6)), icon: conf.icon || '', fields });
 				if (this.pcColNames) this.pcColNames[g] = conf.name || '';
 			}
 		} catch (e) {}
@@ -6392,27 +6508,82 @@ class Plugin extends AppPlugin {
 		let out = [];
 		try {
 			if (f.type === 'choice') {
+				/* A choice carries its own icon AND its enum colour index in the
+				 * schema — measured on a live field: {active,color,icon,id,label}.
+				 * The shared menu renders both, which is what makes it read like
+				 * Thymer's own picker instead of a column of dots. His Budget
+				 * Category is a CHOICE field, not a record one, so none of the
+				 * record-side icon fallback could ever reach it. Inactive choices
+				 * are dropped: they cannot be set. */
 				out = (f.choices || []).map((c) => (typeof c === 'string'
-					? { id: c, label: c }
-					: { id: String(c.id !== undefined ? c.id : c.value), label: String(c.label !== undefined ? c.label : (c.name || c.id)) }));
+					? { id: c, label: c, icon: '' }
+					: {
+						id: String(c.id !== undefined ? c.id : c.value),
+						label: String(c.label !== undefined ? c.label : (c.name || c.id)),
+						icon: c.icon || '',
+						color: c.color,
+						active: c.active,
+					})).filter((c) => c.active !== false);
 			} else if (f.link) {
 				const cols = await this.data.getAllCollections();
 				const sc = (cols || []).find((c) => {
 					try { return (c.guid || (c.getGuid && c.getGuid())) === f.link; } catch (e) { return false; }
 				});
+				let scIcon = '';
+				try { scIcon = (sc && sc.getConfiguration && sc.getConfiguration().icon) || ''; } catch (e) {}
 				let recs = sc && sc.getAllRecords ? sc.getAllRecords() : [];
 				if (recs && typeof recs.then === 'function') recs = await recs;
 				for (const r of recs || []) {
-					let g = null; let nm = '';
+					let g = null; let nm = ''; let row = null;
 					try { g = r.guid || (r._getRow && r._getRow().guid); } catch (e) {}
 					try { nm = r.getName ? r.getName() : ''; } catch (e) {}
-					if (g) out.push({ id: String(g), label: nm || String(g).slice(-6) });
+					try { row = r._getRow ? r._getRow() : null; } catch (e) {}
+					if (g) out.push({ id: String(g), label: nm || String(g).slice(-6),
+						icon: this.pcRecordIcon(r, scIcon), at: (row && (row.u_at || row.c_at)) || 0 });
 				}
-				out.sort((a, b) => String(a.label).localeCompare(String(b.label)));
+				/* MOST RECENTLY TOUCHED FIRST, not alphabetical. Saved Searches
+				 * established this against Thymer's own pickers: his Timeblocks
+				 * come out in the order of a day that way and in no other. */
+				out.sort((a, b) => ((b.at || 0) - (a.at || 0)) || String(a.label).localeCompare(String(b.label)));
 			}
 		} catch (e) {}
 		this.pcVals.set(key, out);
 		return out;
+	}
+
+	/* A value's own icon, so the picker reads like Thymer's — the dots were mine.
+	 * `getIcon()` IS the accessor Thymer renders from; the "Icon" property is a
+	 * workspace convention that usually agrees, so it is the fallback, not the
+	 * source. A page with no icon answers nothing, and a dot is then honest. */
+	pcPageIcon(r) {
+		try {
+			const i = r.getIcon && r.getIcon();
+			if (typeof i === 'string' && i.indexOf('ti-') === 0) return i;
+		} catch (e) {}
+		try {
+			const ip = r.prop && r.prop('Icon');
+			const t = ip && ip.texts ? ip.texts() : null;
+			if (t && typeof t[0] === 'string' && t[0].indexOf('ti-') === 0) return t[0];
+		} catch (e) {}
+		return '';
+	}
+
+	/* THREE levels, which is the whole point — a page that carries no icon of its
+	 * own still SHOWS its collection's, because that is what Thymer assigns it and
+	 * renders everywhere else. Porting only the first level is what left his
+	 * Budget Category values as a column of dots. Saved Searches' _qbRecordIcon
+	 * is the reference; the third level covers a record reached without knowing
+	 * its collection, by resolving its parent guid against the catalog. */
+	pcRecordIcon(r, colIcon) {
+		const own = this.pcPageIcon(r);
+		if (own) return own;
+		if (colIcon) return colIcon;
+		try {
+			const pg = r._getRow && r._getRow().pguid;
+			const c = pg && (this.pcCat || []).find((x) => x.guid === pg);
+			if (c && c.icon) return c.icon;
+		} catch (e) {}
+		return '';
 	}
 
 	pcLabelFor(collGuid, fieldId, valueId) {
@@ -6448,6 +6619,8 @@ class Plugin extends AppPlugin {
 			search: items.length > 8,
 			searchPlaceholder: 'Search option ...',
 			alignRight: false,
+			/* line up with the row, not with the little "+" that opened it */
+			alignTo: (anchor.closest && (anchor.closest('.rs-pcstat') || anchor.closest('.rs-pcd-chips'))) || anchor,
 			controlRef: () => anchor,
 		}, extra || {}));
 	}
@@ -6548,18 +6721,13 @@ class Plugin extends AppPlugin {
 			/* exclusivity holds WITHIN the statuses; the reset value is a
 			 * different axis and shares nothing with them */
 			const map = this.pcMap(cfg);
-			const taken = which === 'off'
-				? new Set()
-				: new Set([].concat(...PC_STATES.map((st) => map[st.key] || [])).map(String));
+			const taken = new Set([].concat(...PC_STATES.map((st) => map[st.key] || [])).map(String));
 			const items = vals.filter((v) => !taken.has(String(v.id)))
 				.map((v) => ({ v: v.id, label: v.label, icon: v.icon || 'ti-point' }));
 			this.pcMenu(anchor, items, null, (id) => {
-				if (which === 'off') cfg.off = [id]; /* one value: it is what gets written */
-				else {
-					const m = this.pcMap(cfg);
-					m[which] = (m[which] || []).concat([id]);
-					if (this.pcNewRow && this.pcNewRow.key === which) this.pcNewRow = null;
-				}
+				const m = this.pcMap(cfg);
+				m[which] = (m[which] || []).concat([id]);
+				if (this.pcNewRow && this.pcNewRow.key === which) this.pcNewRow = null;
 				this.pcTouch();
 				this.pcRepaint();
 			}, { search: items.length > 8 });
