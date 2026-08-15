@@ -368,15 +368,58 @@ const ORDER_BINS = [
 	 * call). Only meaningful alongside at least one REAL status group;
 	 * binForStatus enforces that. binOrderTidy() re-seats collectors that
 	 * were created under the old first-position rank. */
-	{ key: 'tasks', label: 'Todo', icon: 'ti-checkbox', statuses: ['none'] }, /* was "Tasks" until 0.17.2 */
+	{ key: 'tasks', label: 'Not Done', icon: 'ti-checkbox', statuses: ['none'] }, /* "Tasks" → "Todo" 0.17.2 → "Not Done" 2026-08-15 (his mockup) */
 	{ key: 'done', label: 'Done', icon: 'ti-check', statuses: ['done', 'canceled'] },
 ];
+
+/* THE PAGE-CHECKBOX STATES (his 2026-08-15 ask: "same Status as the todo").
+ * Thymer draws a todo's status entirely from four theme custom properties —
+ * `.tc-<name>` is nothing but `--ed-check-<name>-{icon,fg,bg,border}` — so a
+ * page row can wear the SAME status by naming the same tokens. No colour and
+ * no glyph is hardcoded here, which is why it lands correctly on every theme
+ * including his; verified live, all nine resolve.
+ *
+ * `tc: null` is the plain empty box (his "Todo" bucket: In Backlog, Someday).
+ * A value mapped to NOTHING, and an empty property, draw no box at all —
+ * "om det inte finns Någon Action Status satt av mig, då är checkboxen inte
+ * aktiverad". `decl` mirrors Thymer's own rule for that state verbatim; where
+ * it sets a literal (alert's transparent border) we set the literal too.
+ * alert's `font-size:1.2em` is relative to the check div, and our glyph runs
+ * at .85em, so it is folded to 1.02em to keep the same ratio. */
+const PC_STATES = [
+	{ key: 'tasks', label: 'Not Done', icon: 'ti-checkbox', tc: null },
+	{ key: 'started', label: 'In Progress', icon: 'ti-player-play', tc: 'started' },
+	{ key: 'important', label: 'Important', icon: 'ti-alert-square', tc: 'exclaim' },
+	{ key: 'alert', label: 'Alert', icon: 'ti-alert-triangle', tc: 'alert',
+		extra: 'font-weight:bolder;font-size:1.02em;border-color:transparent;background-color:transparent' },
+	{ key: 'starred', label: 'Starred', icon: 'ti-star', tc: 'starred' },
+	{ key: 'billable', label: 'Billable', icon: 'ti-currency-dollar', tc: 'dollar' },
+	{ key: 'discuss', label: 'Discuss', icon: 'ti-help', tc: 'question' },
+	{ key: 'waiting', label: 'Blocked', icon: 'ti-player-pause', tc: 'blocked' },
+	{ key: 'done', label: 'Done', icon: 'ti-check', tc: 'done', doneLike: true },
+	{ key: 'canceled', label: 'Cancelled', icon: 'ti-x', tc: 'canceled' },
+];
+const PC_STATE = (k) => PC_STATES.find((x) => x.key === k) || null;
 
 /* The ⌃1-⌃9 STATUS SHORTCUT order (his call 2026-08-08 late) — deliberately
  * NOT the ORDER_BINS roof order: this is keyboard ergonomics (In Progress on
  * ⌃1), while the roofs keep the document order he designed. The settings
  * rows and the Shortcuts card render in THIS order. */
 const STATUS_SHORTCUTS = ['started', 'important', 'alert', 'starred', 'billable', 'discuss', 'waiting', 'tasks', 'done'];
+
+/* The DEFAULT chord order. Since 2026-08-15 it is only a default: the arrows
+ * in Settings let a user decide which status each chord sets, the same way the
+ * hashtag rows already worked. Any stored order is repaired against this list
+ * on read, so a pref written by an older build — or one missing a status added
+ * later — still yields all nine, in a sane order, exactly once. */
+function rsStatusOrder(stored) {
+	const out = [];
+	for (const k of (Array.isArray(stored) ? stored : [])) {
+		if (STATUS_SHORTCUTS.indexOf(k) >= 0 && out.indexOf(k) < 0) out.push(k);
+	}
+	for (const k of STATUS_SHORTCUTS) if (out.indexOf(k) < 0) out.push(k);
+	return out;
+}
 
 /* PLATFORM: the chords and their labels differ off the Mac. Audited against
  * the bundle's Windows/Linux keymap AND Electron's menu accelerators
@@ -390,6 +433,11 @@ const IS_MAC = /Mac|iPhone|iPad|iPod/.test((navigator.platform || '') + (navigat
 /* labels for settings, the shortcuts card and toasts */
 const KEY_TAG = (n) => (IS_MAC ? '⌘' : 'Ctrl+') + n;
 const KEY_STATUS = (n) => (IS_MAC ? '⌃' : 'Alt+') + n;
+/* The same chords, SPELLED OUT, for the settings chips. The glyphs are right
+ * in running text next to the thing they act on, but a chip on its own has no
+ * context — "Ctrl + 1" reads on any platform (his call 2026-08-15). */
+const KEY_TAG_TXT = (n) => (IS_MAC ? 'Meta + ' : 'Ctrl + ') + n;
+const KEY_STATUS_TXT = (n) => (IS_MAC ? 'Ctrl + ' : 'Alt + ') + n;
 const KEY_BOX = IS_MAC ? '⌘⇧S' : 'Ctrl+Shift+S';
 const KEY_NUDGE = IS_MAC ? '⌃+ / ⌃−' : 'Alt++ / Alt+−';
 
@@ -673,16 +721,60 @@ html.is-dark {
 }
 .rs-panel {
 	position: relative; z-index: 99999;
-	width: min(480px, 100%); max-height: min(680px, calc(100dvh - 48px));
+	/* 560, not 480: the per-collection page-checkbox editor now lives INSIDE
+	 * this panel (it used to be a second, 900px dialog), and its value chips
+	 * need room to sit side by side instead of one per line. */
+	width: min(640px, 100%); max-height: min(680px, calc(100dvh - 48px));
 	overflow-y: auto;
-	padding: 22px 24px 22px; border-radius: var(--radius-larger, 6px);
-	background: var(--cmdpal-bg-color, var(--app-bg, #26262b));
+	padding: 24px; border-radius: 4px;
+	background: var(--rs-panel-bg);
 	border: 1px solid rgba(127,127,127,.4);
 	box-shadow: 0 24px 64px rgba(0,0,0,.5);
 	font-size: var(--text-size-small, .875rem);
 	color: var(--cmdpal-fg-color, var(--text-color, inherit));
 }
-.rs-panel h1 { font-size: var(--text-size-large, 1.0625rem); font-weight: 700; margin: 0 0 16px; }
+/* HIS PALETTE, 2026-08-15 (design mockup). Four values, named once and used
+ * everywhere, so the panel reads as one surface instead of a pile of
+ * color-mix() guesses. Dark themes only: a #1A1A1E plate under light-theme
+ * text is unreadable, so light themes keep the cmdpal tokens and the mixes.
+ * The active FOREGROUND is Thymer's own contrast colour, not a literal — it
+ * is the one value in the set that must follow the theme's accent. */
+:root {
+	--rs-panel-bg: var(--cmdpal-bg-color, var(--app-bg, #26262b));
+	--rs-field-bg: color-mix(in srgb, currentColor 6%, transparent);
+	--rs-active-bg: color-mix(in srgb, var(--color-primary-500, #4caea1) 18%, transparent);
+	--rs-active-fg: color-mix(in srgb, var(--color-primary-500, #4caea1) 70%, var(--text-color));
+	--rs-line: color-mix(in srgb, currentColor 16%, transparent);
+	--rs-field-hi: color-mix(in srgb, currentColor 9%, transparent);
+}
+html.is-dark {
+	--rs-panel-bg: #1A1A1E;
+	--rs-field-bg: #212126;
+	--rs-active-bg: #313E44;
+	--rs-active-fg: var(--color-primary-500, #4caea1);
+	--rs-field-hi: #26262B;
+}
+@media (prefers-color-scheme: dark) {
+	html:not(.is-light) {
+		--rs-panel-bg: #1A1A1E;
+		--rs-field-bg: #212126;
+		--rs-active-bg: #313E44;
+		--rs-active-fg: var(--color-primary-500, #4caea1);
+		--rs-field-hi: #26262B;
+	}
+}
+
+/* His panel colour, 2026-08-15. Dark themes only — on a light theme a #212126
+ * plate under light-theme text is unreadable, so those keep the cmdpal token.
+ * The is-dark/is-light class on <html> is the same discriminator
+ * rsVoMenuColors uses: body has no background at all to sample, and
+ * --cmdpal-bg-color can be a display-p3 triple that no naive parse survives. */
+	.rs-pcd-pop { background: var(--rs-panel-bg); }
+/* Header: title + version, a rule under it, then 22px of air (his mockup). */
+.rs-panel h1 {
+	font-size: 1.0625rem; font-weight: 600; margin: 0 0 22px;
+	padding: 0 0 16px; border-bottom: 1px solid var(--rs-line);
+}
 /* the running version, trailing the title on the same line so it costs no
  * vertical space: quiet weight and opacity, it is a fact to look up, not a
  * thing to read. Rendered only when the config actually carried a version. */
@@ -692,117 +784,168 @@ html.is-dark {
 }
 /* each section in its own quiet frame — boundaries read at a glance; radius
  * 4px everywhere (his call) */
+/* A section: a quiet frame, 20px of padding, 22px between frames. */
 .rs-p-secbox {
-	/* 20% — 12% all but vanished on light themes (his report) */
-	border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
-	border-radius: 4px; padding: 12px 14px;
-	margin-bottom: 14px;
+	border: 1px solid var(--rs-line);
+	border-radius: 4px; padding: 20px;
+	margin-bottom: 22px;
 }
+/* a section with nothing showing is just its title: less air above and below
+ * it, and less between it and the next one (his call) */
+.rs-p-secbox.is-folded { padding: 13px 20px; margin-bottom: 12px; }
+/* every field-like surface is one colour and one radius */
+.rs-p-secbox .rs-p-row, .rs-pcrow, .rs-pcstat-pick, .rs-pcd-chip, .rs-p-key {
+	background: var(--rs-field-bg); border-radius: 4px;
+}
+/* Section heading: title case, NOT the old tracked micro-caps. */
+.rs-p-secbox .rs-p-sec { display: flex; align-items: center; gap: 8px; margin: 0; }
+.rs-p-secbox .rs-p-sec-label {
+	flex: 1 1 auto; font-size: .9375rem; font-weight: 600;
+	letter-spacing: 0; text-transform: none; opacity: 1;
+}
+.rs-p-secbox .rs-p-chev { font-size: 12px; opacity: .5; }
+.rs-p-secbox .rs-p-secsub {
+	margin: 10px 0 20px; font-size: .8125rem; opacity: .55; line-height: 1.6;
+}
+/* a row and its shortcut chip are siblings: the chip is its OWN box to the
+ * right of the row, exactly as he drew it — not a pill inside the field */
+.rs-p-line { display: flex; align-items: stretch; gap: 12px; margin-bottom: 10px; }
+.rs-p-line:last-child { margin-bottom: 0; }
+.rs-p-line > .rs-p-row { flex: 1; min-width: 0; margin: 0; }
+.rs-p-secbox .rs-p-row {
+	display: flex; align-items: center; gap: 10px;
+	min-height: 38px; padding: 0 14px; border: 0;
+}
+.rs-p-secbox .rs-p-row .rs-p-name {
+	flex: 1; min-width: 0; font-size: .875rem;
+	overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rs-p-secbox .rs-p-row .rs-p-ic { font-size: 15px; opacity: .75; }
+.rs-p-acts { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; }
+.rs-p-btn.is-hidden { visibility: hidden; }
+/* the accent link sits above the rows it adds to */
+.rs-p-secbox .rs-pc-link { display: block; margin: 16px 0; }
+/* the tick is Thymer's accent, as he drew it */
+.rs-p-secbox .rs-p-row input[type="checkbox"] {
+	width: 17px; height: 17px; margin: 0; flex: 0 0 auto;
+	accent-color: var(--color-primary-500, #4caea1);
+}
+/* the status glyph is its OWN column — it must not touch the label */
+.rs-p-secbox .rs-p-row .rs-p-ic { flex: 0 0 auto; margin-right: 4px; }
+.rs-p-secbox .rs-p-btn { width: 26px; height: 26px; opacity: .45; }
+/* the editing row keeps the row's shell and stacks its two fields inside it */
+.rs-p-secbox .rs-p-row.is-editing { align-items: center; padding: 10px 14px; }
+.rs-p-editcol { display: flex; flex-direction: column; gap: 8px; flex: 1; min-width: 0; }
+.rs-p-secbox .rs-p-editcol input.rs-pcd-inp {
+	-webkit-appearance: none; appearance: none;
+	background: var(--rs-panel-bg); border: 1px solid var(--rs-line);
+	border-radius: 4px; padding: 7px 10px; font-size: .875rem;
+	color: inherit; font-family: inherit; box-shadow: none;
+}
+.rs-p-secbox .rs-p-editcol input.rs-pcd-inp:focus { border-color: var(--rs-active-fg); }
+.rs-p-secbox .rs-p-row.is-editing .rs-tb-ok { opacity: .9; }
+.rs-p-secbox .rs-p-btn:hover { opacity: .95; background: color-mix(in srgb, currentColor 10%, transparent); }
+/* the picker button in a status row: icon, label and chevron each spaced */
+.rs-pcstat-pick .rs-p-ic { flex: 0 0 auto; }
+.rs-pcstat-pick.is-fixed { color: #69696C; cursor: default; }
+html.is-light .rs-pcstat-pick.is-fixed { color: color-mix(in srgb, currentColor 55%, transparent); }
+.rs-pcstat-pick .lbl { padding: 0 2px; }
 .rs-p-secbox .rs-p-sec { margin: 0; }
 .rs-p-secbox .rs-p-secsub { margin: 8px 0 10px; }
 .rs-p-secbox .rs-p-list { margin-bottom: 0; }
-/* per-collection toggles as wrapping pills — a stack of full rows does not
- * scale past a handful of collections (his call) */
-.rs-pcgrid { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.rs-pcpill {
-	display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px;
-	border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
-	border-radius: 4px; cursor: pointer;
-	font-size: var(--text-size-smaller, .8125rem);
+/* Page Checkboxes, INSIDE the settings panel (2026-08-15). It used to be a
+ * "Configure collections…" button opening a second 900px two-pane dialog —
+ * two modals, two sizes, one feature. His call: one modal. A collection is a
+ * foldable row, and everything that collection needs unfolds underneath it. */
+.rs-pclist { display: flex; flex-direction: column; gap: 10px; }
+.rs-pcrow {
+	border: 1px solid var(--rs-line);
+	border-radius: 4px; overflow: hidden;
 }
-.rs-pcpill input { display: none; }
-.rs-pcpill .ti { font-size: 11px; opacity: 0; }
-.rs-pcpill.is-on {
-	color: color-mix(in srgb, var(--color-primary-500, #4caea1) 60%, var(--text-color));
-	border-color: color-mix(in srgb, var(--color-primary-500, #4caea1) 45%, transparent);
+.rs-pcrow.is-open { border-color: color-mix(in srgb, currentColor 26%, transparent); }
+/* the collection's own header strip is a shade lighter than its body, which
+ * is what separates them in his mockup */
+.rs-pcrow-head {
+	display: flex; align-items: center; gap: 8px;
+	min-height: 42px; padding: 0 12px; cursor: pointer; user-select: none;
+	background: transparent;
 }
-.rs-pcpill.is-on .ti { opacity: 1; }
-/* the Page Checkboxes dialog — Smart Titles' two-pane shape, his own
- * established form for per-collection configuration */
-.rs-pcd {
-	margin-top: 6vh; width: 900px; max-width: calc(100vw - 32px);
-	max-height: calc(100vh - 64px);
-	display: flex; flex-direction: column; overflow: hidden;
-	background: var(--cmdpal-bg-color, var(--app-bg, #26262b));
-	color: var(--cmdpal-fg-color, var(--text-color, inherit));
-	border: 1px solid color-mix(in srgb, var(--text-color) 30%, transparent);
-	border-radius: 4px;
-	box-shadow: 0 24px 64px rgba(0,0,0,.5);
-	font-size: var(--text-size-small, .875rem);
-}
-.rs-pcd-head { padding: 20px 22px 16px; border-bottom: 1px solid color-mix(in srgb, currentColor 16%, transparent); }
-.rs-pcd-title { margin: 0 0 6px; font-size: var(--text-size-large, 1.0625rem); font-weight: 700; }
-.rs-pcd-desc { margin: 0; opacity: .6; line-height: 1.5; font-size: var(--text-size-smaller, .8125rem); }
-.rs-pcd-body { display: flex; flex: 1; min-height: 0; }
-.rs-pcd-rail {
-	width: 260px; flex: none; display: flex; flex-direction: column; min-height: 0;
-	border-right: 1px solid color-mix(in srgb, currentColor 16%, transparent);
-}
-.rs-pcd-railhead { display: flex; align-items: center; justify-content: space-between; padding: 14px 14px 8px; }
-.rs-pcd-label { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .14em; opacity: .75; }
-.rs-pcd-pill, .rs-pcd-badge {
+/* the whole collection block is ONE colour; the title is separated from its
+ * body by a rule, not by a second shade (his call, see his Actions shot) */
+.rs-pcrow { background: var(--rs-field-bg); }
+.rs-pcrow.is-open > .rs-pcrow-head { border-bottom: 1px solid var(--rs-line); }
+.rs-pcrow-head .rs-p-name { font-size: .9375rem; font-weight: 600; }
+/* NO second shade on the title strip, open or hovered — the block is one
+ * colour and a divider (his call; this pair was left from the first pass and
+ * outranked the transparent background that replaced it). */
+.rs-pcrow-head:hover .rs-p-name { opacity: .85; }
+/* a collection is frozen while the global rule is on */
+.rs-pcrow.is-locked { opacity: .45; }
+.rs-pcrow.is-locked > .rs-pcrow-head { cursor: default; }
+.rs-pcrow-head .rs-p-chev { font-size: 12px; opacity: .55; }
+.rs-pcrow-head .rs-p-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rs-pcrow-body { padding: 16px 16px 20px; }
+/* "Property", "Statuses": sentence case and readable, per his mockup — the
+ * tracked 10.5px micro-caps were mine, and they are not what he drew. */
+.rs-pcd-label { font-size: .8125rem; font-weight: 600; text-transform: none; letter-spacing: 0; opacity: .9; }
+.rs-pcd-badge {
 	font-size: 10.5px; padding: 1px 7px; border-radius: 4px;
 	background: color-mix(in srgb, currentColor 12%, transparent); opacity: .8;
+	max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.rs-pcd-search { padding: 0 12px 8px; }
+.rs-pcd-search { padding: 0 0 8px; }
 .rs-pcd-search input, .rs-pcd-pop .rs-pcd-search input {
 	width: 100%; box-sizing: border-box; padding: 6px 9px; border-radius: 4px;
 	border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
 	background: transparent; color: inherit; font: inherit; outline: none;
 }
-.rs-pcd-raillist { flex: 1; overflow-y: auto; padding: 0 8px 8px; }
-.rs-pcd-railrow {
-	width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px;
-	padding: 7px 10px; border: 0; border-radius: 4px; background: transparent;
-	color: inherit; font: inherit; text-align: left; cursor: pointer;
+.rs-pcd-sec { margin: 22px 0 12px; }
+.rs-pcd-sec:first-child { margin-top: 0; }
+/* one line per status: its glyph and name, then the values that mean it */
+/* a mapping row: status picker, its values, a + to add another (his mockup) */
+.rs-pcstat { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 12px; }
+.rs-pcstat-pick {
+	display: inline-flex; align-items: center; gap: 6px;
+	padding: 6px 10px; border: 1px solid var(--rs-line); border-radius: 4px;
+	background: var(--rs-field-bg); color: inherit; font: inherit; cursor: pointer;
 }
-.rs-pcd-railrow:hover { background: color-mix(in srgb, currentColor 10%, transparent); }
-.rs-pcd-railrow.is-sel { background: color-mix(in srgb, var(--color-primary-500, #4caea1) 18%, transparent); }
-.rs-pcd-railrow .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rs-pcd-add {
-	margin: 8px 12px 12px; padding: 7px 10px; border-radius: 4px; cursor: pointer;
-	border: 1px dashed color-mix(in srgb, currentColor 30%, transparent);
-	background: transparent; color: inherit; font: inherit;
+.rs-pcstat-pick:hover { border-color: color-mix(in srgb, currentColor 30%, transparent); }
+.rs-pcstat-pick .lbl { flex: 1; text-align: left; white-space: nowrap; }
+.rs-pcstat-pick .rs-p-ic { font-size: 13px; opacity: .8; }
+.rs-pcstat-chev { font-size: 11px; opacity: .5; }
+.rs-pcd-chip.is-plus { padding: 4px 9px; opacity: .75; }
+.rs-pcd-inp {
+	width: 100%; box-sizing: border-box; padding: 6px 9px; border-radius: 4px;
+	border: 1px solid var(--rs-line); background: var(--rs-field-bg);
+	color: inherit; font: inherit; outline: none;
 }
-.rs-pcd-add:hover { background: color-mix(in srgb, currentColor 10%, transparent); }
-.rs-pcd-detail { flex: 1; min-width: 0; overflow-y: auto; padding: 16px 22px 22px; }
-.rs-pcd-edhead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
-.rs-pcd-edname { font-size: var(--text-size-large, 1.0625rem); font-weight: 700; }
-.rs-pcd-remove {
-	border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
-	background: transparent; color: inherit; font: inherit;
-	padding: 4px 10px; border-radius: 4px; cursor: pointer; opacity: .7;
+.rs-pcd-inp:focus { border-color: var(--rs-active-fg); }
+/* a quiet accent link — "+ Add Collection", "+ Add New Status" */
+.rs-pc-link {
+	display: inline-block; margin: 4px 0 2px; padding: 2px 0;
+	border: 0; background: transparent; cursor: pointer; font: inherit;
+	font-size: var(--text-size-smaller, .8125rem);
+	color: var(--rs-active-fg);
 }
-.rs-pcd-remove:hover { opacity: 1; }
-.rs-pcd-sec { margin: 18px 0 8px; }
-.rs-pcd-hint { margin: -4px 0 8px; opacity: .55; font-size: var(--text-size-smaller, .8125rem); line-height: 1.45; }
+.rs-pc-link:hover { opacity: .75; }
+.rs-pcd-warn { color: color-mix(in srgb, var(--fg-alert, #e8a0a8) 75%, var(--text-color)); opacity: .85; }
+.rs-pcd-popitem .nm .rs-p-ic { margin-right: 2px; opacity: .8; }
+.rs-pcd-hint { margin: -6px 0 14px; opacity: .55; font-size: var(--text-size-smaller, .8125rem); line-height: 1.5; }
 .rs-pcd-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .rs-pcd-chip {
-	display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px;
+	display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px;
 	border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
 	border-radius: 4px; background: transparent; color: inherit; font: inherit; cursor: pointer;
 }
 .rs-pcd-chip.is-set, .rs-pcd-chip.is-val {
-	color: color-mix(in srgb, var(--color-primary-500, #4caea1) 60%, var(--text-color));
-	border-color: color-mix(in srgb, var(--color-primary-500, #4caea1) 45%, transparent);
+	background: var(--rs-active-bg); color: var(--rs-active-fg);
+	border-color: transparent;
 }
+.rs-pcd-popitem.is-sel { background: var(--rs-active-bg); color: var(--rs-active-fg); }
 .rs-pcd-chip .x { border: 0; background: transparent; color: inherit; cursor: pointer; opacity: .55; font-size: 10px; padding: 0; }
 .rs-pcd-chip .x:hover { opacity: 1; }
 .rs-pcd-addval { border-style: dashed; opacity: .8; }
 .rs-pcd-empty { opacity: .5; padding: 10px 2px; font-size: var(--text-size-smaller, .8125rem); }
-.rs-pcd-foot {
-	display: flex; justify-content: flex-end; gap: 8px; padding: 14px 22px;
-	border-top: 1px solid color-mix(in srgb, currentColor 16%, transparent);
-}
-.rs-pcd-btn {
-	padding: 7px 16px; border-radius: 4px; cursor: pointer; font: inherit;
-	border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
-	background: transparent; color: inherit;
-}
-.rs-pcd-primary {
-	background: var(--color-primary-500, #4caea1); border-color: transparent;
-	color: var(--app-bg, #1a1a1e); font-weight: 600;
-}
 .rs-pcd-pop {
 	position: fixed; z-index: 100000; max-height: 320px; overflow: hidden;
 	display: flex; flex-direction: column; padding: 8px;
@@ -846,13 +989,14 @@ html.is-dark {
 }
 /* keycap chips — ONE look for every shortcut in the panel (his call:
  * they sat on different sides and bare ^1 read poorly) */
+/* The shortcut chip. His mockup puts it OUTSIDE the row as its own box,
+ * right-aligned and a fixed width, so the column of chords reads as a column. */
 .rs-p-key {
-	display: inline-flex; align-items: center; justify-content: center;
-	min-width: 30px; padding: 1px 6px; flex: 0 0 auto;
-	border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
-	border-radius: 4px;
-	background: color-mix(in srgb, currentColor 6%, transparent);
-	font-size: var(--text-size-xsmall, .75rem); font-weight: 600; opacity: .75;
+	display: flex; align-items: center; justify-content: center;
+	flex: 0 0 auto; min-width: 92px; padding: 0 12px;
+	border: 1px solid var(--rs-line); border-radius: 4px;
+	background: var(--rs-field-bg);
+	font-size: .8125rem; font-weight: 500; opacity: .8; white-space: nowrap;
 }
 .rs-p-where { opacity: .45; font-size: var(--text-size-xsmall, .75rem); white-space: nowrap; }
 .rs-p-editcol { display: flex; flex-direction: column; gap: 4px; }
@@ -2766,8 +2910,7 @@ class Plugin extends AppPlugin {
 		/* page checkboxes (his 2026-08-13 feature): per-record overlay boxes.
 		 * pcWire: collGuid -> wiring or null (null = resolved, unusable);
 		 * pcPend: optimistic overlay on the property (props-loss doctrine). */
-		this.pageChecks = false;
-		this.pageCheckCols = {};
+
 		this.pageCheckCfg = {};
 		this.pcWire = new Map();
 		this.pcPend = new Map();
@@ -2884,7 +3027,26 @@ class Plugin extends AppPlugin {
 		} catch (e) {}
 		this.pop = null;
 
+		/* EVICT OUR OWN EARLIER SHEET. A hot reload runs onLoad again, and until
+		 * 2026-08-15 nothing removed the previous <style> — so old rules stayed
+		 * in the document and, being unrelated selectors, sometimes OUTRANKED
+		 * the new ones. That is exactly why his panel kept rendering #212126
+		 * after the background was changed: a stale `html.is-dark .rs-panel`
+		 * (0,2,1) beat the new bare `.rs-panel` (0,1,0), whatever the order.
+		 * Every iteration since had been measuring a document with two of us
+		 * in it.
+		 * The eviction matches on CONTENT, not on a marker attribute: a sheet
+		 * left by a build that predates the marker could never carry it, and that
+		 * is exactly the copy that has to go. `.rs-p-secbox` is ours alone and is
+		 * in every version of this stylesheet, while our OTHER sheets (per-guid
+		 * rules for glyphs, bars, checkboxes) never contain it. */
+		try {
+			for (const el of document.querySelectorAll('style')) {
+				if (/\.rs-p-secbox\b/.test(el.textContent || '')) el.remove();
+			}
+		} catch (e) {}
 		this.style = document.createElement('style');
+		this.style.setAttribute('data-rs-supertask', '1');
 		this.style.textContent = CSS;
 		document.head.appendChild(this.style);
 		this.refreshMenuColors();
@@ -2916,8 +3078,10 @@ class Plugin extends AppPlugin {
 			 * the theme itself — whichever plugin is hosting it. */
 			if (!this.dead) { try { this.refreshProgressStyle(); } catch (e) {} }
 			/* the page checkbox copies the native check's measured px, so it
-			 * is stale for the same reason */
+			 * is stale for the same reason — and so is the icon-ink shift,
+			 * which is measured in the very font the theme just swapped */
 			this.pcM = null;
+			this.pcInk = null; /* a WeakMap of per-listview measurements */
 			if (!this.dead) { try { this.refreshPageChecks(); } catch (e) {} }
 		};
 		try { document.addEventListener('themecsschange', this.themeHandler); } catch (e) {}
@@ -3024,45 +3188,45 @@ class Plugin extends AppPlugin {
 			this.upgradeBins().then(after).catch(after);
 		}, 2000);
 
-		this.cmd = this.ui.addCommandPaletteCommand({
+		this.cmd = this.rsCmd({
 			/* ti-calendar-clock is NOT in Thymer's Tabler subset (0 hits in
 			 * appui.css) — it rendered blank; calendar-bolt exists */
 			label: 'Supertask: Set a Date',
 			icon: 'ti-calendar-bolt',
 			onSelected: () => this.openPicker(),
 		});
-		this.cmd2 = this.ui.addCommandPaletteCommand({
+		this.cmd2 = this.rsCmd({
 			label: 'Supertask: Shortcuts',
 			icon: 'ti-keyboard',
 			onSelected: () => this.showShortcuts(),
 		});
-		this.cmd3 = this.ui.addCommandPaletteCommand({
+		this.cmd3 = this.rsCmd({
 			label: 'Supertask: Settings',
 			icon: 'ti-tags',
 			onSelected: () => this.openSettings(),
 		});
 		this.voSyncCommand();
-		this.cmdProg = this.ui.addCommandPaletteCommand({
+		this.cmdProg = this.rsCmd({
 			label: 'Supertask: Progress Bar',
 			icon: 'ti-progress',
 			onSelected: () => this.toggleProgress().catch(() => {}),
 		});
-		this.cmd5 = this.ui.addCommandPaletteCommand({
+		this.cmd5 = this.rsCmd({
 			label: 'Supertask: Group by Status',
 			icon: 'ti-list-search',
 			onSelected: () => this.toggleOrder({ m: 'g', k: ORDER_BINS.map((b) => b.key) }).catch(() => {}),
 		});
-		this.cmd6 = this.ui.addCommandPaletteCommand({
+		this.cmd6 = this.rsCmd({
 			label: 'Supertask: Order by Status',
 			icon: 'ti-list-search',
 			onSelected: () => this.toggleOrder({ m: 's', k: [] }).catch(() => {}),
 		});
-		this.cmd7 = this.ui.addCommandPaletteCommand({
+		this.cmd7 = this.rsCmd({
 			label: 'Supertask: Group Done Tasks',
 			icon: 'ti-check',
 			onSelected: () => this.toggleOrder({ m: 'g', k: ['done'] }).catch(() => {}),
 		});
-		this.cmd8 = this.ui.addCommandPaletteCommand({
+		this.cmd8 = this.rsCmd({
 			label: 'Supertask: Group by Hashtags',
 			icon: 'ti-tag',
 			/* preset built at CLICK time so it always reflects the current
@@ -3071,8 +3235,22 @@ class Plugin extends AppPlugin {
 		});
 	}
 
+	/* EVERY palette command, tracked so onUnload can take it back. A hot reload
+	 * runs onLoad again; nothing was removing the previous registrations, so
+	 * each reload added a full duplicate set of Supertask commands to the
+	 * palette (his 2026-08-15 report: five copies of everything after a session
+	 * of deploys). The handle's `remove()` is undocumented — types.d.ts does not
+	 * list it — but it is there at runtime, verified on the live object. */
+	rsCmd(opts) {
+		const c = this.ui.addCommandPaletteCommand(opts);
+		(this.cmds || (this.cmds = [])).push(c);
+		return c;
+	}
+
 	onUnload() {
 		this.dead = true; /* pending sweep/unsweep timers check this */
+		for (const c of (this.cmds || [])) { try { if (c && c.remove) c.remove(); } catch (e) {} }
+		this.cmds = null;
 		this.closeSettings();
 		this.closePicker();
 		try { if (this.recurHandler) this.events.off(this.recurHandler); } catch (e) {}
@@ -3106,6 +3284,7 @@ class Plugin extends AppPlugin {
 		this.pcPend = null;
 		this.tbWire = null;
 		this.pcM = null;
+		this.pcInk = null;
 		this.progTried = null;
 		this.progQueue = null;
 		this.lastAdvance = null;
@@ -3175,7 +3354,7 @@ class Plugin extends AppPlugin {
 
 		if (!statusMod) return null;
 		if (!e.shiftKey && /^Digit[1-9]$/.test(code)) {
-			const key = STATUS_SHORTCUTS[+code.slice(5) - 1];
+			const key = this.statusChords()[+code.slice(5) - 1];
 			const b = key && ORDER_BINS.find((x) => x.key === key);
 			if (b) return { kind: 'status', status: b.key === 'tasks' ? 'none' : b.statuses[0], label: b.label };
 		}
@@ -3255,14 +3434,37 @@ class Plugin extends AppPlugin {
 		 * to per-heading rs_order meta; ignored on read */
 		if (typeof p.progress === 'boolean') this.progressGlobal = p.progress;
 		if (typeof p.progressTodos === 'boolean') this.progressTodos = p.progressTodos;
-		if (typeof p.pageChecks === 'boolean') this.pageChecks = p.pageChecks;
-		if (p.pageCheckCols && typeof p.pageCheckCols === 'object') this.pageCheckCols = p.pageCheckCols;
 		if (p.pageCheckCfg && typeof p.pageCheckCfg === 'object') this.pageCheckCfg = p.pageCheckCfg;
+		if (p.pageCheckGlobal && typeof p.pageCheckGlobal === 'object') this.pageCheckGlobal = p.pageCheckGlobal;
+		if (Array.isArray(p.statusOrder)) this.statusOrder = rsStatusOrder(p.statusOrder);
+		if (typeof p.pageCheckGlobalOn === 'boolean') this.pageCheckGlobalOn = p.pageCheckGlobalOn;
 		if (Array.isArray(p.globalBins)) {
 			this.globalBins = p.globalBins.filter((k) => ORDER_BINS.some((b) => b.key === k));
 		}
 		if (p.pageRules && typeof p.pageRules === 'object') this.pageRules = p.pageRules;
 		if (p.pageDefaults && typeof p.pageDefaults === 'object') this.pageDefaults = p.pageDefaults;
+		/* THE RETIRED "ON ALL PAGES" SWITCH (2026-08-15). His verdict was "den
+		 * gör ju inget" — it did, but invisibly: it put a checkbox on every
+		 * collection whose repeat wiring happened to be known, and nothing on
+		 * screen ever said which ones those were. Deleting it outright would
+		 * have silently taken the box off those pages, so it is ADOPTED
+		 * instead: each wired-but-unconfigured collection becomes a real row
+		 * in Settings, visible and editable. In memory only — the next save
+		 * writes the rows out and the flag is gone for good. Runs after
+		 * pageDefaults is read, and after pageCheckCfg, so an explicit
+		 * configuration always wins. */
+		if (p.pageChecks === true) {
+			const cfg = this.pcCfg();
+			for (const g of Object.keys(this.pageDefaults || {})) {
+				const d = this.pageDefaults[g];
+				if (cfg[g] || !d || !d.sp || !d.dv) continue;
+				cfg[g] = {
+					sp: d.sp,
+					on: [String(d.dv)],
+					off: d.rv && d.rv !== d.dv ? [String(d.rv)] : [],
+				};
+			}
+		}
 		/* legacy master switch (v0.16.2/0.16.3): off meant off regardless of
 		 * the stored choices; on with no stored choices meant Done only */
 		if (p.doneGlobal === false) this.globalBins = [];
@@ -3300,7 +3502,7 @@ class Plugin extends AppPlugin {
 	 * write-through to config for other devices. NOTE: saveConfiguration
 	 * reloads the plugin, so this is always the LAST thing an interaction does. */
 	async savePrefs() {
-		const p = { rev: Date.now(), slots: this.tbSlots, globalBins: (this.globalBins || []).slice(), progress: !!this.progressGlobal, progressTodos: !!this.progressTodos, pageChecks: !!this.pageChecks, pageCheckCols: this.pageCheckCols || {}, pageCheckCfg: this.pageCheckCfg || {}, pageRules: this.pageRules || {}, pageDefaults: this.pageDefaults || {} };
+		const p = { rev: Date.now(), slots: this.tbSlots, globalBins: (this.globalBins || []).slice(), progress: !!this.progressGlobal, progressTodos: !!this.progressTodos, statusOrder: this.statusOrder || STATUS_SHORTCUTS.slice(), pageCheckGlobalOn: !!this.pageCheckGlobalOn, pageCheckGlobal: this.pageCheckGlobal || null, pageCheckCfg: this.pageCheckCfg || {}, pageRules: this.pageRules || {}, pageDefaults: this.pageDefaults || {} };
 		this.prefsRev = p.rev;
 		try { localStorage.setItem('rs_prefs', JSON.stringify(p)); } catch (e) {}
 		try {
@@ -3379,6 +3581,194 @@ class Plugin extends AppPlugin {
 			'<div class="rs-p-sec rs-p-fold" data-sec="' + id + '">'
 			+ '<span class="rs-p-chev ti ' + (fold[id] ? 'ti-chevron-right' : 'ti-chevron-down') + '"></span>'
 			+ '<span class="rs-p-sec-label">' + label + '</span>' + (extra || '') + '</div>';
+
+		/* ---- Page Checkboxes, one collection per foldable row --------------
+		 * Only ONE row is open at a time (this.pcOpenRow): a body carries a
+		 * property and two value lists, so two open at once turns a 560px
+		 * panel into a scroll hunt. Edits land in this.pageCheckCfg LIVE —
+		 * the same contract the hashtag slots already have, where applySlots
+		 * applies immediately and only the config write waits for close. */
+		const pageChecksList = () => {
+			const cfg = this.pcCfg();
+			const guids = Object.keys(cfg);
+			if (!this.pcCat) return '<div class="rs-pcd-empty">Reading collections…</div>';
+			if (!guids.length) {
+				return '<div class="rs-pcd-empty">No collections yet. “+ Collection” gives one’s pages a checkbox.</div>';
+			}
+			/* one line per status: its own glyph, then the values that mean it.
+			 * `which` is a state key for the status rows and 'off' for the
+			 * reset row, so both share the chip plumbing and the pickers. */
+			const chips = (g, list, fld, which) =>
+				'<div class="rs-pcd-chips">'
+				+ (list || []).map((v) =>
+					'<span class="rs-pcd-chip is-val"><span class="lbl">' + esc(this.pcLabelFor(vc, fld.id, v)) + '</span>'
+					+ '<button type="button" class="x rs-pc-vx" data-col="' + esc(g) + '" data-w="' + which + '" data-v="' + esc(v) + '">✕</button></span>').join('')
+				+ '<button type="button" class="rs-pcd-chip rs-pcd-addval rs-pc-vadd" data-col="' + esc(g) + '" data-w="' + which + '">+ Add value</button>'
+				+ '</div>';
+			/* EVERY status is listed, always. The first pass only rendered the
+			 * ones already carrying values, behind an "+ Add status" button —
+			 * so the panel showed a lone "Done" row and no way to see that
+			 * nine others existed ("hur mappar man de olika statusarna?").
+			 * A status with no values costs one quiet line and is self-
+			 * explanatory; hiding them cost him the whole feature. */
+			/* HIS MOCKUP'S SHAPE (2026-08-15): one row per MAPPING, horizontal —
+			 * a status picker on the left, that status's values as chips, and a
+			 * "+" to add another value. Rows are added with "+ Add New Status".
+			 *
+			 * This is the third shape and the right one. Listing every status
+			 * always (my second pass) made the panel ten rows deep for a
+			 * collection using three; hiding them behind a button (my first)
+			 * meant nothing on screen said the other statuses existed. A row
+			 * that CARRIES its own picker does both jobs at once. */
+			/* The global rule's values: it has no collection of its own, so the
+			 * menu is drawn from the FIRST collection that carries a property
+			 * of that name. Those ids are what will match everywhere the
+			 * collections share one value collection, which is the case the
+			 * rule exists for. */
+			const globalCtx = (gl) => {
+				const want = String(gl.name || '').trim().toLowerCase();
+				for (const info of (this.pcCat || [])) {
+					const f = info.fields.find((x) => String(x.label || '').trim().toLowerCase() === want);
+					if (f) return { g: info.guid, fld: f };
+				}
+				return null;
+			};
+			const globalStatusRows = (gl) => {
+				const ctx = globalCtx(gl);
+				if (!ctx) return '<div class="rs-pcd-empty">No collection has a property with that name.</div>';
+				this.pcGCol = ctx.g; this.pcGFld = ctx.fld; /* handlers need them for '*' */
+				/* FETCH ONCE, NOT EVERY RENDER. This ran unconditionally and
+				 * repainted in its `.then`; once the values were cached the
+				 * promise resolved on the very next microtask, so render →
+				 * fetch → repaint → render span the main thread and froze the
+				 * app the moment a property was picked (his 2026-08-15 report:
+				 * could not even close the panel). Only the FIRST, genuinely
+				 * async, resolution may repaint. */
+				const vkey = ctx.g + '|' + ctx.fld.id;
+				if (!this.pcVals || !this.pcVals.has(vkey)) {
+					this.pcFieldValues(ctx.g, ctx.fld).then(() => this.pcRepaint && this.pcRepaint());
+				}
+				return statusRows('*', gl, ctx.fld, ctx.g);
+			};
+
+			const statusRows = (g, c, fld, valueColl) => {
+				const vc = valueColl || g; /* where the value NAMES live */
+				const map = this.pcMap(c);
+				const rows = PC_STATES.filter((st) => (map[st.key] || []).length);
+				/* the row being built: it has no values yet, so the filter above
+				 * cannot see it, and it must survive its own status pick */
+				const nr = this.pcNewRow && this.pcNewRow.col === g ? this.pcNewRow : null;
+				const pendSt = nr && nr.key ? PC_STATE(nr.key) : null;
+				const known = (this.pcVals && this.pcVals.get(vc + '|' + fld.id)) || [];
+				const inMap = new Set([].concat(...PC_STATES.map((st) => map[st.key] || [])).map(String));
+				const unmapped = known.filter((v) => !inMap.has(String(v.id)));
+				/* Done and Not Done are STATIC (his call): every configuration needs
+				 * both, so they are not a choice — no dropdown, a muted label, and
+				 * always the first two rows. Everything else is opt-in below them. */
+				const row = (st, fixed) =>
+					'<div class="rs-pcstat">'
+					+ (fixed
+						? '<span class="rs-pcstat-pick is-fixed">'
+							+ '<span class="rs-p-ic ti ' + st.icon + '"></span>'
+							+ '<span class="lbl">' + st.label + '</span></span>'
+						: '<button type="button" class="rs-pcstat-pick rs-pc-spick" data-col="' + esc(g) + '" data-k="' + (st ? st.key : '') + '">'
+							+ '<span class="rs-p-ic ti ' + (st ? st.icon : 'ti-plus') + '"></span>'
+							+ '<span class="lbl">' + (st ? st.label : 'Choose a status') + '</span>'
+							+ '<span class="rs-pcstat-chev ti ti-chevron-down"></span>'
+							+ '</button>')
+					+ (st ? (map[st.key] || []).map((v) =>
+						'<span class="rs-pcd-chip is-val"><span class="lbl">' + esc(this.pcLabelFor(vc, fld.id, v)) + '</span>'
+						+ '<button type="button" class="x rs-pc-vx" data-col="' + esc(g) + '" data-w="' + st.key + '" data-v="' + esc(v) + '">✕</button></span>').join('') : '')
+					+ (st ? '<button type="button" class="rs-pcd-chip rs-pc-vadd is-plus" data-col="' + esc(g) + '" data-w="' + st.key + '">+</button>' : '')
+					+ '</div>';
+				return '<div class="rs-pcd-label rs-pcd-sec">Statuses</div>'
+					+ '<p class="rs-pcd-hint">Each status draws the page row exactly as a todo of that status. '
+					+ 'Map this property’s values onto the ones you use.</p>'
+					+ [PC_STATE('done'), PC_STATE('tasks')].map((st) => row(st, true)).join('')
+					+ rows.filter((st) => st.key !== 'done' && st.key !== 'tasks'
+						&& (!pendSt || st.key !== pendSt.key)).map((st) => row(st, false)).join('')
+					+ (nr ? row(pendSt, false) : '')
+					+ '<button type="button" class="rs-pc-link rs-pc-newstat" data-col="' + esc(g) + '">+ Add New Status</button>'
+					+ (unmapped.length
+						? '<p class="rs-pcd-hint rs-pcd-warn">No checkbox on: '
+							+ unmapped.map((v) => esc(v.label)).join(', ')
+							+ '. A page with the property empty never gets one either.</p>'
+						: '')
+					+ '<div class="rs-pcd-label rs-pcd-sec">Unchecking writes</div>'
+					+ '<p class="rs-pcd-hint">The single value written when you untick a Done page.</p>'
+					+ '<div class="rs-pcd-chips">'
+					+ ((c.off || []).length
+						? '<span class="rs-pcd-chip is-val"><span class="lbl">' + esc(this.pcLabelFor(vc, fld.id, c.off[0])) + '</span>'
+							+ '<button type="button" class="x rs-pc-vx" data-col="' + esc(g) + '" data-w="off" data-v="' + esc(c.off[0]) + '">✕</button></span>'
+						: '<span class="rs-pcd-hint" style="margin:0 6px 0 0">Clears the property.</span>')
+					+ '<button type="button" class="rs-pcd-chip rs-pcd-addval rs-pc-vadd" data-col="' + esc(g) + '" data-w="off">'
+					+ ((c.off || []).length ? 'Change' : '+ Set value') + '</button>'
+					+ '</div>';
+			};
+
+			/* THE GLOBAL ROW, always first and always present (his ask). It is
+			 * the same row as a collection's, with a property NAME instead of a
+			 * collection: whatever every collection calls the same thing. Its
+			 * statuses reuse statusRows by handing it the pseudo-guid '*', so
+			 * there is exactly one editor to maintain, not two. */
+			const gl = this.pageCheckGlobal || null;
+			const on = !!this.pageCheckGlobalOn;
+			const glOpen = this.pcOpenRow === '*';
+			const glRow = !on ? '' : '<div class="rs-pcrow' + (glOpen ? ' is-open' : '') + '">'
+				+ '<div class="rs-pcrow-head" data-col="*">'
+				+ '<span class="rs-p-chev ti ' + (glOpen ? 'ti-chevron-down' : 'ti-chevron-right') + '"></span>'
+				+ '<span class="rs-p-name">Global Page Checkboxes</span>'
+				+ '</div>'
+				+ (glOpen
+					? '<div class="rs-pcrow-body">'
+						+ '<div class="rs-pcd-label rs-pcd-sec">Property</div>'
+						+ '<p class="rs-pcd-hint">Matched by NAME, so every collection that has a property '
+						+ 'called this gets checkboxes from one rule.</p>'
+						+ '<div class="rs-pcd-chips"><button type="button" class="rs-pcd-chip rs-pc-gprop'
+						+ (gl && gl.name ? ' is-set' : '') + '">'
+						+ esc(gl && gl.name ? gl.name : 'Choose a Property…') + '</button></div>'
+						+ (gl && gl.name ? globalStatusRows(gl) : '<div class="rs-pcd-empty">Pick the property that drives the checkbox.</div>')
+						+ '</div>'
+					: '')
+				+ '</div>';
+
+			return '<div class="rs-pclist">' + glRow + guids.map((g) => {
+				const c = cfg[g];
+				const info = (this.pcCat || []).find((x) => x.guid === g);
+				const name = (info && info.name) || ('…' + g.slice(-6));
+				const fields = (info && info.fields) || [];
+				const fld = fields.find((f) => f.id === c.sp) || null;
+				const open = this.pcOpenRow === g;
+				return '<div class="rs-pcrow' + (open && !on ? ' is-open' : '') + (on ? ' is-locked' : '') + '">'
+					+ '<div class="rs-pcrow-head" data-col="' + esc(g) + '">'
+					+ '<span class="rs-p-chev ti ' + (open ? 'ti-chevron-down' : 'ti-chevron-right') + '"></span>'
+					+ '<span class="rs-p-name">' + esc(name) + '</span>'
+					+ '<span class="rs-p-acts"><button type="button" class="rs-p-btn is-danger rs-pc-del ti ti-trash" data-col="' + esc(g) + '"></button></span>'
+					+ '</div>'
+					+ (open && !on
+						? '<div class="rs-pcrow-body">'
+							+ '<div class="rs-pcd-label rs-pcd-sec">Property</div>'
+							+ '<div class="rs-pcd-chips"><button type="button" class="rs-pcd-chip rs-pc-prop'
+							+ (fld ? ' is-set' : '') + '" data-col="' + esc(g) + '">'
+							+ esc(fld ? fld.label : 'Choose a property…') + '</button></div>'
+							+ (fld
+								? statusRows(g, c, fld)
+								: '<div class="rs-pcd-empty">Pick the property that drives the checkbox.</div>')
+							+ '</div>'
+						: '')
+					+ '</div>';
+			}).join('') + '</div>';
+		};
+
+		/* The reorder pair. The chord is the ROW's position, so moving a row is
+		 * how a user decides which status or hashtag each chord sets — the ends
+		 * simply have no arrow rather than a dead one. */
+		const arrows = (cls, i, n) =>
+			'<button type="button" class="rs-p-btn ' + cls + (i === 0 ? ' is-hidden' : '')
+				+ ' ti ti-arrow-up" data-i="' + i + '" data-d="-1"></button>'
+			+ '<button type="button" class="rs-p-btn ' + cls + (i >= n - 1 ? ' is-hidden' : '')
+				+ ' ti ti-arrow-down" data-i="' + i + '" data-d="1"></button>';
+
 		const render = () => {
 			/* a folded section is just its header inside the frame; unfolded
 			 * = header + description + rows. Each section wears its own frame
@@ -3386,17 +3776,26 @@ class Plugin extends AppPlugin {
 			const orderingBody = fold.ordering ? '' :
 				'<p class="rs-p-sub rs-p-secsub">Ticked statuses are grouped under every heading as tasks change; '
 				+ 'the Done group starts collapsed. Nothing ticked turns it off, and a section’s ⋯ menu always overrides it. '
-				+ 'The ' + KEY_STATUS(1) + ' to ' + KEY_STATUS(9) + ' shortcuts set a line’s status anywhere, ticked or not; the same chord again clears it.</p>'
+				+ 'The ' + KEY_STATUS(1) + ' to ' + KEY_STATUS(9) + ' shortcuts set a line’s status anywhere, ticked or not; the same chord again clears it. '
+				+ 'The arrows decide which chord sets which status.</p>'
+				+ '<button type="button" class="rs-pc-link rs-so-reset">+ Map Status</button>'
 				+ '<div class="rs-p-list">'
-				+ STATUS_SHORTCUTS.map((key, i) => {
-					const b = ORDER_BINS.find((x) => x.key === key);
-					if (!b) return '';
-					const on = (this.globalBins || []).indexOf(b.key) >= 0;
-					return '<label class="rs-p-row rs-p-switch"><span class="rs-p-key">' + KEY_STATUS(i + 1) + '</span>'
-						+ '<input type="checkbox" class="rs-gb" data-k="' + b.key + '"' + (on ? ' checked' : '') + '>'
-						+ '<span class="rs-p-ic ti ' + b.icon + '"></span>'
-						+ '<span class="rs-p-name">' + b.label + '</span></label>';
-				}).join('')
+				+ (() => {
+					const ord = this.statusChords();
+					return ord.map((key, i) => {
+						const b = ORDER_BINS.find((x) => x.key === key);
+						if (!b) return '';
+						const on = (this.globalBins || []).indexOf(b.key) >= 0;
+						/* the label is NOT part of the row: a <label> would make the
+						 * arrows toggle the checkbox as well as move the row */
+						return '<div class="rs-p-line"><div class="rs-p-row rs-p-switch">'
+							+ '<input type="checkbox" class="rs-gb" data-k="' + b.key + '"' + (on ? ' checked' : '') + '>'
+							+ '<span class="rs-p-ic ti ' + b.icon + '"></span>'
+							+ '<span class="rs-p-name">' + b.label + '</span>'
+							+ '<span class="rs-p-acts">' + arrows('rs-so', i, ord.length) + '</span>'
+							+ '</div><span class="rs-p-key">' + KEY_STATUS_TXT(i + 1) + '</span></div>';
+					}).join('');
+				})()
 				+ '</div>';
 			panel.innerHTML = '<button type="button" class="rs-p-close ti ti-x"></button>'
 				+ '<h1>Supertask Settings'
@@ -3407,7 +3806,7 @@ class Plugin extends AppPlugin {
 				 * different appetites: a bar on every heading is calm, a bar
 				 * on every sub-checklist is not. Either switch is overridden
 				 * per section by the ⋯ menu or the palette command. */
-				+ '<div class="rs-p-secbox">' + sec('progress', 'Progress Bar Toggles')
+				+ '<div class="rs-p-secbox' + (fold.progress ? ' is-folded' : '') + '">' + sec('progress', 'Progress Bar')
 				+ (fold.progress ? '' :
 					'<p class="rs-p-sub rs-p-secsub">A bar counting the tasks below a line. '
 					+ 'A section’s ⋯ menu, or “Supertask: Progress Bar” on the caret’s line, always overrides these.</p>'
@@ -3420,53 +3819,57 @@ class Plugin extends AppPlugin {
 					+ '<span class="rs-p-name">On every todo with sub-tasks</span></label>'
 					+ '</div>')
 				+ '</div>'
-				/* Page Checkboxes (his 2026-08-13 feature): one global switch, then
-				 * per-collection overrides — only collections whose status wiring is
-				 * KNOWN are listed, because a checkbox with no property to write is
-				 * a lie. Wiring is learned from the date box's page-repeat pickers. */
-				+ '<div class="rs-p-secbox">' + sec('pagechecks', 'Page Checkboxes')
+				/* Page Checkboxes (his 2026-08-13 feature), rebuilt 2026-08-15 into
+				 * this panel. Was: a global "On all pages" switch plus a button to
+				 * a second, differently sized dialog. Now: one list, one collection
+				 * per foldable row, everything that collection needs underneath it.
+				 * The global switch is gone — see applyPrefs for what happened to
+				 * the collections it used to cover. */
+				+ '<div class="rs-p-secbox' + (fold.pagechecks ? ' is-folded' : '') + '">' + sec('pagechecks', 'Page Checkboxes')
 				+ (fold.pagechecks ? '' :
-					'<p class="rs-p-sub rs-p-secsub">A checkbox on page rows — lone references and live search results. '
-					+ 'Checked when the page’s status is Done or Dropped; unchecking writes the collection’s reset status. '
-					+ 'A collection appears here once its status wiring is known (set it once in the date box on any of its pages).</p>'
-					+ '<div class="rs-p-list">'
-					+ '<label class="rs-p-row rs-p-switch">'
-					+ '<input type="checkbox" class="rs-pcg"' + (this.pageChecks ? ' checked' : '') + '>'
-					+ '<span class="rs-p-name">On all pages</span></label>'
-					+ '</div>'
-					+ '<div class="rs-pcgrid">'
-					+ '<button type="button" class="rs-pcconf rs-pcpill' + (Object.keys(this.pcCfg()).length ? ' is-on' : '') + '">'
-					+ '<span class="ti ti-adjustments"></span>'
-					+ (Object.keys(this.pcCfg()).length
-						? 'Configure collections (' + Object.keys(this.pcCfg()).length + ')'
-						: 'Configure collections…')
-					+ '</button>'
-					+ '</div>')
+					'<p class="rs-p-sub rs-p-secsub">A checkbox on page rows — lone references, live search results and transclusions. '
+					+ 'Add a collection, pick the property that drives the box, then say which values mean checked '
+					+ 'and which one unchecking writes.</p>'
+					+ '<div class="rs-p-line"><label class="rs-p-row rs-p-switch">'
+					+ '<input type="checkbox" class="rs-pcg-on"' + (this.pageCheckGlobalOn ? ' checked' : '') + '>'
+					+ '<span class="rs-p-name">On every Page</span></label></div>'
+					+ (this.pageCheckGlobalOn ? ''
+						: '<button type="button" class="rs-pc-link rs-pc-add">+ Add Collection</button>')
+					+ pageChecksList())
 				+ '</div>'
-				+ '<div class="rs-p-secbox">' + sec('ordering', 'Task Status Settings') + orderingBody + '</div>'
+				+ '<div class="rs-p-secbox' + (fold.ordering ? ' is-folded' : '') + '">' + sec('ordering', 'Global Task Status') + orderingBody + '</div>'
 				+ '<div class="rs-p-secbox">'
-				+ sec('hashtags', 'Hashtags Settings',
-					(!fold.hashtags && draft.slots.length < 9 ? '<button type="button" class="rs-p-sec-add rs-tb-add"><span class="ti ti-plus"></span>New</button>' : ''))
+				+ sec('hashtags', 'Global Hashtags')
 				+ (fold.hashtags ? '' :
 					'<p class="rs-p-sub rs-p-secsub">' + KEY_TAG(1) + ' to ' + KEY_TAG(9) + ' tag the current line; the row is the key. '
-					+ 'Use anything your flow sorts by: timeblocks, priorities, statuses.</p>'
+					+ 'Use anything your flow sorts by: timeblocks, priorities, statuses. '
+					+ 'The arrows decide which chord tags with which hashtag.</p>'
+					+ (draft.slots.length < 9
+						? '<button type="button" class="rs-pc-link rs-tb-add">+ Map Hashtag</button>'
+						: '')
 					+ '<div class="rs-p-list">'
 				+ draft.slots.map((slot, i) => {
 					const so = typeof slot === 'string' ? { tag: slot, title: '' } : (slot || { tag: '', title: '' });
 					return i === editIdx
-						? '<div class="rs-p-row is-editing"><span class="rs-p-key">' + KEY_TAG(i + 1) + '</span>'
+						/* edit mode is the SAME row, not a different shape: same
+						 * .rs-p-line shell, same chip outside, so the list does not
+						 * jump when one row opens (his 2026-08-15 report) */
+						? '<div class="rs-p-line"><div class="rs-p-row is-editing">'
+							+ '<span class="rs-p-ic ti ti-hash"></span>'
 							+ '<span class="rs-p-name rs-p-editcol">'
-							+ '<input class="rs-tb-title" spellcheck="false" placeholder="Title (shown in the UI)" value="' + esc(so.title) + '">'
-							+ '<input class="rs-tb-tag" data-i="' + i + '" spellcheck="false" placeholder="#hashtag" value="' + esc(so.tag) + '">'
+							+ '<input class="rs-tb-title rs-pcd-inp" spellcheck="false" placeholder="Title (shown in the UI)" value="' + esc(so.title) + '">'
+							+ '<input class="rs-tb-tag rs-pcd-inp" data-i="' + i + '" spellcheck="false" placeholder="#hashtag" value="' + esc(so.tag) + '">'
 							+ '</span>'
-							+ '<span class="rs-p-acts"><button type="button" class="rs-p-btn rs-tb-ok ti ti-check"></button></span></div>'
-						: '<div class="rs-p-row"><span class="rs-p-key">' + KEY_TAG(i + 1) + '</span>'
+							+ '<span class="rs-p-acts"><button type="button" class="rs-p-btn rs-tb-ok ti ti-check"></button></span>'
+							+ '</div><span class="rs-p-key">' + KEY_TAG_TXT(i + 1) + '</span></div>'
+						: '<div class="rs-p-line"><div class="rs-p-row">'
+							+ '<span class="rs-p-ic ti ti-hash"></span>'
 							+ '<span class="rs-p-name">' + esc(so.title || so.tag) + '</span>'
-							+ (so.title ? '<span class="rs-p-where">' + esc(so.tag) + '</span>' : '')
 							+ '<span class="rs-p-acts">'
+							+ arrows('rs-ho', i, draft.slots.length)
 							+ '<button type="button" class="rs-p-btn rs-tb-edit ti ti-pencil" data-i="' + i + '"></button>'
 							+ '<button type="button" class="rs-p-btn is-danger rs-tb-x ti ti-trash" data-i="' + i + '"></button>'
-							+ '</span></div>';
+							+ '</span></div><span class="rs-p-key">' + KEY_TAG_TXT(i + 1) + '</span></div>';
 				}).join('')
 				+ '</div>')
 				+ '</div>'
@@ -3487,6 +3890,17 @@ class Plugin extends AppPlugin {
 
 		panel.addEventListener('input', (e) => {
 			if (e.target.classList && e.target.classList.contains('rs-tb-tag')) suggest(e.target);
+			if (e.target.classList && e.target.classList.contains('rs-pc-gname')) {
+				const gl = this.pcCfgFor('*');
+				gl.name = e.target.value;
+				this.pcTouch();
+				/* no render() here: it would tear the field out from under the
+				 * caret on every keystroke. The rows below it refresh when the
+				 * field loses focus or the row is reopened. */
+			}
+		});
+		panel.addEventListener('change', (e) => {
+			if (e.target.classList && e.target.classList.contains('rs-pc-gname')) render();
 		});
 		panel.addEventListener('change', (e) => {
 			const cl = e.target.classList;
@@ -3502,21 +3916,12 @@ class Plugin extends AppPlugin {
 				this.refreshProgressStyle();
 				dirty = true;
 			}
-			if (cl && cl.contains('rs-pcg')) {
-				this.pageChecks = !!e.target.checked;
-				this.scheduleRepeatRefresh();
-				dirty = true;
-			}
-			if (cl && cl.contains('rs-pcc')) {
-				const cg = e.target.getAttribute('data-col');
-				const pill = e.target.closest('.rs-pcpill');
-				if (pill) pill.classList.toggle('is-on', !!e.target.checked);
-				if (cg) {
-					this.pageCheckCols = this.pageCheckCols || {};
-					this.pageCheckCols[cg] = !!e.target.checked;
-					this.scheduleRepeatRefresh();
-					dirty = true;
-				}
+			if (cl && cl.contains('rs-pcg-on')) {
+				this.pageCheckGlobalOn = !!e.target.checked;
+				if (this.pageCheckGlobalOn && !this.pageCheckGlobal) this.pcCfgFor('*');
+				this.pcOpenRow = this.pageCheckGlobalOn ? '*' : null;
+				this.pcTouch(); dirty = true; render();
+				return;
 			}
 			if (cl && cl.contains('rs-gb')) {
 				const key = e.target.getAttribute('data-k');
@@ -3529,7 +3934,49 @@ class Plugin extends AppPlugin {
 		});
 		panel.addEventListener('click', (e) => {
 			const t = e.target.closest ? e.target.closest('button') : null;
-			if (t && t.classList.contains('rs-pcconf')) { this.pcOpenDialog().catch(() => {}); return; }
+			/* the page-checkbox rows, before the generic button handling below:
+			 * each one carries the collection guid on the button itself, and the
+			 * pickers anchor on the very button that was clicked */
+			if (t && t.classList.contains('rs-pc-add')) { this.pcOpenCollPicker(t); return; }
+			if (t && t.classList.contains('rs-pc-del')) {
+				const g = t.getAttribute('data-col');
+				if (g === '*') this.pageCheckGlobal = null; else delete this.pcCfg()[g];
+				if (this.pcOpenRow === g) this.pcOpenRow = null;
+				this.pcTouch(); render(); return;
+			}
+			if (t && t.classList.contains('rs-pc-gprop')) {
+				this.pcOpenGlobalPropPicker(t, () => render());
+				return;
+			}
+			if (t && t.classList.contains('rs-pc-prop')) {
+				const g = t.getAttribute('data-col');
+				const info = (this.pcCat || []).find((x) => x.guid === g);
+				this.pcOpenFieldPicker(t, g, (info && info.fields) || []);
+				return;
+			}
+			if (t && t.classList.contains('rs-pc-newstat')) {
+				this.pcNewRow = { col: t.getAttribute('data-col'), key: null };
+				render(); return;
+			}
+			if (t && t.classList.contains('rs-pc-spick')) {
+				this.pcOpenStatusPicker(t, t.getAttribute('data-col'), t.getAttribute('data-k') || null, () => render());
+				return;
+			}
+			if (t && t.classList.contains('rs-pc-vadd')) {
+				const g = t.getAttribute('data-col');
+				const ctx = this.pcValueCtx(g);
+				if (ctx && ctx.fld) this.pcOpenValuePicker(t, g, ctx.fld, t.getAttribute('data-w'), ctx.coll);
+				return;
+			}
+			if (t && t.classList.contains('rs-pc-vx')) {
+				const g = t.getAttribute('data-col'); const w = t.getAttribute('data-w'); const v = t.getAttribute('data-v');
+				const c = this.pcCfgFor(g);
+				if (c) {
+					const bucket = w === 'off' ? c : this.pcMap(c);
+					bucket[w] = (bucket[w] || []).filter((y) => y !== v);
+				}
+				this.pcTouch(); render(); return;
+			}
 			if (!t) {
 				const h = e.target.closest ? e.target.closest('.rs-p-fold') : null;
 				if (h) {
@@ -3537,8 +3984,36 @@ class Plugin extends AppPlugin {
 					fold[id] = !fold[id];
 					if (editIdx >= 0) commitEdit();
 					render();
+					return;
+				}
+				/* a collection row folds open; only one at a time */
+				const pr = e.target.closest ? e.target.closest('.rs-pcrow-head') : null;
+				if (pr) {
+					if (pr.closest('.rs-pcrow.is-locked')) return; /* frozen by the global rule */
+					const g = pr.getAttribute('data-col');
+					this.pcOpenRow = this.pcOpenRow === g ? null : g;
+					if (g !== '*') this.pcPreloadValues(g).then(() => { if (this.settingsEls) render(); });
+					render();
 				}
 				return;
+			}
+			if (t.classList.contains('rs-so') || t.classList.contains('rs-ho')) {
+				/* move one row between chords; the chord IS the position */
+				const i = +t.getAttribute('data-i');
+				const j = i + (+t.getAttribute('data-d'));
+				const list = t.classList.contains('rs-so')
+					? (this.statusOrder = this.statusChords().slice())
+					: draft.slots;
+				if (j < 0 || j >= list.length) return;
+				const tmp = list[i]; list[i] = list[j]; list[j] = tmp;
+				if (t.classList.contains('rs-ho')) { this.applySlots(draft.slots); draft.slots = this.tbSlots.slice(); }
+				dirty = true;
+				render();
+				return;
+			}
+			if (t.classList.contains('rs-so-reset')) {
+				this.statusOrder = STATUS_SHORTCUTS.slice();
+				dirty = true; render(); return;
 			}
 			if (t.classList.contains('rs-tb-add')) {
 				if (editIdx >= 0) commitEdit();
@@ -3563,9 +4038,44 @@ class Plugin extends AppPlugin {
 			}
 		});
 
+		/* the pickers live outside this closure (they are anchored popovers
+		 * shared with nothing else now), so they reach back in through these */
+		this.pcRepaint = () => { if (this.settingsEls) render(); };
+		this.pcTouch = () => { this.pcChanged = true; this.pcWire = new Map(); this.scheduleRepeatRefresh(); };
+
 		/* the close-time persist: slots are already live via applySlots */
 		this.settingsSave = () => {
 			if (editIdx >= 0) commitEdit();
+			if (this.pcChanged) {
+				/* drop half-finished rows: a box with no property to read, or no
+				 * value that means checked, would render a checkbox that lies */
+				const clean = {};
+				for (const g of Object.keys(this.pcCfg())) {
+					const c = this.pageCheckCfg[g];
+					if (!c || !c.sp) continue;
+					const map = this.pcMap(c);
+					const m = {};
+					for (const st of PC_STATES) if ((map[st.key] || []).length) m[st.key] = map[st.key].slice();
+					/* a collection with no value mapped to anything draws no box
+					 * anywhere, so it is not a configuration — drop it */
+					if (!Object.keys(m).length) continue;
+					clean[g] = { sp: c.sp, map: m, off: (c.off || []).slice() };
+				}
+				this.pageCheckCfg = clean;
+				const gl = this.pageCheckGlobal;
+				if (gl) {
+					const gm = this.pcMap(gl);
+					const m2 = {};
+					for (const st of PC_STATES) if ((gm[st.key] || []).length) m2[st.key] = gm[st.key].slice();
+					this.pageCheckGlobal = (String(gl.name || '').trim() && Object.keys(m2).length)
+						? { name: String(gl.name).trim(), map: m2, off: (gl.off || []).slice() }
+						: null;
+				}
+				this.pcWire = new Map();
+				this.pcChanged = false;
+				this.scheduleRepeatRefresh();
+				dirty = true;
+			}
 			if (!dirty) return;
 			this.toast('Settings saved');
 			this.savePrefs(); /* last — saveConfiguration reloads the plugin */
@@ -3576,6 +4086,7 @@ class Plugin extends AppPlugin {
 			if (!this.settingsEls) return;
 			if (e.key === 'Escape') {
 				e.preventDefault(); e.stopPropagation();
+				if (this.pcPop) { this.pcClosePop(); return; } /* a picker closes before the panel does */
 				if (editIdx >= 0) { commitEdit(); render(); return; } /* first Esc just leaves edit mode */
 				this.closeSettings();
 			} else if (e.key === 'Enter') {
@@ -3584,11 +4095,37 @@ class Plugin extends AppPlugin {
 			}
 		};
 		window.addEventListener('keydown', this.settingsKeys, true);
+		this.pcHost = back;
+		this.pcOpenRow = null;
+		this.pcChanged = false;
 		render();
+		/* the catalog is async and the section renders "Reading collections…"
+		 * until it lands; the value names behind the configured chips are a
+		 * second round, so each resolves and repaints on its own */
+		this.pcCatalog().then(() => {
+			if (!this.settingsEls) return;
+			/* PURGE COLLECTIONS THAT NO LONGER EXIST. His pageDefaults carried a
+			 * wiring entry for a collection he had since deleted (…FQQM04), and
+			 * adopting the retired switch turned that into a nameless row with
+			 * nothing behind it. It can only be recognised once the catalog is
+			 * in, which is here — this is the first moment the workspace is
+			 * known. Silent: there is nothing for him to decide about a row
+			 * whose collection is gone. Marked changed so the save writes the
+			 * clean set, which is also the save that retires the old flag, so
+			 * the row cannot come back. */
+			const dead = Object.keys(this.pcCfg())
+				.filter((g) => !(this.pcCat || []).some((c) => c.guid === g));
+			for (const g of dead) delete this.pageCheckCfg[g];
+			if (dead.length) { if (this.pcOpenRow && dead.indexOf(this.pcOpenRow) >= 0) this.pcOpenRow = null; this.pcTouch(); }
+			render();
+			for (const g of Object.keys(this.pcCfg())) this.pcPreloadValues(g).then(() => this.pcRepaint());
+		});
 	}
 
 	closeSettings() {
 		const pendingSave = this.settingsEls ? this.settingsSave : null;
+		this.pcClosePop();
+		this.pcHost = null; this.pcRepaint = null; this.pcTouch = null;
 		if (this.settingsKeys) { window.removeEventListener('keydown', this.settingsKeys, true); this.settingsKeys = null; }
 		if (this.settingsEls) { for (const el of this.settingsEls) { try { el.remove(); } catch (e) {} } this.settingsEls = null; }
 		this.refreshMenuColors();
@@ -4963,21 +5500,42 @@ class Plugin extends AppPlugin {
 		} catch (e) {}
 	}
 
-	pcEnabled(collGuid) {
-		/* an explicit configuration always wins; otherwise the global switch
-		 * decides, using whatever repeat wiring that collection happens to have */
-		if (collGuid && this.pcCfg()[collGuid]) return true;
-		const o = this.pageCheckCols || {};
-		if (collGuid && Object.prototype.hasOwnProperty.call(o, collGuid)) return !!o[collGuid];
-		return !!this.pageChecks;
+	/* THE GLOBAL RULE (his 2026-08-15 ask). One property matched BY NAME across
+	 * every collection that has it, so a workspace where every collection
+	 * carries the same "Action Status" is configured once instead of N times.
+	 * A per-collection configuration always wins over it.
+	 *
+	 * Matching by name is what makes it global, and value ids still have to
+	 * line up — which they do exactly when the collections share one linked
+	 * value collection (his do: every Action Status points at Action Types).
+	 * Where they do not, no value matches and that collection simply gets no
+	 * boxes, which is the honest outcome rather than a wrong one. */
+	pcGlobal() {
+		if (!this.pageCheckGlobalOn) return null; /* the switch gates it entirely */
+		const g = this.pageCheckGlobal;
+		return (g && g.name && g.map && Object.keys(g.map).length) ? g : null;
 	}
 
-	pcAnyEnabled() {
-		if (this.pageChecks) return true;
-		if (Object.keys(this.pcCfg()).length) return true;
-		const o = this.pageCheckCols || {};
-		for (const k in o) if (o[k]) return true;
-		return false;
+	pcEnabled(collGuid) {
+		if (!collGuid) return false;
+		if (this.pcGlobal()) return true; /* global on: it speaks for every collection */
+		return !!this.pcCfg()[collGuid];
+	}
+
+	pcAnyEnabled() { return Object.keys(this.pcCfg()).length > 0 || !!this.pcGlobal(); }
+
+	/* The global rule as a per-collection configuration, if that collection
+	 * carries a field with the configured name. Needs the schema, so it is
+	 * only answerable once the catalog is in. */
+	pcGlobalFor(collGuid) {
+		const gl = this.pcGlobal();
+		if (!gl || !this.pcCat) return null;
+		const info = this.pcCat.find((c) => c.guid === collGuid);
+		if (!info) return null;
+		const want = String(gl.name).trim().toLowerCase();
+		const f = info.fields.find((x) => String(x.label || '').trim().toLowerCase() === want);
+		if (!f) return null;
+		return { sp: f.id, map: gl.map, off: (gl.off || []).slice(), _type: f.type };
 	}
 
 	/* Resolve a collection's wiring once per session. Async because it walks
@@ -4986,22 +5544,52 @@ class Plugin extends AppPlugin {
 		if (!this.pcWire || this.pcWire.has(collGuid)) return;
 		/* CONFIGURED collections need no discovery: the dialog already said
 		 * which property and which values mean what. */
-		const cfg = this.pcCfg()[collGuid];
-		if (cfg && cfg.sp && (cfg.on || []).length) {
-			let type = 'record';
+		/* the global rule, when on, REPLACES every per-collection configuration
+		 * — they stay stored and come back untouched when it is switched off */
+		let cfg = this.pcGlobal() ? null : this.pcCfg()[collGuid];
+		if (!cfg && this.pcGlobal()) {
+			cfg = this.pcGlobalFor(collGuid);
+			if (!cfg) {
+				/* One catalog fetch for the whole workspace, not one per
+				 * collection per refresh: without the guard each unresolved
+				 * collection re-armed the fetch and the refresh that follows
+				 * it, which is the same runaway as above by another route. */
+				if (!this.pcCat && !this.pcCatPending) {
+					this.pcCatPending = true;
+					this.pcCatalog().then(() => {
+						this.pcCatPending = false;
+						if (this.pcWire) { this.pcWire.clear(); this.scheduleRepeatRefresh(); }
+					}, () => { this.pcCatPending = false; });
+				}
+				this.pcWire.set(collGuid, null);
+				return;
+			}
+		}
+		if (cfg && cfg.sp && this.pcValueStates(cfg).size) {
+			let type = cfg._type || 'record';
 			try {
 				const info = (this.pcCat || []).find((c) => c.guid === collGuid);
 				const f = info && info.fields.find((x) => x.id === cfg.sp);
 				if (f) type = f.type;
 			} catch (e) {}
+			/* The toast names the value it just wrote. A configuration stores
+			 * ids, not names, so the generic words are the floor — but the
+			 * repeat wiring already learned this collection's own labels, and
+			 * for a collection ADOPTED from the retired "On all pages" switch
+			 * they are exactly the values in play. Use them when they match, so
+			 * that adoption did not quietly turn "Done" into "Checked". */
+			const def = (this.pageDefaults || {})[collGuid] || {};
+			const map = this.pcMap(cfg);
+			const onV = (map.done || []).length ? String(map.done[0]) : null;
+			const offV = (cfg.off || []).length ? String(cfg.off[0]) : null;
 			this.pcWire.set(collGuid, {
 				sp: cfg.sp,
 				spType: type,
-				checked: new Set((cfg.on || []).map(String)),
-				on: String(cfg.on[0]),
-				off: (cfg.off || []).length ? String(cfg.off[0]) : null,
-				onLabel: 'Checked',
-				offLabel: 'Unchecked',
+				states: this.pcValueStates(cfg),
+				on: onV,
+				off: offV,
+				onLabel: (def.dvl && String(def.dv) === onV) ? def.dvl : 'Checked',
+				offLabel: (def.rvl && offV && String(def.rv) === offV) ? def.rvl : 'Unchecked',
 			});
 			/* the schema tells us the real field type; fetch it once in the
 			 * background and correct the entry if it was not a record field */
@@ -5119,19 +5707,27 @@ class Plugin extends AppPlugin {
 		if (!this.pcWire.has(collGuid)) { this.pcResolveWire(collGuid); return null; }
 		const wire = this.pcWire.get(collGuid);
 		if (!wire) return null;
-		let checked = false;
+		/* WHICH state, not whether it is ticked. An empty property, or a value
+		 * the map does not mention, is NOT a state: that row gets no box at all
+		 * (his 2026-08-15 rule). A multi-value property takes the first value
+		 * that IS mapped, so an unrelated extra tag cannot blank the box. */
+		let state = null;
 		try {
 			const vals = this.pagePropValues(rec.prop(wire.sp));
-			checked = vals.some((v) => wire.checked.has(String(v)));
+			for (const v of vals) {
+				const k = wire.states.get(String(v));
+				if (k) { state = k; break; }
+			}
 		} catch (e) {}
 		/* optimistic overlay: our own write wins until the live read agrees
 		 * or it times out (the transient props-loss doctrine) */
 		const pend = this.pcPend && this.pcPend.get(recGuid);
 		if (pend) {
-			if (pend.v === checked || Date.now() - pend.at > 8000) this.pcPend.delete(recGuid);
-			else checked = pend.v;
+			if (pend.v === state || Date.now() - pend.at > 8000) this.pcPend.delete(recGuid);
+			else state = pend.v;
 		}
-		return { checked, wire, collGuid };
+		if (!state) return null;
+		return { state, checked: state === 'done', wire, collGuid };
 	}
 
 	refreshPageChecks() {
@@ -5140,16 +5736,21 @@ class Plugin extends AppPlugin {
 		if (this.pcAnyEnabled()) {
 			for (const t of this.pcTargets()) {
 				const st = this.pcState(t.recGuid);
-				if (st) this.pcLit.set(t.domGuid, { recGuid: t.recGuid, checked: st.checked });
+				if (st) this.pcLit.set(t.domGuid, { recGuid: t.recGuid, state: st.state });
 			}
 		}
 		/* one sheet, two rule groups; the pseudo-element is appended to EVERY
 		 * selector (the v0.9.5 trap). All metrics and colours are Thymer's own
 		 * --ed-check-* variables, so the box matches todo checkboxes on any
 		 * theme, including his. */
-		const un = []; const on = [];
+		/* one selector group per STATE. Every lit row gets the base box; a state
+		 * with a `tc` then repaints it with Thymer's own tokens for that status,
+		 * which is all `.tc-<name>` is. */
+		const groups = new Map();
 		for (const [g, info] of this.pcLit) {
-			(info.checked ? on : un).push('.listitem[data-guid="' + g + '"]::before');
+			const k = info.state || 'tasks';
+			if (!groups.has(k)) groups.set(k, []);
+			groups.get(k).push('.listitem[data-guid="' + g + '"]::before');
 		}
 		/* SIZE: his theme defines --ed-checkbox-size as 1em, and em resolves
 		 * against the element's OWN font — our .85em (the glyph size the native
@@ -5195,12 +5796,19 @@ class Plugin extends AppPlugin {
 			+ 'border:' + bw + ' solid var(--ed-check-div-border);border-radius:' + rad + ';cursor:pointer;'
 			+ 'font-family:var(--ed-check-icon-font);font-size:.85em;line-height:.85em;font-weight:700}';
 		let css = '';
-		if (un.length) css += un.join(',') + base + '\n';
-		if (on.length) {
-			css += on.join(',') + base + '\n'
-				+ on.join(',') + '{content:var(--ed-check-done-icon,"\\2713");'
-				+ 'color:var(--ed-check-done-fg);background:var(--ed-check-done-bg);'
-				+ 'border-color:var(--ed-check-done-bg)}\n';
+		for (const [k, sels] of groups) {
+			if (!sels.length) continue;
+			const sel = sels.join(',');
+			css += sel + base + '\n';
+			const st = PC_STATE(k);
+			if (!st || !st.tc) continue; /* 'tasks' is the plain box: base only */
+			const t = st.tc;
+			css += sel + '{content:var(--ed-check-' + t + '-icon,"\\2713");'
+				+ 'color:var(--ed-check-' + t + '-fg);'
+				+ (t === 'done'
+					? 'background:var(--ed-check-done-bg);border-color:var(--ed-check-done-bg)'
+					: 'background:var(--ed-check-' + t + '-bg);border-color:var(--ed-check-' + t + '-border)')
+				+ (st.extra ? ';' + st.extra : '') + '}\n';
 		}
 		/* THE GRABBER. Thymer parks the drag handle just left of the row's
 		 * first REAL child — the check div on a todo, which is why a todo's
@@ -5218,7 +5826,147 @@ class Plugin extends AppPlugin {
 				 * what left the text 4px right of a todo's. */
 				+ '{padding-left:' + shift.toFixed(1) + 'px}\n';
 		}
+		/* THE LEADING ICON'S INK (his 2026-08-15 report, the red line down his
+		 * screenshot: "inte alignad i linje med texten i en todo"). The row's
+		 * content BLOCK already starts exactly where a todo's text does — that
+		 * is what the padding above buys — but the first thing in it on a page
+		 * row is a glyph, and a glyph's ink starts wherever its side bearing
+		 * puts it. Measured off his live query: the ⚡ ink sat 2px right of the
+		 * todo's text ink on the row below it.
+		 * So pull the icon back by the gap, MEASURED (see pcIconShift): the
+		 * glyph differs per collection and its bearing is a property of the
+		 * glyph, so there is no constant to hardcode here. Grouped by shift so
+		 * the sheet stays one rule per distinct value. */
+		const byShift = new Map();
+		for (const g of this.pcLit.keys()) {
+			const px = this.pcIconShift(g);
+			if (!px) continue;
+			if (!byShift.has(px)) byShift.set(px, []);
+			byShift.get(px).push(g);
+		}
+		for (const [px, guids] of byShift) {
+			css += guids.map((g) => '.listitem[data-guid="' + g + '"] .lineitem-ref-icon').join(',')
+				+ '{margin-left:-' + px + 'px}\n';
+		}
 		if (this.pcStyle.textContent !== css) this.pcStyle.textContent = css;
+	}
+
+	/* How far left this row's leading icon must move for its INK to start
+	 * where a todo's text does. Everything is measured, nothing assumed:
+	 *
+	 * - the icon's box position comes from the live element, so whatever else
+	 *   the layout does to it (a flex gap, a search-result rule of Thymer's)
+	 *   is inside the number without us having to know about it;
+	 * - the glyph's left side bearing comes from a canvas measurement of the
+	 *   very character the ::before renders, in the very font it renders it
+	 *   in, because Tabler ships glyphs with all kinds of bearings and the
+	 *   icon changes per collection;
+	 * - the target is the todo's TEXT BOX, not a todo's ink. A todo's own
+	 *   first glyph has a bearing too, but it depends on which letter that
+	 *   todo happens to start with — an unstable target. The box is within a
+	 *   fraction of a pixel of it and never moves.
+	 *
+	 * Cached per icon class + size, and the cache is filled from a row that
+	 * has no shift applied yet, so the measurement can never chase its own
+	 * output. Returns 0 when anything is missing, which is the old behaviour. */
+	pcIconShift(domGuid) {
+		try {
+			const m = this.pcMetrics();
+			if (!m) return 0;
+			const row = document.querySelector('.listitem[data-guid="' + domGuid + '"]');
+			const el = row && row.querySelector('.lineitem-ref-icon');
+			if (!el) return 0;
+			/* NOT BEFORE OUR OWN PADDING HAS LANDED. This runs while the sheet
+			 * is being BUILT, so on the first pass the row still wears Thymer's
+			 * padding and the icon sits ~22px left of where it will end up. The
+			 * first build measured that, got a negative, clamped it to 0 and
+			 * cached the 0 for good — which is exactly why his second and third
+			 * screenshots were identical. The row's padding is the readiness
+			 * signal: it is set by the very rule above this one. */
+			const ld = row.querySelector(':scope > .line-div');
+			const padL = ld ? (parseFloat(getComputedStyle(ld).paddingLeft) || 0) : 0;
+			if (Math.abs(padL - (m.w + m.mr)) > 0.5) return 0; /* not yet — and do not cache */
+			/* THE REFERENCE TODO MUST BE IN THIS ROW'S OWN LISTVIEW. The first
+			 * build took it from document.querySelectorAll, i.e. whatever todo
+			 * the document held first — in his layout one in the note beside
+			 * the query, not one in it. Measured in one context, applied in
+			 * another. So the reference, and the cache, are per listview. */
+			const scope = row.closest('.listview-items') || row.parentElement;
+			if (!scope) return 0;
+			if (!this.pcInk) this.pcInk = new WeakMap();
+			let box = this.pcInk.get(scope);
+			if (!box) { box = { textX: null, body: 0, by: new Map() }; this.pcInk.set(scope, box); }
+			if (box.textX == null) {
+				const ref = scope.querySelector('.listitem-task > .line-check-div');
+				const rrow = ref && ref.parentElement;
+				const rld = rrow && rrow.querySelector(':scope > .line-div');
+				if (!rld) return 0; /* nothing to align to in here yet */
+				box.textX = (rld.getBoundingClientRect().left - rrow.getBoundingClientRect().left)
+					+ (parseFloat(getComputedStyle(rld).paddingLeft) || 0);
+				box.body = this.pcBodyBearing(rld);
+			}
+			/* className is free to read; getComputedStyle on a pseudo forces a
+			 * style recalc, and this runs for every lit row on every refresh.
+			 * So the cache is keyed on the class alone and dropped wholesale
+			 * when the theme changes, which is the only thing that moves it. */
+			const key = el.className;
+			if (box.by.has(key)) return box.by.get(key);
+			const cs = getComputedStyle(el, '::before');
+			/* the glyph itself: content is a quoted, escaped string */
+			let ch = String(cs.content || '');
+			if (ch === 'none' || ch === 'normal' || !ch) ch = el.textContent || '';
+			ch = ch.replace(/^["']|["']$/g, '');
+			if (!ch) return 0;
+			const bearing = this.pcBearing(ch, cs);
+			if (bearing == null) return 0;
+			const rr = row.getBoundingClientRect();
+			const er = el.getBoundingClientRect();
+			const applied = parseFloat(getComputedStyle(el).marginLeft) || 0;
+			/* ink to ink. Measured on his live query: icon box and todo text box
+			 * both start at 34.1 — the boxes were never the problem — but the ⚡
+			 * carries 2.63px of side bearing against the body font's ~1, so the
+			 * first INK on the row sat 1.5px right of the todo's below it. */
+			const inkX = (er.left - rr.left) - applied + bearing;
+			/* never past the checkbox: the whole gap between box and text is
+			 * m.mr, and eating it would put the glyph on top of the tick */
+			const px = Math.round(Math.max(0, Math.min(inkX - (box.textX + box.body), m.mr - 1)) * 10) / 10;
+			box.by.set(key, px);
+			return px;
+		} catch (e) { return 0; }
+	}
+
+	/* One glyph's left side bearing, in the font it actually renders in.
+	 * actualBoundingBoxLeft is positive LEFTWARD of the origin, so the ink's
+	 * own offset into the advance is its negation. */
+	pcBearing(ch, cs) {
+		try {
+			const cv = this.pcCanvas || (this.pcCanvas = document.createElement('canvas'));
+			const ctx = cv.getContext('2d');
+			ctx.font = cs.fontStyle + ' ' + cs.fontWeight + ' ' + cs.fontSize + ' ' + cs.fontFamily;
+			const b = -(ctx.measureText(ch).actualBoundingBoxLeft || 0);
+			return isFinite(b) ? b : null;
+		} catch (e) { return null; }
+	}
+
+	/* What a todo's text ink is typically offset by, for the row font as it is
+	 * actually rendering. NOT the bearing of one todo's first letter: that
+	 * would tie the whole column to whichever todo happens to be first, and
+	 * measured on his font the letters run 0.21 ("W") to 1.40 ("F"). The
+	 * MEDIAN over the alphabet is stable, font-derived, and within half a pixel
+	 * of any given row. Measured once per listview, cached with it. */
+	pcBodyBearing(lineDiv) {
+		try {
+			const cs = getComputedStyle(lineDiv.querySelector('span, a') || lineDiv);
+			const out = [];
+			const set = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+			for (const c of set) {
+				const b = this.pcBearing(c, cs);
+				if (b != null) out.push(b);
+			}
+			if (!out.length) return 0;
+			out.sort((a, b) => a - b);
+			return out[Math.floor(out.length / 2)];
+		} catch (e) { return 0; }
 	}
 
 	/* Is this press on a page-checkbox band? The box is the first ~20px of
@@ -5245,15 +5993,20 @@ class Plugin extends AppPlugin {
 	async pcToggle(domGuid, info) {
 		const st = info && this.pcState(info.recGuid);
 		if (!st) return;
-		const next = !st.checked;
+		/* A click toggles DONE, from any state (his call). Every other status is
+		 * an indicator: it says what the page is, and clicking still means
+		 * "finish this". Unchecking writes the configured reset value, or
+		 * clears the property when none is set. */
+		const next = st.state === 'done' ? null : 'done';
+		if (next === 'done' && !st.wire.on) { this.toast('No value is mapped to Done for this collection.'); return; }
 		this.pcPend.set(info.recGuid, { v: next, at: Date.now() });
 		this.refreshPageChecks(); /* repaint every rendering of this record at once */
 		try {
 			const rec = this.data.getRecord(info.recGuid);
 			const prop = rec && rec.prop(st.wire.sp);
 			if (!prop) return;
-			await this.setPagePropValue(prop, st.wire.spType, next ? st.wire.on : st.wire.off);
-			this.toast((rec.getName() || 'Page') + ' · ' + (next ? st.wire.onLabel : st.wire.offLabel));
+			await this.setPagePropValue(prop, st.wire.spType, next === 'done' ? st.wire.on : st.wire.off);
+			this.toast((rec.getName() || 'Page') + ' · ' + (next === 'done' ? st.wire.onLabel : st.wire.offLabel));
 		} catch (e) {}
 	}
 
@@ -5270,7 +6023,57 @@ class Plugin extends AppPlugin {
 	 * `on` is the SET of values that render the box checked; `off` is the
 	 * same for unchecked, and its FIRST entry is what unchecking writes. */
 
+	/* Which status each ⌃1-⌃9 chord sets, in chord order. */
+	statusChords() { return this.statusOrder && this.statusOrder.length ? this.statusOrder : STATUS_SHORTCUTS; }
+
 	pcCfg() { return this.pageCheckCfg || (this.pageCheckCfg = {}); }
+
+	/* '*' is the global rule; anything else is a collection guid. One accessor
+	 * so the row editor, the pickers and the chip handlers never branch. */
+	pcCfgFor(g) {
+		if (g !== '*') return this.pcCfg()[g];
+		return this.pageCheckGlobal || (this.pageCheckGlobal = { name: '', map: {}, off: [] });
+	}
+
+	/* Where a row's value NAMES and value MENU come from: the global rule
+	 * borrows the first collection that carries its property. */
+	pcValueCtx(g) {
+		if (g !== '*') {
+			const info = (this.pcCat || []).find((c) => c.guid === g);
+			const cfg = this.pcCfg()[g];
+			return info && cfg ? { coll: g, fld: info.fields.find((x) => x.id === cfg.sp) } : null;
+		}
+		return this.pcGCol && this.pcGFld ? { coll: this.pcGCol, fld: this.pcGFld } : null;
+	}
+
+	/* The value → state map for one collection, migrating the older shape on
+	 * read. Until 2026-08-15 a configuration held `on` (the values that render
+	 * a tick) and nothing else; those values ARE the Done bucket, so they move
+	 * there and every other bucket starts empty. Written back on the next save,
+	 * so the migration runs at most once per collection but is safe to repeat. */
+	pcMap(cfg) {
+		if (!cfg) return {};
+		if (!cfg.map || typeof cfg.map !== 'object') {
+			cfg.map = {};
+			if ((cfg.on || []).length) cfg.map.done = cfg.on.slice();
+			delete cfg.on;
+			/* `off` used to be "every value that means unchecked", of which
+			 * only the first was ever written. The statuses own the display
+			 * question now, so it collapses to the one value it always was. */
+			if ((cfg.off || []).length > 1) cfg.off = [cfg.off[0]];
+		}
+		return cfg.map;
+	}
+
+	/* Every value the map mentions, as value → state key. */
+	pcValueStates(cfg) {
+		const out = new Map();
+		const map = this.pcMap(cfg);
+		for (const st of PC_STATES) {
+			for (const v of (map[st.key] || [])) out.set(String(v), st.key);
+		}
+		return out;
+	}
 
 	/* MEASURE THE REAL THING rather than recompute it. The box used to derive
 	 * its size and gap from --ed-checkbox-size and `1ch`, divided by the glyph
@@ -5368,195 +6171,27 @@ class Plugin extends AppPlugin {
 		return hit ? hit.label : String(valueId || '').slice(-6);
 	}
 
-	async pcOpenDialog() {
-		this.closeSettings();
-		await this.pcCatalog();
-		this.pcDraft = JSON.parse(JSON.stringify(this.pcCfg()));
-		this.pcSel = Object.keys(this.pcDraft)[0] || null;
-		this.pcRailQ = '';
-		const back = document.createElement('div');
-		back.className = 'rs-back';
-		const shell = document.createElement('div');
-		shell.className = 'rs-pcd';
-		back.appendChild(shell);
-		document.body.appendChild(back);
-		this.pcDlg = back;
-		this.pcShell = shell;
-		back.addEventListener('pointerdown', (e) => { if (e.target === back) this.pcCloseDialog(); });
-		this.pcKeys = (e) => {
-			if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); this.pcCloseDialog(); }
-		};
-		window.addEventListener('keydown', this.pcKeys, true);
-		/* collection views eat keys aimed at plugin inputs unless we shield
-		 * them at our own surface (the key-pipeline doctrine) */
-		for (const t of ['keydown', 'keypress', 'keyup']) {
-			shell.addEventListener(t, (e) => {
-				const n = e.target && e.target.tagName;
-				if (n === 'INPUT' || n === 'TEXTAREA') e.stopPropagation();
-			});
-		}
-		/* pre-load the values of everything already configured, so chips read
-		 * as names on first paint instead of guid tails */
-		for (const g of Object.keys(this.pcDraft)) {
-			const info = (this.pcCat || []).find((c) => c.guid === g);
-			const f = info && info.fields.find((x) => x.id === this.pcDraft[g].sp);
-			if (f) this.pcFieldValues(g, f).then(() => this.pcRenderDialog());
-		}
-		this.pcRenderDialog();
+	/* A small element factory; the pickers build their contents in DOM rather
+	 * than markup because each item carries a closure over its own value. */
+	pcMk(tag, cls, text) {
+		const el = document.createElement(tag);
+		if (cls) el.className = cls;
+		if (text != null) el.textContent = text;
+		return el;
 	}
 
-	pcCloseDialog() {
-		this.pcClosePop();
-		try { window.removeEventListener('keydown', this.pcKeys, true); } catch (e) {}
-		if (this.pcDlg) { this.pcDlg.remove(); this.pcDlg = null; }
-		this.pcShell = null;
-	}
-
-	pcRenderDialog() {
-		const shell = this.pcShell;
-		if (!shell) return;
-		this.pcClosePop();
-		shell.innerHTML = '';
-		const mk = (tag, cls, text) => {
-			const el = document.createElement(tag);
-			if (cls) el.className = cls;
-			if (text != null) el.textContent = text;
-			return el;
-		};
-		this.pcMk = mk;
-
-		const head = mk('div', 'rs-pcd-head');
-		head.appendChild(mk('h2', 'rs-pcd-title', 'Page Checkboxes'));
-		head.appendChild(mk('p', 'rs-pcd-desc',
-			'A checkbox on page rows: lone references, live search results and transclusions. '
-			+ 'Add a collection, pick the property that drives the box, then say which values mean checked and which one unchecking writes.'));
-		shell.appendChild(head);
-
-		const body = mk('div', 'rs-pcd-body');
-		body.appendChild(this.pcRenderRail());
-		body.appendChild(this.pcRenderDetail());
-		shell.appendChild(body);
-
-		const foot = mk('div', 'rs-pcd-foot');
-		const cancel = mk('button', 'rs-pcd-btn', 'Cancel');
-		cancel.addEventListener('click', () => this.pcCloseDialog());
-		const save = mk('button', 'rs-pcd-btn rs-pcd-primary', 'Save');
-		save.addEventListener('click', () => this.pcSaveDialog());
-		foot.append(cancel, save);
-		shell.appendChild(foot);
-	}
-
-	pcRenderRail() {
-		const mk = this.pcMk;
-		const rail = mk('div', 'rs-pcd-rail');
-		const head = mk('div', 'rs-pcd-railhead');
-		head.appendChild(mk('span', 'rs-pcd-label', 'Collections'));
-		head.appendChild(mk('span', 'rs-pcd-pill', String(Object.keys(this.pcDraft).length)));
-		rail.appendChild(head);
-
-		const search = mk('div', 'rs-pcd-search');
-		const input = document.createElement('input');
-		input.type = 'text';
-		input.placeholder = 'Find a collection...';
-		input.value = this.pcRailQ || '';
-		search.appendChild(input);
-		rail.appendChild(search);
-
-		const list = mk('div', 'rs-pcd-raillist');
-		const fill = () => {
-			list.innerHTML = '';
-			const q = (this.pcRailQ || '').trim().toLowerCase();
-			for (const g of Object.keys(this.pcDraft)) {
-				const info = (this.pcCat || []).find((c) => c.guid === g);
-				const nm = (info && info.name) || ('...' + g.slice(-6));
-				if (q && nm.toLowerCase().indexOf(q) < 0) continue;
-				const cfg = this.pcDraft[g];
-				const fld = info && info.fields.find((f) => f.id === cfg.sp);
-				const row = mk('button', 'rs-pcd-railrow' + (g === this.pcSel ? ' is-sel' : ''));
-				row.appendChild(mk('span', 'nm', nm));
-				row.appendChild(mk('span', 'rs-pcd-badge', fld ? fld.label : 'not set'));
-				row.addEventListener('click', () => { this.pcSel = g; this.pcRenderDialog(); });
-				list.appendChild(row);
-			}
-			if (!list.childElementCount) {
-				list.appendChild(mk('div', 'rs-pcd-empty',
-					Object.keys(this.pcDraft).length ? 'No matches.' : 'Nothing configured yet.'));
-			}
-		};
-		fill();
-		input.addEventListener('input', () => { this.pcRailQ = input.value; fill(); });
-		rail.appendChild(list);
-
-		const add = mk('button', 'rs-pcd-add', '+ Add collection');
-		add.addEventListener('click', () => this.pcOpenCollPicker(add));
-		rail.appendChild(add);
-		return rail;
-	}
-
-	pcRenderDetail() {
-		const mk = this.pcMk;
-		const d = mk('div', 'rs-pcd-detail');
-		const g = this.pcSel;
-		const cfg = g && this.pcDraft[g];
-		if (!cfg) {
-			d.appendChild(mk('div', 'rs-pcd-empty', 'Add a collection to give its pages a checkbox.'));
-			return d;
-		}
-		const info = (this.pcCat || []).find((c) => c.guid === g);
-		const fields = (info && info.fields) || [];
-		const fld = fields.find((f) => f.id === cfg.sp) || null;
-
-		const head = mk('div', 'rs-pcd-edhead');
-		head.appendChild(mk('div', 'rs-pcd-edname', (info && info.name) || g));
-		const rm = mk('button', 'rs-pcd-remove', '✕ Remove');
-		rm.addEventListener('click', () => {
-			delete this.pcDraft[g];
-			this.pcSel = Object.keys(this.pcDraft)[0] || null;
-			this.pcRenderDialog();
-		});
-		head.appendChild(rm);
-		d.appendChild(head);
-
-		d.appendChild(mk('div', 'rs-pcd-label rs-pcd-sec', 'Property'));
-		const prow = mk('div', 'rs-pcd-chips');
-		const pbtn = mk('button', 'rs-pcd-chip' + (fld ? ' is-set' : ''), fld ? fld.label : 'Choose a property...');
-		pbtn.addEventListener('click', () => this.pcOpenFieldPicker(pbtn, g, fields));
-		prow.appendChild(pbtn);
-		d.appendChild(prow);
-
-		if (!fld) {
-			d.appendChild(mk('div', 'rs-pcd-empty', 'Pick the property that says whether a page is done.'));
-			return d;
-		}
-
-		const valueBlock = (which, label, hint) => {
-			d.appendChild(mk('div', 'rs-pcd-label rs-pcd-sec', label));
-			d.appendChild(mk('p', 'rs-pcd-hint', hint));
-			const wrap = mk('div', 'rs-pcd-chips');
-			for (const v of (cfg[which] || [])) {
-				const chip = mk('span', 'rs-pcd-chip is-val');
-				chip.appendChild(mk('span', 'lbl', this.pcLabelFor(g, fld.id, v)));
-				const x = mk('button', 'x', '✕');
-				x.addEventListener('click', () => {
-					cfg[which] = (cfg[which] || []).filter((y) => y !== v);
-					this.pcRenderDialog();
-				});
-				chip.appendChild(x);
-				wrap.appendChild(chip);
-			}
-			const add = mk('button', 'rs-pcd-chip rs-pcd-addval', '+ Add value');
-			add.addEventListener('click', () => this.pcOpenValuePicker(add, g, fld, which));
-			wrap.appendChild(add);
-			d.appendChild(wrap);
-		};
-		valueBlock('on', 'Checked when', 'The box shows a tick while the property holds any of these.');
-		valueBlock('off', 'Unchecking writes', 'The first value here is written when you uncheck. Leave it empty to clear the property instead.');
-		return d;
+	/* The value NAMES behind a collection's stored ids. Chips read as guid
+	 * tails until this lands, so Settings kicks it per collection and repaints. */
+	async pcPreloadValues(collGuid) {
+		const cfg = this.pcCfg()[collGuid];
+		const info = (this.pcCat || []).find((c) => c.guid === collGuid);
+		const f = cfg && info && info.fields.find((x) => x.id === cfg.sp);
+		if (f) await this.pcFieldValues(collGuid, f);
 	}
 
 	pcOpenCollPicker(anchor) {
 		this.pcPopover(anchor, 280, (pop) => {
-			const mk = this.pcMk;
+			const mk = this.pcMk.bind(this);
 			const search = mk('div', 'rs-pcd-search');
 			const input = document.createElement('input');
 			input.type = 'text';
@@ -5568,7 +6203,7 @@ class Plugin extends AppPlugin {
 			const fill = () => {
 				list.innerHTML = '';
 				const q = input.value.trim().toLowerCase();
-				const items = (this.pcCat || []).filter((c) => !this.pcDraft[c.guid]
+				const items = (this.pcCat || []).filter((c) => !this.pcCfg()[c.guid]
 					&& c.fields.length && (!q || c.name.toLowerCase().indexOf(q) >= 0));
 				for (const c of items) {
 					const it = mk('div', 'rs-pcd-popitem');
@@ -5578,15 +6213,17 @@ class Plugin extends AppPlugin {
 						/* seed from the repeat wiring when this collection already
 						 * has one: those pickers learned it once already */
 						const def = (this.pageDefaults || {})[c.guid] || {};
-						this.pcDraft[c.guid] = {
+						this.pcCfg()[c.guid] = {
 							sp: def.sp || null,
 							on: def.dv ? [String(def.dv)] : [],
 							off: def.rv && def.rv !== def.dv ? [String(def.rv)] : [],
 						};
-						this.pcSel = c.guid;
+						this.pcOpenRow = c.guid;
+						this.pcTouch();
 						const f = def.sp && c.fields.find((x) => x.id === def.sp);
-						if (f) this.pcFieldValues(c.guid, f).then(() => this.pcRenderDialog());
-						this.pcRenderDialog();
+						if (f) this.pcFieldValues(c.guid, f).then(() => this.pcRepaint());
+						this.pcClosePop();
+						this.pcRepaint();
 					});
 					list.appendChild(it);
 				}
@@ -5597,9 +6234,84 @@ class Plugin extends AppPlugin {
 		});
 	}
 
+	/* Which status this row means. On the empty row it just arms the row; on a
+	 * row that already holds values it MOVES them, so a value landing in the
+	 * wrong bucket is one pick to fix rather than a delete and a re-add. */
+	pcOpenStatusPicker(anchor, collGuid, curKey, done) {
+		this.pcPopover(anchor, 240, (pop) => {
+			const mk = this.pcMk.bind(this);
+			const list = mk('div', 'rs-pcd-poplist');
+			pop.appendChild(list);
+			const cfg = this.pcCfgFor(collGuid);
+			const map = this.pcMap(cfg);
+			for (const st of PC_STATES) {
+				if (st.key === 'done' || st.key === 'tasks') continue; /* fixed rows, not choosable */
+				if (st.key !== curKey && (map[st.key] || []).length) continue; /* one row per status */
+				if (st.key !== curKey && this.pcNewRow && this.pcNewRow.key === st.key) continue;
+				const it = mk('div', 'rs-pcd-popitem' + (st.key === curKey ? ' is-sel' : ''));
+				const nm = mk('span', 'nm');
+				nm.appendChild(mk('span', 'rs-p-ic ti ' + st.icon));
+				nm.appendChild(document.createTextNode(' ' + st.label));
+				it.appendChild(nm);
+				it.addEventListener('click', () => {
+					if (curKey && curKey !== st.key) {
+						map[st.key] = (map[curKey] || []).slice();
+						delete map[curKey];
+						this.pcTouch();
+						if (this.pcNewRow && this.pcNewRow.key === curKey) this.pcNewRow.key = st.key;
+					} else if (!curKey) {
+						/* arm the pending row; nothing is written until a value
+						 * lands on it, so an abandoned row leaves no config */
+						this.pcNewRow = { col: collGuid, key: st.key };
+					}
+					this.pcClosePop();
+					done();
+				});
+				list.appendChild(it);
+			}
+			if (!list.childElementCount) list.appendChild(mk('div', 'rs-pcd-empty', 'Every status is already mapped.'));
+		});
+	}
+
+	/* The global rule has no collection of its own, so its property list is the
+	 * DISTINCT field names across the workspace — the same pick-a-property
+	 * gesture as a collection, but the thing picked is a name, which is what
+	 * makes the rule global. The count says how far each one reaches. */
+	pcOpenGlobalPropPicker(anchor, done) {
+		this.pcPopover(anchor, 300, (pop) => {
+			const mk = this.pcMk.bind(this);
+			const list = mk('div', 'rs-pcd-poplist');
+			pop.appendChild(list);
+			const byName = new Map();
+			for (const c of (this.pcCat || [])) {
+				for (const f of c.fields) {
+					const k = String(f.label || '').trim();
+					if (!k) continue;
+					if (!byName.has(k)) byName.set(k, 0);
+					byName.set(k, byName.get(k) + 1);
+				}
+			}
+			const items = [...byName.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+			for (const [name, n] of items) {
+				const it = mk('div', 'rs-pcd-popitem');
+				it.appendChild(mk('span', 'nm', name));
+				it.appendChild(mk('span', 'tag', n + (n === 1 ? ' collection' : ' collections')));
+				it.addEventListener('click', () => {
+					const g = this.pcCfgFor('*');
+					if (g.name !== name) { g.name = name; g.map = {}; g.off = []; }
+					this.pcTouch();
+					this.pcClosePop();
+					done();
+				});
+				list.appendChild(it);
+			}
+			if (!items.length) list.appendChild(mk('div', 'rs-pcd-empty', 'No record or choice properties in this workspace.'));
+		});
+	}
+
 	pcOpenFieldPicker(anchor, collGuid, fields) {
 		this.pcPopover(anchor, 260, (pop) => {
-			const mk = this.pcMk;
+			const mk = this.pcMk.bind(this);
 			const list = mk('div', 'rs-pcd-poplist');
 			pop.appendChild(list);
 			for (const f of fields) {
@@ -5607,10 +6319,14 @@ class Plugin extends AppPlugin {
 				it.appendChild(mk('span', 'nm', f.label));
 				it.appendChild(mk('span', 'tag', f.type));
 				it.addEventListener('click', async () => {
-					const cfg = this.pcDraft[collGuid];
+					const cfg = this.pcCfg()[collGuid];
+					if (!cfg) return;
 					if (cfg.sp !== f.id) { cfg.sp = f.id; cfg.on = []; cfg.off = []; }
+					this.pcTouch();
+					this.pcClosePop();
+					this.pcRepaint();
 					await this.pcFieldValues(collGuid, f);
-					this.pcRenderDialog();
+					this.pcRepaint();
 				});
 				list.appendChild(it);
 			}
@@ -5618,23 +6334,42 @@ class Plugin extends AppPlugin {
 		});
 	}
 
-	pcOpenValuePicker(anchor, collGuid, fld, which) {
+	pcOpenValuePicker(anchor, collGuid, fld, which, valueColl) {
 		this.pcPopover(anchor, 260, (pop) => {
-			const mk = this.pcMk;
+			const mk = this.pcMk.bind(this);
 			const list = mk('div', 'rs-pcd-poplist');
 			list.appendChild(mk('div', 'rs-pcd-empty', 'Loading...'));
 			pop.appendChild(list);
-			this.pcFieldValues(collGuid, fld).then((vals) => {
+			this.pcFieldValues(valueColl || collGuid, fld).then((vals) => {
 				list.innerHTML = '';
-				const cfg = this.pcDraft[collGuid];
-				const taken = new Set([].concat(cfg.on || [], cfg.off || []));
+				const cfg = this.pcCfgFor(collGuid);
+				if (!cfg) return;
+				/* Exclusivity holds WITHIN the statuses — a value can only draw
+				 * one glyph — but NOT across to the reset value, which is a
+				 * different axis entirely: "In Progress" can perfectly well be
+				 * both the status a page displays and the value unticking
+				 * writes. Making them share one pool locked every value inside
+				 * "Unchecking writes" and left the status pickers empty, which
+				 * is what he hit ("finns ingenstans i Settings att göra dessa
+				 * ändringar"). */
+				const map = this.pcMap(cfg);
+				const taken = which === 'off'
+					? new Set()
+					: new Set([].concat(...PC_STATES.map((st) => map[st.key] || [])));
 				const items = vals.filter((v) => !taken.has(v.id));
 				for (const v of items) {
 					const it = mk('div', 'rs-pcd-popitem');
 					it.appendChild(mk('span', 'nm', v.label));
 					it.addEventListener('click', () => {
-						cfg[which] = (cfg[which] || []).concat([v.id]);
-						this.pcRenderDialog();
+						if (which === 'off') cfg.off = [v.id]; /* one value, it is what gets written */
+						else {
+							const map2 = this.pcMap(cfg);
+							map2[which] = (map2[which] || []).concat([v.id]);
+							if (this.pcNewRow && this.pcNewRow.key === which) this.pcNewRow = null;
+						}
+						this.pcTouch();
+						this.pcClosePop();
+						this.pcRepaint();
 					});
 					list.appendChild(it);
 				}
@@ -5648,7 +6383,17 @@ class Plugin extends AppPlugin {
 		const pop = this.pcMk('div', 'rs-pcd-pop');
 		pop.style.width = width + 'px';
 		build(pop);
-		this.pcDlg.appendChild(pop);
+		/* keys aimed at a plugin input are eaten by whatever Thymer component
+		 * still holds component focus unless we starve the dispatcher at our
+		 * own surface — the key-pipeline doctrine, and this popover is now a
+		 * child of the settings backdrop rather than its own dialog */
+		for (const t of ['keydown', 'keypress', 'keyup']) {
+			pop.addEventListener(t, (e) => {
+				const n = e.target && e.target.tagName;
+				if (n === 'INPUT' || n === 'TEXTAREA') e.stopPropagation();
+			});
+		}
+		(this.pcHost || document.body).appendChild(pop);
 		const r = anchor.getBoundingClientRect();
 		const left = Math.min(Math.max(8, r.left), window.innerWidth - width - 8);
 		const ph = pop.offsetHeight || 240;
@@ -5670,21 +6415,6 @@ class Plugin extends AppPlugin {
 	pcClosePop() {
 		if (this.pcPopOut) { try { document.removeEventListener('pointerdown', this.pcPopOut, true); } catch (e) {} this.pcPopOut = null; }
 		if (this.pcPop) { this.pcPop.remove(); this.pcPop = null; }
-	}
-
-	async pcSaveDialog() {
-		const clean = {};
-		for (const g of Object.keys(this.pcDraft || {})) {
-			const c = this.pcDraft[g];
-			/* a box with nothing to read from is a lie — drop half-finished rows */
-			if (!c || !c.sp || !(c.on || []).length) continue;
-			clean[g] = { sp: c.sp, on: c.on.slice(), off: (c.off || []).slice() };
-		}
-		this.pageCheckCfg = clean;
-		this.pcWire = new Map(); /* configs changed: drop resolved wiring */
-		this.pcCloseDialog();
-		this.scheduleRepeatRefresh();
-		await this.savePrefs(); /* LAST — reloads the plugin */
 	}
 
 	/* ---- page timeblocks --------------------------------------------------
@@ -7615,7 +8345,7 @@ class Plugin extends AppPlugin {
 		let mine = false;
 		try { mine = rsVoClaimCommand(); } catch (e) {}
 		if (mine && !this.cmdVo) {
-			this.cmdVo = this.ui.addCommandPaletteCommand({
+			this.cmdVo = this.rsCmd({
 				label: 'Show View Options',
 				icon: 'ti-dots',
 				onSelected: () => {
@@ -9079,7 +9809,7 @@ class Plugin extends AppPlugin {
 		this.ui.addToaster({
 			title: 'Supertask',
 			messageHTML: rows
-				+ '<br><br>' + STATUS_SHORTCUTS.map((key, i) => {
+				+ '<br><br>' + this.statusChords().map((key, i) => {
 				const b = ORDER_BINS.find((x) => x.key === key);
 				return KEY_STATUS(i + 1) + '&nbsp; ' + (key === 'tasks' ? 'Clear status (Todo)' : (b ? b.label : key));
 			}).join('<br>')
