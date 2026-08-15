@@ -5211,6 +5211,19 @@ class Plugin extends AppPlugin {
 		if (this.pcLit.size) {
 			/* make room for the box without moving .line-div's own left edge —
 			 * padding, not margin, so wrapped lines align like a todo's do */
+			/* THE REF ICON GOES. In search results Thymer makes `.lineitem-ref`
+			 * a flex row and shows `.lineitem-ref-icon` (15.2px + 5px margin)
+			 * ahead of the title — its BOX aligns with a todo's text, but the
+			 * glyph is narrower than its box so it reads as indented, and the
+			 * title itself lands 20.2px too far in. Three rounds of "inte
+			 * alignat" were this. Hiding it restores Thymer's OWN default for
+			 * the class (`display:none` everywhere except search results) and
+			 * drops the title onto exactly a todo's text position.
+			 * Cost, deliberate and his to reverse: the collection's icon is
+			 * gone from rows that carry a checkbox. One rule to undo. */
+			css += [...this.pcLit.keys()]
+				.map((g) => '.listitem[data-guid="' + g + '"] .lineitem-ref-icon').join(',')
+				+ '{display:none}\n';
 			css += [...this.pcLit.keys()]
 				.map((g) => '.listitem[data-guid="' + g + '"] > .line-div').join(',')
 				/* exactly the slot the box occupies. NOT plus .line-div's own
