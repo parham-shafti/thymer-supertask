@@ -784,12 +784,6 @@ html.is-dark {
 	}
 }
 
-/* His panel colour, 2026-08-15. Dark themes only — on a light theme a #212126
- * plate under light-theme text is unreadable, so those keep the cmdpal token.
- * The is-dark/is-light class on <html> is the same discriminator
- * rsVoMenuColors uses: body has no background at all to sample, and
- * --cmdpal-bg-color can be a display-p3 triple that no naive parse survives. */
-	.rs-pcd-pop { background: var(--rs-panel-bg); }
 /* Header: title + version, a rule under it, then 22px of air (his mockup). */
 .rs-panel h1 {
 	font-size: 1.0625rem; font-weight: 600;
@@ -939,12 +933,6 @@ html.is-light .rs-pcstat-pick.is-fixed { color: color-mix(in srgb, currentColor 
 	background: color-mix(in srgb, currentColor 12%, transparent); opacity: .8;
 	max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.rs-pcd-search { padding: 0 0 8px; }
-.rs-pcd-search input, .rs-pcd-pop .rs-pcd-search input {
-	width: 100%; box-sizing: border-box; padding: 6px 9px; border-radius: 4px;
-	border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
-	background: transparent; color: inherit; font: inherit; outline: none;
-}
 .rs-pcd-sec { margin: 22px 0 12px; }
 .rs-pcd-sec:first-child { margin-top: 0; }
 /* one line per status: its glyph and name, then the values that mean it */
@@ -975,7 +963,6 @@ html.is-light .rs-pcstat-pick.is-fixed { color: color-mix(in srgb, currentColor 
 }
 .rs-pc-link:hover { opacity: .75; }
 .rs-pcd-warn { color: color-mix(in srgb, var(--fg-alert, #e8a0a8) 75%, var(--text-color)); opacity: .85; }
-.rs-pcd-popitem .nm .rs-p-ic { margin-right: 2px; opacity: .8; }
 .rs-pcd-hint { margin: -6px 0 14px; opacity: .55; font-size: var(--text-size-smaller, .8125rem); line-height: 1.5; }
 .rs-pcd-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .rs-pcd-chip {
@@ -987,26 +974,10 @@ html.is-light .rs-pcstat-pick.is-fixed { color: color-mix(in srgb, currentColor 
 	background: var(--rs-active-bg); color: var(--rs-active-fg);
 	border-color: transparent;
 }
-.rs-pcd-popitem.is-sel { background: var(--rs-active-bg); color: var(--rs-active-fg); }
 .rs-pcd-chip .x { border: 0; background: transparent; color: inherit; cursor: pointer; opacity: .55; font-size: 10px; padding: 0; }
 .rs-pcd-chip .x:hover { opacity: 1; }
 .rs-pcd-addval { border-style: dashed; opacity: .8; }
 .rs-pcd-empty { opacity: .5; padding: 10px 2px; font-size: var(--text-size-smaller, .8125rem); }
-.rs-pcd-pop {
-	position: fixed; z-index: 100000; max-height: 320px; overflow: hidden;
-	display: flex; flex-direction: column; padding: 8px;
-	background: var(--cmdpal-bg-color, var(--app-bg, #26262b));
-	border: 1px solid color-mix(in srgb, var(--text-color) 30%, transparent);
-	border-radius: 4px; box-shadow: 0 18px 40px rgba(0,0,0,.5);
-	font-size: var(--text-size-small, .875rem);
-}
-.rs-pcd-poplist { overflow-y: auto; }
-.rs-pcd-popitem {
-	display: flex; align-items: center; justify-content: space-between; gap: 10px;
-	padding: 7px 9px; border-radius: 4px; cursor: pointer;
-}
-.rs-pcd-popitem:hover { background: color-mix(in srgb, currentColor 12%, transparent); }
-.rs-pcd-popitem .tag { font-size: 10.5px; opacity: .5; }
 .rs-pc.rs-pc-on {
 	background: color-mix(in srgb, var(--color-primary-500, #4caea1) 85%, var(--text-color) 0%);
 	border-color: transparent;
@@ -4027,7 +3998,19 @@ class Plugin extends AppPlugin {
 					+ (st ? (map[st.key] || []).map((v) =>
 						'<span class="rs-pcd-chip is-val"><span class="lbl">' + esc(this.pcLabelFor(vc, fld.id, v)) + '</span>'
 						+ '<button type="button" class="x rs-pc-vx" data-col="' + esc(g) + '" data-w="' + st.key + '" data-v="' + esc(v) + '">✕</button></span>').join('') : '')
-					+ (st ? '<button type="button" class="rs-pcd-chip rs-pc-vadd is-plus" data-col="' + esc(g) + '" data-w="' + st.key + '">+</button>' : '')
+					/* THE + ONLY WHILE THERE IS SOMETHING TO ADD (his 2026-08-15
+					 * screen recording). Values are exclusive across statuses, so
+					 * every row's picker offers the same remainder: once the last
+					 * value is mapped, every + in the group opens an empty menu.
+					 * `unmapped` is the same list the warning under the rows is
+					 * built from, so the two can never disagree — the + is gone
+					 * exactly when that warning is.
+					 * `!known.length` keeps it while we do not YET know the value
+					 * list: the fetch is async and repaints when it lands, and a
+					 * + that flashes away and back reads as a bug. */
+					+ (st && (!known.length || unmapped.length)
+						? '<button type="button" class="rs-pcd-chip rs-pc-vadd is-plus" data-col="' + esc(g) + '" data-w="' + st.key + '">+</button>'
+						: '')
 					+ '</div>';
 				return '<div class="rs-pcd-label rs-pcd-sec">Statuses</div>'
 					+ '<p class="rs-pcd-hint">Each status draws the page row exactly as a todo of that status. '
