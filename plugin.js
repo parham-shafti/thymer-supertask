@@ -6194,12 +6194,16 @@ class Plugin extends AppPlugin {
 			const gl = glyph.get(k);
 			const scale = gl && (Math.abs(gl.fs - 0.85) > 0.005 || Math.abs(gl.lh - 0.85) > 0.005)
 				? ';font-size:' + gl.fs + 'em;line-height:' + gl.lh + 'em' : '';
+			/* and whatever it ANIMATES: Alert pulses on a todo, so it pulses on a
+			 * page mapped to Alert. The keyframes are Thymer's own and global, so
+			 * the name is all we carry. */
+			const anim = (gl && gl.anim) || '';
 			css += sel + '{content:var(--ed-check-' + t + '-icon,"\\2713");'
 				+ 'color:var(--ed-check-' + t + '-fg);'
 				+ (t === 'done'
 					? 'background:var(--ed-check-done-bg);border-color:var(--ed-check-done-bg)'
 					: 'background:var(--ed-check-' + t + '-bg);border-color:var(--ed-check-' + t + '-border)')
-				+ (st.extra ? ';' + st.extra : '') + scale + '}\n';
+				+ (st.extra ? ';' + st.extra : '') + scale + anim + '}\n';
 		}
 		/* THE BOX'S OWN LEFT EDGE (his 2026-08-15 report, the two red bars:
 		 * "checkboxen på Referenses i Live Queries ligger inte i linje med
@@ -6582,7 +6586,21 @@ class Plugin extends AppPlugin {
 	 * 15.2px on both), so the same multiple lands on the same pixels — while a
 	 * px reading taken here would be the body's font, not the row's. Font-size
 	 * and line-height are measured separately because they genuinely differ:
-	 * alert scales the glyph but keeps the base line-height. */
+	 * alert scales the glyph but keeps the base line-height.
+	 *
+	 * THE ANIMATION COMES ALONG THE SAME WAY (his 2026-08-16 ask: an Alert todo
+	 * pulses, a page mapped to Alert sat static). Thymer runs `alert-blink` on
+	 * the native glyph, and the keyframes live in the app's own global sheet, so
+	 * naming it in our rule is enough — nothing to redefine and nothing to keep
+	 * in sync. Copied as LONGHANDS off the probe rather than as the computed
+	 * shorthand, whose serialization order is the browser's business.
+	 * Read for every status, not just alert: it is the same six lines either way
+	 * and it follows Thymer if another status ever gains one. Our box is a
+	 * single element carrying border, background AND glyph where the native pair
+	 * splits them, so an animation that touched the plate would blink more of
+	 * ours than of theirs — harmless for alert, whose border and background are
+	 * both transparent on either side. Worth a look before assuming it stays
+	 * harmless for a status Thymer animates later. */
 	pcGlyph() {
 		if (this.pcGl) return this.pcGl;
 		const out = new Map();
@@ -6597,17 +6615,41 @@ class Plugin extends AppPlugin {
 				const chk = probe.querySelector('.line-check-div');
 				if (!chk) continue;
 				const f = parseFloat(getComputedStyle(chk).fontSize);
-				const b = parseFloat(getComputedStyle(chk, '::before').fontSize);
-				const l = parseFloat(getComputedStyle(chk, '::before').lineHeight);
+				const bcs = getComputedStyle(chk, '::before');
+				const b = parseFloat(bcs.fontSize);
+				const l = parseFloat(bcs.lineHeight);
 				if (!(f > 0) || !(b > 0)) continue;
 				out.set(st.key, {
 					fs: Math.round((b / f) * 1000) / 1000,
 					lh: l > 0 ? Math.round((l / b) * 1000) / 1000 : 0.85,
+					anim: this.pcAnimOf(bcs),
 				});
 			}
 		} catch (e) {} finally { try { if (probe) probe.remove(); } catch (e2) {} }
 		if (out.size) this.pcGl = out; /* only cache a real reading */
 		return out;
+	}
+
+	/* A computed style's animation, as declarations we can re-emit. Longhands,
+	 * because the computed `animation` shorthand serializes with the NAME LAST
+	 * ("2s ease-in-out 0s infinite normal none running alert-blink") and that
+	 * ordering is the browser's business, not a contract. Empty string when
+	 * there is no animation, which is every status but alert today. */
+	pcAnimOf(cs) {
+		try {
+			const name = String(cs.animationName || 'none').trim();
+			if (!name || name === 'none') return '';
+			const parts = [
+				'animation-name:' + name,
+				'animation-duration:' + (cs.animationDuration || '0s'),
+				'animation-timing-function:' + (cs.animationTimingFunction || 'ease'),
+				'animation-delay:' + (cs.animationDelay || '0s'),
+				'animation-iteration-count:' + (cs.animationIterationCount || '1'),
+				'animation-direction:' + (cs.animationDirection || 'normal'),
+				'animation-fill-mode:' + (cs.animationFillMode || 'none'),
+			];
+			return ';' + parts.join(';');
+		} catch (e) { return ''; }
 	}
 
 	pcMetrics() {
