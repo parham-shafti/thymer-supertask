@@ -4614,8 +4614,53 @@ class Plugin extends AppPlugin {
 		return this.editorSelection() || this.tasksViewSelection();
 	}
 
+	/* A SELECTION PUBLISHED BY ANOTHER PLUGIN wins, because it is the thing the
+	 * user can SEE is selected. Thymer only ever focuses its own rows, so a row
+	 * selected in a plugin-drawn surface (Timeline's calendar list) is
+	 * invisible to everything here, and the date box acted on the caret's line
+	 * somewhere else instead — or on nothing (his 2026-08-25 report).
+	 *
+	 * The contract is a plain DATA record on one global, `window.__thymerSel`:
+	 * `{contract: 1, providers: [{owner, read()}]}`, where `read()` is the
+	 * contributor's OWN callback and must answer null unless its surface is
+	 * genuinely on screen with a live selection — that, not a timestamp, is
+	 * what stops a stale selection from stealing a keystroke. We never reach
+	 * into another plugin's implementation, every call is contained, and an
+	 * unrecognised contract makes this copy stand down rather than guess. */
+	externalTarget() {
+		try {
+			const g = window.__thymerSel;
+			if (!g || g.contract !== 1 || !Array.isArray(g.providers)) return null;
+			for (const p of g.providers) {
+				let sel = null;
+				try { sel = p && typeof p.read === 'function' ? p.read() : null; } catch (e) { continue; }
+				if (!sel) continue;
+				const anchorEl = sel.anchorEl && sel.anchorEl.nodeType === 1 ? sel.anchorEl : null;
+				const anchorX = typeof sel.anchorX === 'number' && isFinite(sel.anchorX) ? sel.anchorX : null;
+				if (sel.kind === 'record' && sel.guid) {
+					return this.data.getRecord(sel.guid)
+						? { kind: 'record', guid: sel.guid, domGuid: sel.domGuid || sel.guid, anchorEl, anchorX }
+						: null;
+				}
+				if (sel.kind === 'line' && sel.lineGuid && sel.pageGuid) {
+					return { kind: 'line', line: {
+						lineGuid: sel.lineGuid,
+						pageGuid: sel.pageGuid,
+						domGuid: sel.domGuid || sel.lineGuid,
+						segments: Array.isArray(sel.segments) ? sel.segments : [],
+						anchorEl,
+						anchorX,
+					} };
+				}
+			}
+		} catch (e) {}
+		return null;
+	}
+
 	/* Which date a command should act on. See the header for the order. */
 	dateTarget() {
+		const ext = this.externalTarget();
+		if (ext) return ext;
 		const view = this.focusedViewRecord(this.activePanelEl());
 		if (view) {
 			if (view.err === 'editing') return { err: 'Finish editing that cell first.' };
@@ -10250,8 +10295,14 @@ class Plugin extends AppPlugin {
 			? (t.kind === 'line' ? (t.line && (t.line.domGuid || t.line.lineGuid)) : t.domGuid)
 			: null;
 		const sel = domGuid && '.listitem[data-guid="' + domGuid + '"]';
-		const lineEl = sel ? ((panel && panel.querySelector(sel)) || document.querySelector(sel)
-			|| document.querySelector('.tasks-view-row[data-guid="' + domGuid + '"]')) : null;
+		/* A row published by another plugin is not a `.listitem`, so it hands us
+		 * its own element to anchor on (see externalTarget). Everything below
+		 * then treats it like any other row: under it, flipped above when it
+		 * does not fit, clamped inside its own panel. */
+		const extEl = t && (t.anchorEl || (t.line && t.line.anchorEl));
+		const lineEl = (extEl && extEl.isConnected ? extEl : null)
+			|| (sel ? ((panel && panel.querySelector(sel)) || document.querySelector(sel)
+				|| document.querySelector('.tasks-view-row[data-guid="' + domGuid + '"]')) : null);
 		if (lineEl) {
 			const lr = lineEl.getBoundingClientRect();
 			const col = lineEl.closest('.panel');
@@ -10269,8 +10320,15 @@ class Plugin extends AppPlugin {
 				return;
 			}
 			const chip = lineEl.querySelector('span.lineitem-datetime');
+			/* A provider can say WHERE on its row the box belongs — its rows have
+			 * no date chip and no segment spans to find, and the row's left edge
+			 * is not where the editor would put it (his screenshot: after the
+			 * line's text). */
+			const extX = t && (t.anchorX || (t.line && t.line.anchorX));
 			let ax;
-			if (chip) {
+			if (typeof extX === 'number') {
+				ax = extX;
+			} else if (chip) {
 				ax = chip.getBoundingClientRect().left;
 			} else {
 				const spans = this.segmentSpans(domGuid);
