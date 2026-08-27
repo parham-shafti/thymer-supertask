@@ -3163,6 +3163,13 @@ class Plugin extends AppPlugin {
 	onLoad() {
 		this.busy = false;
 		this.recurBusy = new Set();
+		/* The date box for OTHER plugins (Timeline's day-click, 2026-08-28).
+		 * Per the shared-runtime contract the global carries data plus the
+		 * OWNER's callback. The caller selects its row on the __thymerSel
+		 * bridge first; openPicker() then finds it through dateTarget() exactly
+		 * like ⌘⇧S — so with both plugins installed there is exactly ONE
+		 * picker and ONE repeat engine on the page. */
+		try { window.__rsDateBox = { contract: 1, owner: 'supertask', open: () => { this.openPicker(); return true; } }; } catch (e) {}
 		/* Session cache guid → rule (or null): the desktop client's in-memory
 		 * state can DROP props.rs_recur right after our own writes to a line
 		 * (mobile, which merely syncs, keeps it — his report). The cache
@@ -3543,6 +3550,7 @@ class Plugin extends AppPlugin {
 		for (const c of (this.cmds || [])) { try { if (c && c.remove) c.remove(); } catch (e) {} }
 		this.cmds = null;
 		try { window.__rsCmds = []; } catch (e) {}
+		try { if (window.__rsDateBox && window.__rsDateBox.owner === 'supertask') delete window.__rsDateBox; } catch (e) {}
 		this.closeSettings();
 		this.closePicker();
 		try { if (this.recurHandler) this.events.off(this.recurHandler); } catch (e) {}
