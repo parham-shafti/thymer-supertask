@@ -9425,7 +9425,26 @@ class Plugin extends AppPlugin {
 				const [hh, mm] = timeInput.value.split(':').map(Number);
 				dt = DateTime.dateAndTime(p.year, p.month, p.day, hh || 0, mm || 0, 0);
 			}
-			if (this.rangeEnd) dt.setRangeEnd(this.rangeEnd);
+			if (this.rangeEnd) {
+				let re = this.rangeEnd;
+				try {
+					/* A SAME-DAY end is a DURATION, not a second date: when the
+					 * picked day moves, it moves along (his broken chip
+					 * 2026-08-28, "Fri Aug 28 - Thu Aug 27 22:30": the old end
+					 * survived a new start). A multi-day end stays absolute,
+					 * and an end at or before the start is never written. */
+					const cs = cur && cur.getParts();
+					const rp = re.getParts();
+					if (cs && cs.year !== undefined && rp.year !== undefined
+						&& rp.year === cs.year && rp.month === cs.month && rp.day === cs.day
+						&& (p.year !== rp.year || p.month !== rp.month || p.day !== rp.day)) {
+						re = rp.hours !== undefined
+							? DateTime.dateAndTime(p.year, p.month, p.day, rp.hours, rp.minutes || 0, 0)
+							: DateTime.dateOnly(p.year, p.month, p.day);
+					}
+				} catch (e) {}
+				if (re.toDate() > dt.toDate()) dt.setRangeEnd(re);
+			}
 			return dt;
 		};
 
