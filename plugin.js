@@ -4645,9 +4645,10 @@ class Plugin extends AppPlugin {
 				if (!sel) continue;
 				const anchorEl = sel.anchorEl && sel.anchorEl.nodeType === 1 ? sel.anchorEl : null;
 				const anchorX = typeof sel.anchorX === 'number' && isFinite(sel.anchorX) ? sel.anchorX : null;
+				const anchorR = typeof sel.anchorR === 'number' && isFinite(sel.anchorR) ? sel.anchorR : null;
 				if (sel.kind === 'record' && sel.guid) {
 					return this.data.getRecord(sel.guid)
-						? { kind: 'record', guid: sel.guid, domGuid: sel.domGuid || sel.guid, anchorEl, anchorX }
+						? { kind: 'record', guid: sel.guid, domGuid: sel.domGuid || sel.guid, anchorEl, anchorX, anchorR }
 						: null;
 				}
 				if (sel.kind === 'line' && sel.lineGuid && sel.pageGuid) {
@@ -4658,6 +4659,7 @@ class Plugin extends AppPlugin {
 						segments: Array.isArray(sel.segments) ? sel.segments : [],
 						anchorEl,
 						anchorX,
+						anchorR,
 					} };
 				}
 			}
@@ -10333,8 +10335,14 @@ class Plugin extends AppPlugin {
 			 * is not where the editor would put it (his screenshot: after the
 			 * line's text). */
 			const extX = t && (t.anchorX || (t.line && t.line.anchorX));
+			/* a provider can also RIGHT-ALIGN the box (Timeline's day-click,
+			 * 2026-08-28): anchorR is the x its date slot ends at, so the box
+			 * lands on the same spot for every row whatever the text length */
+			const extR = t && (t.anchorR || (t.line && t.line.anchorR));
 			let ax;
-			if (typeof extX === 'number') {
+			if (typeof extR === 'number') {
+				ax = extR - w;
+			} else if (typeof extX === 'number') {
 				ax = extX;
 			} else if (chip) {
 				ax = chip.getBoundingClientRect().left;
