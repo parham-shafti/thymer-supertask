@@ -510,6 +510,11 @@ const CSS = `
 	color: var(--cmdpal-fg-color, var(--text-color, #eee));
 	border-bottom: 1px solid rgba(127,127,127,.18);
 }
+/* END-DATE MODE (his asks 2026-08-29): the span you drag out is VISIBLE —
+ * the hovered-to days band together — and a day before the start is greyed
+ * and refuses the click, exactly like native. */
+.rs-pop .day.inrange { background: color-mix(in srgb, var(--color-primary-500, #3aa37f) 16%, transparent); }
+.rs-pop .day.rs-dis { opacity: .3; pointer-events: none; }
 .rs-timerow {
 	display: flex; align-items: center; justify-content: space-between;
 	padding: 5px; line-height: 1.5;
@@ -9443,7 +9448,21 @@ class Plugin extends AppPlugin {
 							: DateTime.dateOnly(p.year, p.month, p.day);
 					}
 				} catch (e) {}
-				if (re.toDate() > dt.toDate()) dt.setRangeEnd(re);
+				try {
+					/* SET TIME OFF strips the END's clock too (his report
+					 * 2026-08-29: the start lost its 12:15, the end kept it —
+					 * "Fri Aug 28 - Fri Aug 28 12:15"). Without a clock a
+					 * same-day end is no range at all and is dropped; a
+					 * multi-day end survives as a plain date. */
+					if (!sw.checked) {
+						const rp2 = re.getParts();
+						if (rp2.year !== undefined) {
+							if (rp2.year === p.year && rp2.month === p.month && rp2.day === p.day) re = null;
+							else if (rp2.hours !== undefined) re = DateTime.dateOnly(rp2.year, rp2.month, rp2.day);
+						}
+					}
+				} catch (e) {}
+				if (re && re.toDate() > dt.toDate()) dt.setRangeEnd(re);
 			}
 			return dt;
 		};
@@ -9464,7 +9483,12 @@ class Plugin extends AppPlugin {
 				res.textContent = 'Pick the end date in the calendar';
 				res.classList.add('rs-bad');
 			} else if (dt) {
-				res.textContent = this.label(dt) + (this.rangeEnd ? ' → ' + this.label(this.rangeEnd) : '');
+				/* the footer mirrors the COMPOSED value, not this.rangeEnd raw:
+				 * compose can drop or move the end (Set time off, a moved day)
+				 * and the old preview kept showing an end that would never be
+				 * written (his 12:15 report, 2026-08-29) */
+				const de = dt.getRangeEnd ? dt.getRangeEnd() : null;
+				res.textContent = this.label(dt) + (de ? ' → ' + this.label(de) : '');
 				res.classList.remove('rs-bad');
 			} else {
 				res.textContent = input.value.trim() ? 'Not a date' : 'Pick a day or type a date';
@@ -9529,7 +9553,7 @@ class Plugin extends AppPlugin {
 				e.preventDefault();
 				/* an armed end-date mode is a sub-state: Escape backs out of IT
 				 * first, and only a second Escape closes the box */
-				if (this.endMode) { this.endMode = false; show(); return; }
+				if (this.endMode) { this.endMode = false; this.endHover = null; show(); return; }
 				this.cancelPicker();
 				return;
 			}
@@ -9577,10 +9601,12 @@ class Plugin extends AppPlugin {
 		pop.querySelector('.datepicker-days').addEventListener('click', (e) => {
 			const cell = e.target.closest('.day[data-date]');
 			if (!cell) return;
+			if (cell.classList.contains('rs-dis')) return; /* not a legal end */
 			const [y, m, d] = cell.getAttribute('data-date').split('-').map(Number);
 			if (this.endMode) {
 				this.rangeEnd = DateTime.dateOnly(y, m - 1, d);
 				this.endMode = false;
+				this.endHover = null;
 				this.endPickedAt = Date.now();
 				show();
 				return;
@@ -9595,6 +9621,18 @@ class Plugin extends AppPlugin {
 			this.sel = DateTime.dateOnly(y, m - 1, d);
 			show();
 			if (e.detail >= 2) { const dt = compose(); if (dt) commit(dt); }
+		});
+		/* the hover preview drives the calendar only while END mode is armed */
+		pop.querySelector('.datepicker-days').addEventListener('mousemove', (e) => {
+			if (!this.endMode) return;
+			const cell = e.target.closest('.day[data-date]');
+			if (!cell || cell.classList.contains('rs-dis')) return;
+			const [y, m, d] = cell.getAttribute('data-date').split('-').map(Number);
+			const nd = new Date(y, m - 1, d);
+			if (!this.endHover || this.endHover.getTime() !== nd.getTime()) { this.endHover = nd; show(); }
+		});
+		pop.querySelector('.datepicker-days').addEventListener('mouseleave', () => {
+			if (this.endHover) { this.endHover = null; if (this.endMode) show(); }
 		});
 
 		sw.addEventListener('change', () => {
@@ -9613,6 +9651,7 @@ class Plugin extends AppPlugin {
 		pop.querySelector('.rs-addend').addEventListener('click', () => {
 			if (this.rangeEnd) { this.rangeEnd = null; this.endMode = false; }
 			else this.endMode = !this.endMode;
+			this.endHover = null;
 			show();
 		});
 		pop.querySelector('.rs-clear').addEventListener('click', () => {
@@ -10285,7 +10324,11 @@ class Plugin extends AppPlugin {
 		const today = new Date();
 		const same = (a, b) => a && b && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 		const selD = this.sel && this.sel.getParts().year !== undefined ? this.sel.toDate() : null;
-		const endD = this.rangeEnd ? this.rangeEnd.toDate() : null;
+		/* while END mode is armed the HOVERED day previews the range, so the
+		 * span is visible as you drag it out (his ask 2026-08-29) */
+		const endD = this.rangeEnd ? this.rangeEnd.toDate()
+			: (this.endMode && this.endHover ? this.endHover : null);
+		const sel0 = selD ? new Date(selD.getFullYear(), selD.getMonth(), selD.getDate()) : null;
 
 		let html = '';
 		for (let i = 0; i < 42; i++) {
@@ -10294,6 +10337,10 @@ class Plugin extends AppPlugin {
 			if (same(d, today)) cls.push('today');
 			if (same(d, selD) || same(d, endD)) cls.push('selected');
 			if (selD && endD && d > selD && d < endD) cls.push('inrange');
+			/* picking an END: a day before the start is not a legal end —
+			 * native greys it and refuses the click; ours let it through and
+			 * BACKWARDS ranges were born (his report 2026-08-29) */
+			if (this.endMode && sel0 && d < sel0) cls.push('rs-dis');
 			const iso = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 			html += '<div class="' + cls.join(' ') + '" data-date="' + iso + '"><span class="day-inner">' + d.getDate() + '</span></div>';
 		}
@@ -10477,7 +10524,7 @@ class Plugin extends AppPlugin {
 		this.refreshMenuColors();
 		document.querySelectorAll('.rs-repmenu').forEach((m) => m.remove());
 		this.repMenu = null;
-		this.sel = this.view = this.rangeEnd = this.showPicker = this.cancelPicker = null;
+		this.sel = this.view = this.rangeEnd = this.endHover = this.showPicker = this.cancelPicker = null;
 		this.nameTpl = this.nameBase = null;
 		this.endMode = false;
 	}
