@@ -750,6 +750,24 @@ html.is-dark {
 }
 .rs-sel:hover { background: rgba(127,127,127,.16); }
 .rs-sel .ti-chevron-down { opacity: .5; font-size: .85em; }
+/* TOUCH: a tap on a day only SELECTS it, so a finger has no way to commit —
+   Enter and the double click are both mouse-and-keyboard affordances. Save and
+   Clear go BELOW the footer, full width: the box keeps its own width, and an
+   expanded Repeat panel pushes them down instead of past them. */
+.rs-tbtns { display: none; flex-direction: column; gap: 8px; padding: 0 10px 10px; }
+.rs-pop.rs-touch .rs-tbtns { display: flex; }
+/* the footer's own Clear would come back on the next show() (it toggles inline
+   display), so the touch shape takes it out in CSS, where nothing overrides it */
+.rs-pop.rs-touch .rs-foot .rs-clear { display: none !important; }
+.rs-tbtn {
+	height: 44px; display: flex; align-items: center; justify-content: center;
+	border-radius: 4px; font-size: 13.3px; font-weight: 600; letter-spacing: .02em;
+	cursor: pointer; user-select: none;
+}
+.rs-tsave { background: var(--button-primary-bg-color, #4caea1); color: light-dark(#fff, #0f0f11); }
+/* Thymer's OWN red (the enum chip pair), not a pure signal red: it reads as
+   destructive without outshouting Save, and it follows the theme both ways. */
+.rs-tclear { background: var(--enum-red-bg, #3d2a30); color: var(--enum-red-fg, #e8a0a8); }
 .rs-clear {
 	cursor: pointer; font-size: 13px; white-space: nowrap;
 	padding: 3px 9px; border-radius: 5px;
@@ -2388,6 +2406,18 @@ function rsVoPaintChip(btn, query) {
 	x.title = 'Clear the filter';
 	pill.appendChild(x);
 	btn.appendChild(pill);
+}
+
+/* THE TOUCH GATE (2026-08-28). Neither plugin had any touch detection: the
+ * long-press model existed, but nothing told the UI to change SHAPE. A coarse
+ * pointer is the honest test; the width fallback catches a phone whose
+ * pointer media query lies. A narrow side panel on a laptop is still a mouse,
+ * so width alone is never enough on its own. */
+function rsTouchUI() {
+	try {
+		if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) return true;
+		return window.innerWidth <= 700;
+	} catch (e) { return false; }
 }
 
 function rsVoCssAttr(s) { return String(s == null ? '' : s).replace(/["\\]/g, '\\$&'); }
@@ -9416,6 +9446,16 @@ class Plugin extends AppPlugin {
 				<span class="button-none button-small button-minimal-hover rs-clear">Clear</span>
 			</div>`;
 		pop.querySelector('.rs-head').textContent = this.targetLabel(t);
+		/* TOUCH shape. Appended BEFORE the box is measured, so place() sees the
+		 * real height and the box never lands half off-screen. */
+		const rsTouch = rsTouchUI();
+		if (rsTouch) {
+			pop.classList.add('rs-touch');
+			const strip = document.createElement('div');
+			strip.className = 'rs-tbtns';
+			strip.innerHTML = '<div class="rs-tbtn rs-tsave">Save</div><div class="rs-tbtn rs-tclear">Clear</div>';
+			pop.appendChild(strip);
+		}
 		document.body.appendChild(pop);
 		this.shieldKeys(pop);
 		this.pop = pop;
@@ -9557,6 +9597,8 @@ class Plugin extends AppPlugin {
 			addend.textContent = this.rangeEnd ? '− End date' : '+ End date';
 			addend.classList.toggle('rs-armed', this.endMode);
 			pop.querySelector('.rs-clear').style.display = cur ? '' : 'none';
+			const tclr = pop.querySelector('.rs-tclear');
+			if (tclr) tclr.style.display = cur ? '' : 'none';
 		};
 		this.showPicker = show;
 
@@ -9714,6 +9756,15 @@ class Plugin extends AppPlugin {
 			show();
 		});
 		pop.querySelector('.rs-clear').addEventListener('click', () => {
+			this.closePicker();
+			this.clearDate(t).catch((e) => this.toast('Failed: ' + ((e && e.message) || e)));
+		});
+		/* the touch pair does exactly what Enter and Clear do — one commit
+		 * path, one clear path, no second implementation to drift */
+		const tsave = pop.querySelector('.rs-tsave');
+		if (tsave) tsave.addEventListener('click', () => { const dt = compose(); if (dt) commit(dt); });
+		const tclear = pop.querySelector('.rs-tclear');
+		if (tclear) tclear.addEventListener('click', () => {
 			this.closePicker();
 			this.clearDate(t).catch((e) => this.toast('Failed: ' + ((e && e.message) || e)));
 		});
@@ -10080,8 +10131,30 @@ class Plugin extends AppPlugin {
 		setTimeout(() => document.addEventListener('pointerdown', this.outside, true), 0);
 		/* focus last, and once more on the next frame: laying out the repeat row
 		 * can move focus, and a box you cannot type into is worse than useless */
-		input.focus({ preventScroll: true });
-		requestAnimationFrame(() => { if (this.pop === pop && document.activeElement !== input) input.focus({ preventScroll: true }); });
+		/* On touch the box must NOT grab the field: the keyboard would slam up
+		 * over the calendar before a single day has been looked at. Tapping the
+		 * field is what asks for it, and then the box climbs above the keyboard. */
+		if (!rsTouch) {
+			input.focus({ preventScroll: true });
+			requestAnimationFrame(() => { if (this.pop === pop && document.activeElement !== input) input.focus({ preventScroll: true }); });
+		} else if (window.visualViewport) {
+			const vv = window.visualViewport;
+			const reanchor = () => {
+				/* self-removing: the box outlives no listener of its own */
+				if (!document.body.contains(pop)) {
+					vv.removeEventListener('resize', reanchor);
+					vv.removeEventListener('scroll', reanchor);
+					return;
+				}
+				const h = pop.offsetHeight;
+				pop.style.top = Math.max(vv.offsetTop + 8, vv.offsetTop + vv.height - h - 8) + 'px';
+			};
+			input.addEventListener('focus', () => {
+				vv.addEventListener('resize', reanchor);
+				vv.addEventListener('scroll', reanchor);
+				setTimeout(reanchor, 250);
+			});
+		}
 	}
 
 	/* A small dropdown of options under an anchor, on the repeat menu's surface
