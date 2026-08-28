@@ -526,8 +526,11 @@ const CSS = `
 	content: ''; position: absolute; z-index: 0; top: 0; bottom: 0; left: -7px; right: -7px;
 	background: color-mix(in srgb, var(--color-primary-500, #3aa37f) 16%, var(--cmdpal-bg-color, #26262b));
 }
-.rs-pop .day.rs-r0::before { left: 15%; border-radius: 9px 0 0 9px; }
-.rs-pop .day.rs-r1::before { right: 15%; border-radius: 0 9px 9px 0; }
+/* the ends ANCHOR UNDER the endpoint chips (left/right 50%), so nothing
+ * pokes out before the start or after the end, and the radius is the house
+ * 4px on the sliver that can show (his call 2026-08-29) */
+.rs-pop .day.rs-r0::before { left: 50%; border-radius: 4px 0 0 4px; }
+.rs-pop .day.rs-r1::before { right: 50%; border-radius: 0 4px 4px 0; }
 /* the app has its OWN .inrange styling (native range support) — under our
  * band it drew a second box (his report 2026-08-29). One drawing: ours. */
 .rs-pop .day.inrange { background: transparent; }
