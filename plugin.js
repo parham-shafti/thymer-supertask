@@ -513,7 +513,18 @@ const CSS = `
 /* END-DATE MODE (his asks 2026-08-29): the span you drag out is VISIBLE —
  * the hovered-to days band together — and a day before the start is greyed
  * and refuses the click, exactly like native. */
-.rs-pop .day.inrange { background: color-mix(in srgb, var(--color-primary-500, #3aa37f) 16%, transparent); }
+.rs-pop .day { position: relative; }
+.rs-pop .day .day-inner { position: relative; z-index: 1; }
+/* the band is CONTINUOUS (his report 2026-08-29: it broke apart at the grid
+ * gaps): every member bleeds RIGHT across the gap on an OPAQUE tint (the
+ * accent mixed into the surface colour, so overlaps cannot double up), the
+ * start rounds its left edge, the end its right edge and does not bleed. */
+.rs-pop .day.rs-r0::before, .rs-pop .day.inrange::before, .rs-pop .day.rs-r1::before {
+	content: ''; position: absolute; z-index: 0; top: 14%; bottom: 14%; left: 0; right: -10px;
+	background: color-mix(in srgb, var(--color-primary-500, #3aa37f) 16%, var(--cmdpal-bg-color, #26262b));
+}
+.rs-pop .day.rs-r0::before { border-radius: 9px 0 0 9px; left: 12%; }
+.rs-pop .day.rs-r1::before { right: 12%; border-radius: 0 9px 9px 0; }
 .rs-pop .day.rs-dis { opacity: .3; pointer-events: none; }
 .rs-timerow {
 	display: flex; align-items: center; justify-content: space-between;
@@ -1097,7 +1108,7 @@ const DOW = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 /* The shared VIEW OPTIONS menu — the "..." chip, the menu behind it, and the
  * cross-plugin registry that lets several plugins contribute to one menu.
  * Supertask's own contribution is voProvider() further down; everything in the
- * generated region below is shared property. Spec: ../SHARED-VIEW-OPTIONS.md */
+ * generated region below is shared property. Spec: ../shared/SHARED-VIEW-OPTIONS.md */
 // <<<SHARED view-options — GENERATED, DO NOT EDIT HERE.
 // Source: shared/view-options.js  |  regenerate: node tools/sync-view-options.mjs
 /* ── THE SHARED GLOBAL ────────────────────────────────────────────────────
@@ -10337,6 +10348,10 @@ class Plugin extends AppPlugin {
 			if (same(d, today)) cls.push('today');
 			if (same(d, selD) || same(d, endD)) cls.push('selected');
 			if (selD && endD && d > selD && d < endD) cls.push('inrange');
+			if (selD && endD) {
+				if (same(d, selD)) cls.push('rs-r0');
+				if (same(d, endD)) cls.push('rs-r1');
+			}
 			/* picking an END: a day before the start is not a legal end —
 			 * native greys it and refuses the click; ours let it through and
 			 * BACKWARDS ranges were born (his report 2026-08-29) */
