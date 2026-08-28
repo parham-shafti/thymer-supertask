@@ -4900,8 +4900,22 @@ class Plugin extends AppPlugin {
 			const dpId = ctx.dp || DUE_DATE_FIELD;
 			const prop = rec.prop(dpId);
 			if (!prop) { this.toast('“' + (rec.getName() || 'That page') + '” has no ' + (ctx.dpl || dpId) + ' field.'); return false; }
+			/* UNDO covers the DATE write alone (his ask 2026-08-28). A commit
+			 * that also touched the repeat RULE stays un-undoable for now:
+			 * rules fan out into series copies and reconciliation, and a
+			 * half-restored series is worse than none. */
+			const prevDT = (() => { try { const d = prop.datetime(); return d ? d.value() : null; } catch (e) { return null; } })();
 			prop.set(dt.value());
-			this.toast((rec.getName() || 'Page') + ' → ' + this.label(dt));
+			const undoRec = (t.pendingRule || prev) ? null : () => {
+				try {
+					const r2 = this.data.getRecord(t.guid);
+					const p2 = r2 && r2.prop(dpId);
+					if (!p2) return;
+					if (prevDT == null) p2.set([]); else p2.set(prevDT);
+					this.toast('Undone.');
+				} catch (e) {}
+			};
+			this.toast((rec.getName() || 'Page') + ' → ' + this.label(dt), undoRec);
 			/* the RULE rides in pageRules (synced config). savePrefs is the
 			 * LAST act — saveConfiguration reloads the plugin. */
 			if (t.ruleTouched) {
@@ -4955,6 +4969,12 @@ class Plugin extends AppPlugin {
 		const li = await this.lineItem(t.line);
 		if (!li) { this.toast('Could not read that line.'); return false; }
 		const segs = li.segments.map((s) => ({ type: s.type, text: s.text }));
+		/* the undo snapshot — segs itself is about to be mutated. Undo is
+		 * offered only when NO rule is involved (commit flags ruleTouched on
+		 * every write, so the flag itself cannot gate): nothing pending in
+		 * the box and no rs_recur already on the line. */
+		const prevSegs = li.segments.map((s) => ({ type: s.type, text: s.text }));
+		const ruleInvolved = !!(t.pendingRule || (t.line && t.line.props && t.line.props.rs_recur));
 		const i = segs.findIndex((s) => s.type === 'datetime');
 
 		/* Moving the caret is only ever right when we CREATE the date. If the line
@@ -5024,7 +5044,15 @@ class Plugin extends AppPlugin {
 			if (move) await this.placeCaret(dom, move);
 			else await this.restoreCaret(dom, t.line.caret);
 		}
-		this.toast(this.label(dt));
+		const undoLine = ruleInvolved ? null : async () => {
+			try {
+				const lf = await this.lineItem(t.line);
+				if (!lf) return;
+				await lf.setSegments(prevSegs);
+				this.toast('Undone.');
+			} catch (e) {}
+		};
+		this.toast(this.label(dt), undoLine);
 		return true;
 	}
 
@@ -10582,9 +10610,12 @@ class Plugin extends AppPlugin {
 		});
 	}
 
-	toast(message) {
+	toast(message, onUndo) {
 		try {
-			this.ui.addToaster({ title: 'Supertask', message, dismissible: true, autoDestroyTime: 3200 });
+			let tt = null;
+			tt = this.ui.addToaster(Object.assign(
+				{ title: 'Supertask', message, dismissible: true, autoDestroyTime: onUndo ? 8000 : 3200 },
+				onUndo ? { primaryLabel: 'Undo', onPrimary: () => { try { onUndo(); } catch (e) {} try { tt && tt.destroy(); } catch (e) {} } } : {}));
 		} catch (e) {}
 	}
 }
