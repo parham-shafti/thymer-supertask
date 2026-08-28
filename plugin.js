@@ -514,17 +514,20 @@ const CSS = `
  * the hovered-to days band together — and a day before the start is greyed
  * and refuses the click, exactly like native. */
 .rs-pop .day { position: relative; }
-.rs-pop .day .day-inner { position: relative; z-index: 1; }
-/* the band is CONTINUOUS (his report 2026-08-29: it broke apart at the grid
- * gaps): every member bleeds RIGHT across the gap on an OPAQUE tint (the
- * accent mixed into the surface colour, so overlaps cannot double up), the
- * start rounds its left edge, the end its right edge and does not bleed. */
+.rs-pop .day .day-inner { position: relative; }
+/* the band is CONTINUOUS and EXACTLY the endpoint chips' height (his calls
+ * 2026-08-29). The chip's own padding box is SHORTER than it looks (its
+ * ~1.65px borders — measured 16.7 vs 20), but the .day CELL is exactly the
+ * chip's border-box height, so the band hangs off the cell with inset 0
+ * vertically and bleeds sideways across the grid gaps on an OPAQUE tint
+ * (accent mixed into the surface, so overlaps cannot double up). The
+ * endpoints' solid chips paint above it. */
 .rs-pop .day.rs-r0::before, .rs-pop .day.inrange::before, .rs-pop .day.rs-r1::before {
-	content: ''; position: absolute; z-index: 0; top: 14%; bottom: 14%; left: 0; right: -10px;
+	content: ''; position: absolute; z-index: 0; top: 0; bottom: 0; left: -7px; right: -7px;
 	background: color-mix(in srgb, var(--color-primary-500, #3aa37f) 16%, var(--cmdpal-bg-color, #26262b));
 }
-.rs-pop .day.rs-r0::before { border-radius: 9px 0 0 9px; left: 12%; }
-.rs-pop .day.rs-r1::before { right: 12%; border-radius: 0 9px 9px 0; }
+.rs-pop .day.rs-r0::before { left: 15%; border-radius: 9px 0 0 9px; }
+.rs-pop .day.rs-r1::before { right: 15%; border-radius: 0 9px 9px 0; }
 /* the app has its OWN .inrange styling (native range support) — under our
  * band it drew a second box (his report 2026-08-29). One drawing: ours. */
 .rs-pop .day.inrange { background: transparent; }
