@@ -525,6 +525,10 @@ const CSS = `
 }
 .rs-pop .day.rs-r0::before { border-radius: 9px 0 0 9px; left: 12%; }
 .rs-pop .day.rs-r1::before { right: 12%; border-radius: 0 9px 9px 0; }
+/* the app has its OWN .inrange styling (native range support) — under our
+ * band it drew a second box (his report 2026-08-29). One drawing: ours. */
+.rs-pop .day.inrange { background: transparent; }
+.rs-pop .day.inrange .day-inner { background: transparent; }
 .rs-pop .day.rs-dis { opacity: .3; pointer-events: none; }
 .rs-timerow {
 	display: flex; align-items: center; justify-content: space-between;
@@ -4673,6 +4677,12 @@ class Plugin extends AppPlugin {
 						pageGuid: sel.pageGuid,
 						domGuid: sel.domGuid || sel.lineGuid,
 						segments: Array.isArray(sel.segments) ? sel.segments : [],
+						/* the provider's props ride along — readRule reads
+						 * rs_recur off them, so the box opened from a calendar
+						 * row shows the line's real repeat instead of "Never"
+						 * (and a commit no longer wipes it — his catch
+						 * 2026-08-29) */
+						props: sel.props && typeof sel.props === 'object' ? sel.props : undefined,
 						anchorEl,
 						anchorX,
 						anchorR,
