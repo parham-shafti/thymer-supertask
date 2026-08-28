@@ -2413,6 +2413,23 @@ function rsVoPaintChip(btn, query) {
  * pointer is the honest test; the width fallback catches a phone whose
  * pointer media query lies. A narrow side panel on a laptop is still a mouse,
  * so width alone is never enough on its own. */
+/* UNDO SCOPE (2026-08-28). The old gate refused undo whenever a repeat rule was
+ * involved at all, because "rules fan out into series copies". That is true of
+ * exactly ONE kind of rule: a FORWARD TRAIL. Both reconcilers compute
+ *     wanted = rule.tr === 'f' ? recurOccurrences(...) : []
+ * so without a trail nothing is created and nothing is trashed, and the commit
+ * writes exactly two reversible things — the rule and the date. The boundary
+ * belongs there, not around every rule. */
+function rsParseRule(j) { try { return j ? JSON.parse(j) : null; } catch (e) { return null; } }
+function rsIsTrail(r) { return !!(r && r.tr === 'f'); }
+/* the raw rs_recur string on a line handle, the same read reconcile does */
+function rsRawRule(x) { try { const r = x && x._getItem ? x._getItem() : null; return (r && r.mp && r.mp.rs_recur) || null; } catch (e) { return null; } }
+/* A page-rule undo has to survive savePrefs(): saveConfiguration RELOADS the
+ * plugin and takes the toast and its closure with it. Park the facts, re-offer
+ * on the next load. Short TTL — an undo offered minutes later is a trap. */
+const RS_UNDO_KEY = 'rs_undo_v1';
+const RS_UNDO_TTL = 25000;
+
 function rsTouchUI() {
 	try {
 		if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) return true;
@@ -3226,6 +3243,9 @@ class Plugin extends AppPlugin {
 		 * like ⌘⇧S — so with both plugins installed there is exactly ONE
 		 * picker and ONE repeat engine on the page. */
 		try { window.__rsDateBox = { contract: 1, owner: 'supertask', open: () => { this.openPicker(); return true; } }; } catch (e) {}
+		/* a page-rule commit reloads us through savePrefs; re-make the offer it
+		 * took with it, once the UI is there to show it */
+		setTimeout(() => { try { this.reofferPageUndo(); } catch (e) {} }, 600);
 		/* Session cache guid → rule (or null): the desktop client's in-memory
 		 * state can DROP props.rs_recur right after our own writes to a line
 		 * (mobile, which merely syncs, keeps it — his report). The cache
@@ -4935,16 +4955,29 @@ class Plugin extends AppPlugin {
 			 * rules fan out into series copies and reconciliation, and a
 			 * half-restored series is worse than none. */
 			const prevDT = (() => { try { const d = prop.datetime(); return d ? d.value() : null; } catch (e) { return null; } })();
-			prop.set(dt.value());
-			const undoRec = (t.pendingRule || prev) ? null : () => {
-				try {
-					const r2 = this.data.getRecord(t.guid);
-					const p2 = r2 && r2.prop(dpId);
-					if (!p2) return;
-					if (prevDT == null) p2.set([]); else p2.set(prevDT);
-					this.toast('Undone.');
-				} catch (e) {}
+			/* Same boundary as the line branch: only a forward trail duplicates
+			 * or trashes real pages. A plain repeat writes the date and one
+			 * entry in pageRules, and both are snapshotted here. */
+			const fanOut = rsIsTrail(t.pendingRule) || rsIsTrail(prev);
+			const clone = (o) => (o ? JSON.parse(JSON.stringify(o)) : null);
+			const prevRuleSnap = clone(prev);
+			const prevDefaults = t.collGuid ? clone((this.pageDefaults || {})[t.collGuid]) : null;
+			const undoState = {
+				guid: t.guid, dpId, prevDT, originGuid,
+                                collGuid: t.collGuid || null, prevRule: prevRuleSnap, prevDefaults,
 			};
+			prop.set(dt.value());
+			const undoRec = fanOut ? null : () => { this.applyPageUndo(undoState, !!t.ruleTouched); };
+			/* When a rule is touched the toast below dies with the plugin —
+			 * savePrefs() reloads it — so the offer is parked and re-made on
+			 * the next load instead. */
+			if (!fanOut && t.ruleTouched) {
+				try {
+					localStorage.setItem(RS_UNDO_KEY, JSON.stringify({
+						ts: Date.now(), msg: (rec.getName() || 'Page') + ' → ' + this.label(dt), state: undoState,
+					}));
+				} catch (e) {}
+			}
 			this.toast((rec.getName() || 'Page') + ' → ' + this.label(dt), undoRec);
 			/* the RULE rides in pageRules (synced config). savePrefs is the
 			 * LAST act — saveConfiguration reloads the plugin. */
@@ -5004,7 +5037,10 @@ class Plugin extends AppPlugin {
 		 * every write, so the flag itself cannot gate): nothing pending in
 		 * the box and no rs_recur already on the line. */
 		const prevSegs = li.segments.map((s) => ({ type: s.type, text: s.text }));
-		const ruleInvolved = !!(t.pendingRule || (t.line && t.line.props && t.line.props.rs_recur));
+		/* Only a forward trail lays out or deletes real lines. Everything else
+		 * comes back from these two facts. */
+		let fanOut = rsIsTrail(t.pendingRule) || rsIsTrail(rsParseRule(t.line && t.line.props && t.line.props.rs_recur));
+		let ruleUndo = null;   /* {lineGuid, prevRule} — set when a rule is written */
 		const i = segs.findIndex((s) => s.type === 'datetime');
 
 		/* Moving the caret is only ever right when we CREATE the date. If the line
@@ -5041,6 +5077,9 @@ class Plugin extends AppPlugin {
 				const plS = await this.pageLines(t.line.pageGuid);
 				const origLi = plS && plS.byG.get(sid);
 				if (origLi) {
+					const prevOrig = rsRawRule(origLi);
+					if (rsIsTrail(rsParseRule(prevOrig))) fanOut = true;
+					ruleUndo = { lineGuid: origLi.guid, prevRule: rsParseRule(prevOrig) };
 					const oseg = (origLi.segments || []).find((s) => s.type === 'datetime');
 					const op = oseg ? new DateTime(oseg.text).getParts() : null;
 					const oymd = op && op.year !== undefined
@@ -5051,6 +5090,7 @@ class Plugin extends AppPlugin {
 					seriesOrigin = { pl: plS, li: origLi, rule, ymd: oymd };
 				}
 			} else {
+				ruleUndo = { lineGuid: li.guid, prevRule: rsParseRule(rsRawRule(li)) };
 				const rule = this.finalizeRule(t.pendingRule, rp.year * 10000 + (rp.month + 1) * 100 + rp.day);
 				await this.writeRule(li, rule);
 				seriesRule = rule; /* null included — that reconciles the series away */
@@ -5074,11 +5114,20 @@ class Plugin extends AppPlugin {
 			if (move) await this.placeCaret(dom, move);
 			else await this.restoreCaret(dom, t.line.caret);
 		}
-		const undoLine = ruleInvolved ? null : async () => {
+		/* Rule first, segments LAST — the same order the commit itself obeys,
+		 * for the same reason (two writes to one line render twice, and the
+		 * second render is the one that settles). */
+		const undoLine = fanOut ? null : async () => {
 			try {
+				if (ruleUndo) {
+					const rec2 = this.data.getRecord(t.line.pageGuid);
+					const rf = rec2 ? await this.freshLine(rec2, ruleUndo.lineGuid) : null;
+					if (rf) await this.writeRule(rf, ruleUndo.prevRule);
+				}
 				const lf = await this.lineItem(t.line);
 				if (!lf) return;
 				await lf.setSegments(prevSegs);
+				this.refreshRepeatStyle();
 				this.toast('Undone.');
 			} catch (e) {}
 		};
@@ -5633,6 +5682,44 @@ class Plugin extends AppPlugin {
 	 * copy by occurrence day (his follow-up spec) — shorten the until and the
 	 * superfluous NOT-completed copies are trashed, extend it and the missing
 	 * days are laid out. Caller saves prefs afterwards. */
+	/* Restores what a non-fan-out page commit wrote: the date, and when a rule
+	 * was touched, the pageRules entry and the collection default that rode
+	 * with it. savePrefs LAST, exactly as the commit does — and it reloads the
+	 * plugin again, which is why the stash is consumed before any of this runs
+	 * rather than after. */
+	async applyPageUndo(st, ruleTouched) {
+		try {
+			const r2 = this.data.getRecord(st.guid);
+			const p2 = r2 && r2.prop(st.dpId);
+			if (p2) { if (st.prevDT == null) p2.set([]); else p2.set(st.prevDT); }
+			if (ruleTouched) {
+				this.pageRules = this.pageRules || {};
+				if (st.prevRule) this.pageRules[st.originGuid] = st.prevRule;
+				else delete this.pageRules[st.originGuid];
+				if (st.collGuid) {
+					this.pageDefaults = this.pageDefaults || {};
+					if (st.prevDefaults) this.pageDefaults[st.collGuid] = st.prevDefaults;
+					else delete this.pageDefaults[st.collGuid];
+				}
+				await this.savePrefs();
+			}
+			this.toast('Undone.');
+		} catch (e) {}
+	}
+	/* The offer the reload ate. Consumed FIRST so a failed undo cannot be
+	 * offered twice, and dropped silently once it is stale. */
+	reofferPageUndo() {
+		let parked = null;
+		try {
+			const raw = localStorage.getItem(RS_UNDO_KEY);
+			if (raw) parked = JSON.parse(raw);
+			localStorage.removeItem(RS_UNDO_KEY);
+		} catch (e) { return; }
+		if (!parked || !parked.state) return;
+		if (Date.now() - (parked.ts || 0) > RS_UNDO_TTL) return;
+		this.toast(parked.msg || 'Repeat set', () => this.applyPageUndo(parked.state, true));
+	}
+
 	async reconcilePageSeries(rec, rule) {
 		if (!rule) return;
 		rule.copies = rule.copies || {};
