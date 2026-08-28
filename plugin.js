@@ -9404,9 +9404,11 @@ class Plugin extends AppPlugin {
 		/* a TIME-ONLY date (hours without a year) NaN:ed the whole calendar
 		 * ("Invalid Date", his split-view screenshot) — treat it as today at
 		 * that time */
+		let timeOnly = false;
 		if (sp.year === undefined) {
 			const nd = new Date();
-			start = sp.hours !== undefined
+			timeOnly = sp.hours !== undefined;
+			start = timeOnly
 				? DateTime.dateAndTime(nd.getFullYear(), nd.getMonth(), nd.getDate(), sp.hours, sp.minutes || 0, 0)
 				: new DateTime(nd);
 			sp = start.getParts();
@@ -9416,7 +9418,9 @@ class Plugin extends AppPlugin {
 		this.sel = cur || DateTime.dateOnly(sp.year, sp.month, sp.day);
 		this.endMode = false;
 		this.rangeEnd = cur ? cur.getRangeEnd() : null;
-		if (cur && sp.hours !== undefined) {
+		/* a time-only line still SHOWS its time (his report 2026-08-28: the
+		 * box opened with Set time off although the row said 11:00 - 12:00) */
+		if ((cur || timeOnly) && sp.hours !== undefined) {
 			sw.checked = true;
 			timeInput.style.display = '';
 			timeInput.value = String(sp.hours).padStart(2, '0') + ':' + String(sp.minutes || 0).padStart(2, '0');
