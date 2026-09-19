@@ -92,6 +92,24 @@ Ten slots, and a slot may be left empty. The chord is the position, so slot ten 
 
 Keys are matched by physical position, so any keyboard layout works, and the Settings panel shows the chords for your platform. Thymer binds no digit key on any modifier, so the blocks are free in-app. Two OS-level caveats: macOS can claim `⌃`-digits for *Switch to Desktop* when you use multiple Spaces (System Settings → Keyboard → Shortcuts → Mission Control), and some Linux desktops bind `Alt`-digits to window or workspace switching — free the chord in your desktop's keyboard settings if one does nothing.
 
+## Page checkboxes
+
+Half of a GTD system is not lines. A project, a client, an article is a page, and its status already lives in a property on it. Referenced from a line, or listed by a live query, such a page arrives as a bare title: you cannot see where it stands, and you cannot move it on without opening it.
+
+Point Supertask at that property and those rows get a real checkbox, wherever the page is rendered: as a reference on a line, as a row in a live query, inside a transclusion.
+
+![Three pages in a list, each drawing its own status: In Progress, Blocked, Done](assets/page-checkboxes.png)
+
+Map the property's values onto the statuses you use, and the row draws exactly as a todo of that status would, on any theme, because it borrows Thymer's own tokens for it: **Done, Not Done, In Progress, Important, Alert, Starred, Billable, Discuss, Blocked, Cancelled**. An Alert page pulses like an Alert todo does. A value you have not mapped, and an empty property, draw no box at all, which is what keeps the decoration honest: a page with no status set does not pretend to have one.
+
+Clicking the box writes the property, so it syncs and collaborates like a hand-made edit. The `⌃`-digit chords reach those rows too, so any mapped status is one chord away without opening the page.
+
+**One rule for every collection.** Wiring each collection separately gets old fast, so *On every Page* matches a single property **by name** across the whole workspace, which is all you need when every collection calls its status the same thing. Your per-collection wiring is kept while the global rule is on, and comes back untouched when you switch it off.
+
+It is all configured under **Page Checkboxes** in Settings.
+
+![The Page Checkboxes settings: one property matched by name, and its values mapped onto the statuses](assets/page-checkbox-settings.png)
+
 ## Sub-tasks keep their context
 
 A todo that lives under another todo reads fine on its own page, because the indentation tells you. Met in a **live search result** or in Thymer's **Tasks view** it arrives with no context at all, and nothing says it is one step of something bigger.
@@ -111,24 +129,6 @@ One set of chords covers both halves of a GTD system. The target resolves in thi
 5. Anything else → a new date on the line, counted from today
 
 Rule 4 is deliberately strict: a prose todo that merely mentions `[[Some Project]]` moves its *own* date, never the project's. Everything works inside live searches too — the plugin follows Thymer's virtual result rows to the real lines behind them. `Due Date` is found by name, so any collection with such a field works regardless of its internal field id.
-
-## Page checkboxes
-
-Half of a GTD system is not lines. A project, a client, an article is a page, and its status already lives in a property on it. Referenced from a line, or listed by a live query, such a page arrives as a bare title: you cannot see where it stands, and you cannot move it on without opening it.
-
-Point Supertask at that property and those rows get a real checkbox, wherever the page is rendered: as a reference on a line, as a row in a live query, inside a transclusion.
-
-![Three pages in a list, each drawing its own status: In Progress, Blocked, Done](assets/page-checkboxes.png)
-
-Map the property's values onto the statuses you use, and the row draws exactly as a todo of that status would, on any theme, because it borrows Thymer's own tokens for it: **Done, Not Done, In Progress, Important, Alert, Starred, Billable, Discuss, Blocked, Cancelled**. An Alert page pulses like an Alert todo does. A value you have not mapped, and an empty property, draw no box at all, which is what keeps the decoration honest: a page with no status set does not pretend to have one.
-
-Clicking the box writes the property, so it syncs and collaborates like a hand-made edit. The `⌃`-digit chords reach those rows too, so any mapped status is one chord away without opening the page.
-
-**One rule for every collection.** Wiring each collection separately gets old fast, so *On every Page* matches a single property **by name** across the whole workspace, which is all you need when every collection calls its status the same thing. Your per-collection wiring is kept while the global rule is on, and comes back untouched when you switch it off.
-
-It is all configured under **Page Checkboxes** in Settings.
-
-![The Page Checkboxes settings: one property matched by name, and its values mapped onto the statuses](assets/page-checkbox-settings.png)
 
 ## Group and order your sections
 
