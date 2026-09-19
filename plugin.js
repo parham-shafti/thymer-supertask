@@ -1121,1292 +1121,17 @@ html.is-light .rs-pcstat-pick.is-fixed { color: color-mix(in srgb, currentColor 
 .rs-p-fold { cursor: pointer; user-select: none; }
 .rs-p-fold:hover .rs-p-sec-label { opacity: .8; }
 .rs-p-chev { flex: 0 0 auto; font-size: 11px; opacity: .5; }
-/* The section menu and its dots chip MOVED to the shared view-options module
- * (2026-08-13): the chip, the menu surface and the row treatment his 2026-08-08
- * mock settled are now the tvo- classes, styled in shared/view-options.js, so
- * every plugin contributing to the menu gets the same look. Supertask now
- * contributes its rows as DATA (voProvider) and any copy of the module in the
- * app can render them. Do not re-add the ordmenu or chip rules here.
+/* The section menu and its dots chip MOVED to the View Options plugin
+ * (2026-08-13 to the shared module, 2026-09-19 to a plugin of its own): the
+ * chip, the menu surface and the row treatment his 2026-08-08 mock settled are
+ * the tvo- classes and live over there, so every plugin contributing to the
+ * menu gets the same look. Supertask contributes its rows as DATA (voProvider)
+ * and View Options renders them. Do not re-add the ordmenu or chip rules here.
  * NOTE this block is a TEMPLATE LITERAL: no backticks anywhere, comments
  * included, or the string terminates and the plugin will not parse. */
 `;
 
 const DOW = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
-
-/* The shared VIEW OPTIONS menu — the "..." chip, the menu behind it, and the
- * cross-plugin registry that lets several plugins contribute to one menu.
- * Supertask's own contribution is voProvider() further down; everything in the
- * generated region below is shared property. Spec: ../shared/SHARED-VIEW-OPTIONS.md */
-// <<<SHARED view-options — GENERATED, DO NOT EDIT HERE.
-// Source: shared/view-options.js  |  regenerate: node tools/sync-view-options.mjs
-/* ── THE SHARED GLOBAL ────────────────────────────────────────────────────
- * window.__thymerViewOptions = {
- *   contract: 1,   // shape of the DATA below; changes almost never
- *   providers: [], // provider records, plain data (see rsVoRegister)
- *   rev: 0,        // bumped on every change; the host re-renders when it moves
- *   host: null,    // { version, id, release(), poke() } — the copy rendering
- *   hidePending: {}, // guid -> bool, the optimistic overlay on the meta prop
- *   cmdOwner: null,  // provider id registering the palette command (one only)
- *   writer: null,    // { id, write(guid, on) } — the plugin that persists a
- *                    //   dismissal as a meta property on the line
- *   filters: {},     // guid -> query string, the in-block filter
- * }
- * CONTRACT 1 provider record:
- *   { id, version, order, appliesTo(ctx) -> bool, appliesToRow?(ctx) -> bool,
- *     build(ctx) -> items[] }
- *   TWO predicates, and the split matters. `appliesTo` means "this line
- *   WARRANTS A CHIP because of me". `appliesToRow` means "my row belongs in a
- *   menu on this line" and defaults to `appliesTo`. A provider that is useful
- *   to reach but not worth summoning a chip on its own (Reference
- *   Extravaganza's Description: worth offering wherever a chip already is,
- *   never a chip on every line in the document) sets a narrow `appliesTo` and
- *   a wide `appliesToRow`. Deliberately in that order, so an OLDER host that
- *   knows only `appliesTo` shows FEWER ROWS — never a chip on every line.
- * CONTRACT 1 context:
- *   { guid, type, state, node }  type/state come from g_universe.itemsByGuid;
- *   `node` is the rendered .listitem the chip is anchored to, and it is present
- *   ONLY for build()/onSelect() — appliesTo runs over the model before any DOM
- *   lookup, so it must never depend on node, and a provider reading node must
- *   tolerate null (an older host predates the field).
- * CONTRACT 1 item (a plain tree, so an OLD host can render a NEW plugin's menu):
- *   { sep: true }
- *   { key?, label, icon?, checked?, selected?, disabled?, submenu?: items[],
- *     onSelect?(ctx, api) }      api = { close(), refresh() }
- * onSelect belongs to the registering plugin; the host only invokes it. */
-const rsVO_CONTRACT = 1;
-/* 2 (2026-08-13): the appliesTo / appliesToRow split, and the main-menu layout
- * round (no icon column, divider under the header, filled active leaf, submenu
- * aligned to its title row). Bump this whenever behaviour here changes. */
-/* 4 (2026-08-13): host.poke(), so a copy that is NOT hosting can demand an
- * immediate repaint instead of waiting for the host's next incidental trigger.
- * 5 (2026-08-13): the palette command is CLAIMED through the global instead of
- * being hardcoded to one plugin by convention.
- * 6 (2026-08-13): a dismissed chip SYNCS — it is a meta property on the line,
- * not a localStorage list.
- * 7 (2026-08-13): that writer is OPTIONAL. This module must work for anyone who
- * carries it, with no dependency on any particular plugin.
- * 8 (2026-08-13): the in-block FILTER, a module built-in rather than a provider,
- * so every carrier has it. */
-const rsVO_MODULE_VERSION = 8;
-const rsVO_GLOBAL = '__thymerViewOptions';
-/* WHERE A DISMISSAL IS STORED, and why there are two answers.
- *
- * The good one: a meta property on the line, so it SYNCS to every device and
- * travels with the line. Reading it is free — the eligibility scan already
- * walks `st.props` for every line — but WRITING one needs a data API, and this
- * module has none. A plugin carrying the module can lend it one (VoSetWriter).
- *
- * THAT LEND IS OPTIONAL, AND THAT IS THE POINT. This module has to stand on its
- * own for whoever carries it: making persistence depend on a plugin volunteering
- * a writer would mean View Options only works if some particular plugin is
- * installed, which is exactly the dependency a shared component must not have
- * (his call, 2026-08-13, correcting me). With no writer the dismissal falls back
- * to localStorage — this device only, but working. Lend a writer and it syncs.
- * Never saveConfiguration either way: it reloads the plugin and would tear down
- * the host. */
-const rsVO_HIDE_PROP = 'tvo_hide';
-const rsVO_HIDE_KEY = 'thymer-view-options-hidden-lines';
-const rsVO_HIDE_CAP = 500;
-
-/* Per-EVALUATION state. Each plugin's spliced copy gets its own binding, which
- * is exactly what makes a stale copy (after a hot reload re-evaluates the file)
- * tearable-down through the host record's release(). */
-const rsVO = {
-	pid: null,      /* our provider id, set on register */
-	host: null,     /* the host record WE own, while we are the host */
-	seenRev: -1,
-	chips: null,    /* Map domKey -> chip element */
-	guids: null,    /* cached eligible guids; the scroll path skips the rescan */
-	style: null,
-	filterStyle: null,
-	filterPop: null,
-	unfolded: new Set(), /* groups WE opened for a filter, to fold back after */
-	foldTried: new Map(), /* guid -> last click attempt, so a dud cannot loop */
-	hlTail: 0,      /* one-shot re-highlight after the editor settles */
-	lastMove: 0,    /* throttle for the pointer-move handler */
-	hoverGuid: null, /* the row under the pointer; it gets a chip too */
-	menu: null,     /* { guid, chip, path: [key], panels: [el] } */
-	raf: 0,
-	tail: 0,
-	obs: null,
-	on: null,       /* installed listeners, for exact removal */
-	hoverTimer: 0,
-	reopenGuard: 0, /* see the chip's click handler: makes the chip a real toggle */
-	warned: false,
-};
-
-/* Returns the shared record, creating it if this is the first copy to load.
- * A DIFFERENT contract means a version of the convention this copy cannot read
- * or write safely: do nothing at all rather than corrupt it. That is the whole
- * reason the contract number exists, so it must never be "handled" by guessing. */
-function rsVoRoot() {
-	let R = null;
-	try { R = window[rsVO_GLOBAL]; } catch (e) { return null; }
-	if (!R) {
-		R = {
-			contract: rsVO_CONTRACT, providers: [], rev: 0, host: null,
-			hidePending: {}, hiddenLocal: rsVoStoredHidden(),
-			cmdOwner: null, writer: null, filters: rsVoStoredFilters(),
-		};
-		try { window[rsVO_GLOBAL] = R; } catch (e) { return null; }
-		return R;
-	}
-	if (R.contract !== rsVO_CONTRACT) {
-		if (!rsVO.warned) {
-			rsVO.warned = true;
-			try { console.warn('[view-options] contract ' + R.contract + ' is not mine (' + rsVO_CONTRACT + '); standing down.'); } catch (e) {}
-		}
-		return null;
-	}
-	/* tolerate a record built by a copy that died mid-write */
-	if (!Array.isArray(R.providers)) R.providers = [];
-	if (typeof R.rev !== 'number') R.rev = 0;
-	/* seed the list if the record was created by a copy that predates hiding —
-	 * adding a data field is backward-safe, an older host simply ignores it */
-	if (!R.hidePending || typeof R.hidePending !== 'object') R.hidePending = {};
-	if (!Array.isArray(R.hiddenLocal)) R.hiddenLocal = rsVoStoredHidden();
-	if (typeof R.cmdOwner === 'undefined') R.cmdOwner = null;
-	if (typeof R.writer === 'undefined') R.writer = null;
-	if (!R.filters || typeof R.filters !== 'object') R.filters = rsVoStoredFilters();
-	return R;
-}
-
-/* The plugin that will persist dismissals. Same claim shape as the palette
- * command: one holder, and only while it is still registered, so a plugin that
- * died mid-teardown cannot leave the feature unable to write. */
-function rsVoSetWriter(fn) {
-	const R = rsVoRoot();
-	if (!R || !rsVO.pid || typeof fn !== 'function') return false;
-	const w = R.writer;
-	if (w && w.id !== rsVO.pid && R.providers.some((p) => p && p.id === w.id)) return false;
-	R.writer = { id: rsVO.pid, write: fn };
-	return true;
-}
-
-/* ── Who registers the palette command ──────────────────────────────────────
- * "Show View Options" belongs to the shared surface, not to any one plugin, but
- * only a PLUGIN can add a command to the palette — the module has no `ui`. So
- * the module hands out the right to register it, and exactly one holder means
- * exactly one palette entry.
- *
- * This used to be a convention ("Supertask owns it"), which only worked because
- * both plugins were his. It also left a hole: disable that one plugin and there
- * was no way back from a dismissed chip. The claim is now data in the shared
- * record, so whoever is present takes it, and it moves on when its holder goes.
- *
- * Call it from the plugin's refresh cycle, not once at load: ownership can
- * change under you when another plugin unloads, and a plugin can add or remove
- * its own palette command at any time. */
-function rsVoClaimCommand() {
-	const R = rsVoRoot();
-	if (!R || !rsVO.pid) return false;
-	if (R.cmdOwner === rsVO.pid) return true;
-	/* somebody else holds it — but only while they are still registered, so a
-	 * holder that unloaded without releasing (or died mid-teardown) cannot
-	 * strand the command forever */
-	if (R.cmdOwner && R.providers.some((p) => p && p.id === R.cmdOwner)) return false;
-	R.cmdOwner = rsVO.pid;
-	R.rev++;
-	return true;
-}
-
-/* ── Hide the chip ON ONE LINE ──────────────────────────────────────────────
- * PER LINE, not a global switch (his call, 2026-08-13): the chip is dismissed
- * where it is in the way, and every other line keeps its own. It covers the
- * whole chip rather than one plugin's row, because the chip is the thing in the
- * way and nobody wants to turn three contributors off separately.
- *
- * Kept as a plain array of guids in the shared record so every copy agrees, and
- * mirrored to localStorage so it survives a reload. The way back is the command
- * palette, which restores ALL of them at once: once a chip is gone there is
- * nothing on that line to click, and nothing marks which lines are dismissed,
- * so "un-hide the one I am standing on" would be a guessing game. */
-/* The stored answer for one line, with the optimistic overlay on top.
- * The overlay exists for the documented reason a plugin's own meta writes need
- * one: the writing client's in-memory props can transiently lose a property it
- * just set, and a write is async anyway, so without it the chip would linger
- * for a beat after you dismissed it. It SELF-HEALS — once the property agrees,
- * the overlay entry is dropped, so a failed write stops lying on the next scan. */
-function rsVoStoredHidden() {
-	try {
-		const raw = localStorage.getItem(rsVO_HIDE_KEY);
-		const a = raw ? JSON.parse(raw) : [];
-		return Array.isArray(a) ? a.filter((g) => typeof g === 'string') : [];
-	} catch (e) { return []; }
-}
-
-function rsVoStoreHidden(list) {
-	try { localStorage.setItem(rsVO_HIDE_KEY, JSON.stringify(list)); } catch (e) {}
-}
-
-function rsVoLineHidden(R, st, guid) {
-	/* either store counts, so a workspace that gained a writer later still
-	 * honours what was dismissed before it */
-	const stored = !!(st && st.props && st.props[rsVO_HIDE_PROP] === '1')
-		|| R.hiddenLocal.indexOf(guid) >= 0;
-	const pend = R.hidePending[guid];
-	if (typeof pend !== 'boolean') return stored;
-	if (pend === stored) { delete R.hidePending[guid]; return stored; }
-	return pend;
-}
-
-function rsVoWrite(R, guid, on) {
-	R.hidePending[guid] = !!on;
-	let synced = false;
-	const w = R.writer;
-	if (w && typeof w.write === 'function') {
-		try { w.write(guid, !!on); synced = true; } catch (e) {}
-	}
-	const i = R.hiddenLocal.indexOf(guid);
-	/* the local list only picks up what nothing synced, but it always lets go:
-	 * a line dismissed before a writer existed must still be restorable after */
-	if (on && !synced && i < 0) R.hiddenLocal.push(guid);
-	if (!on && i >= 0) R.hiddenLocal.splice(i, 1);
-	while (R.hiddenLocal.length > rsVO_HIDE_CAP) R.hiddenLocal.shift();
-	rsVoStoreHidden(R.hiddenLocal);
-}
-
-function rsVoHideLine(guid) {
-	const R = rsVoRoot();
-	if (!R || !guid) return;
-	rsVoWrite(R, guid, true);
-	rsVoCloseMenu();
-	rsVoInvalidate();
-}
-
-/* Restores every dismissed chip we can SEE; returns how many, so the caller can
- * say so. "Can see" is the honest limit of a per-line property: `itemsByGuid`
- * holds LOADED PAGES ONLY (playbook), so a line dismissed on a page that is not
- * open cannot be found here — it comes back on its own when that page is next
- * opened and this runs again. Restoring per line is the alternative, and it
- * cannot work: a dismissed line has no chip to click and nothing marks it. */
-function rsVoShowAll() {
-	const R = rsVoRoot();
-	if (!R) return 0;
-	const byGuid = (window.g_universe && window.g_universe.itemsByGuid) || {};
-	let n = 0;
-	const seen = new Set();
-	for (const g in byGuid) {
-		const st = byGuid[g];
-		if (!st || st.is_trashed || st.is_deleted) continue;
-		if (!rsVoLineHidden(R, st, g)) continue;
-		seen.add(g);
-		rsVoWrite(R, g, false);
-		n++;
-	}
-	/* the local fallback keeps the full list, so unlike the synced property it
-	 * can restore lines whose page is not open */
-	for (const g of R.hiddenLocal.slice()) {
-		if (seen.has(g)) continue;
-		rsVoWrite(R, g, false);
-		n++;
-	}
-	/* the palette command that calls this usually runs on a copy that is NOT
-	 * the host, which is exactly what poke exists for */
-	rsVoInvalidate();
-	return n;
-}
-
-/* Registering REPLACES any record with the same id. That is what makes a hot
- * reload not duplicate entries: the id is the plugin's stable identity. */
-function rsVoRegister(rec) {
-	const R = rsVoRoot();
-	if (!R || !rec || !rec.id) return;
-	rsVO.pid = rec.id;
-	const p = {
-		id: rec.id,
-		version: String(rec.version == null ? '' : rec.version),
-		order: typeof rec.order === 'number' ? rec.order : 100,
-		appliesTo: rec.appliesTo,
-		appliesToRow: rec.appliesToRow,
-		build: rec.build,
-	};
-	const i = R.providers.findIndex((x) => x && x.id === p.id);
-	if (i >= 0) R.providers.splice(i, 1, p); else R.providers.push(p);
-	R.providers.sort((a, b) => (a.order - b.order) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-	R.rev++;
-	rsVoRefresh(true);
-}
-
-/* onUnload. Remove our record; if we are the host, release the claim and bump
- * rev so another live copy takes over on its next refresh cycle.
- * NOTE: onUnload() can run on an instance whose onLoad() never ran, so every
- * step here has to be a no-op on virgin state (playbook §2). */
-function rsVoUnregister() {
-	const id = rsVO.pid;
-	rsVO.pid = null;
-	const R = rsVoRoot();
-	if (!R) { rsVoRelease(); return; }
-	if (id) {
-		const i = R.providers.findIndex((x) => x && x.id === id);
-		if (i >= 0) R.providers.splice(i, 1);
-	}
-	if (rsVO.host && R.host === rsVO.host) R.host = null;
-	/* let go of the palette command too, so a plugin that is still here can
-	 * pick it up on its next cycle rather than the command vanishing with us */
-	if (id && R.cmdOwner === id) R.cmdOwner = null;
-	if (id && R.writer && R.writer.id === id) R.writer = null;
-	rsVoRelease();
-	R.rev++;
-}
-
-/* Called from each plugin's own debounced refresh cycle (never a polling
- * interval) and after any state change of its own that can move the chip.
- * A non-host copy does almost nothing here beyond noticing a vacant claim. */
-function rsVoRefresh(full) {
-	const R = rsVoRoot();
-	if (!R) return;
-	rsVoElect(R);
-	if (!rsVO.host || R.host !== rsVO.host) return;
-	rsVO.seenRev = R.rev;
-	rsVoPlaceChips(R, full !== false);
-}
-
-/* Bump rev after changing something the menu reflects, and make sure SOMEBODY
- * repaints now.
- *
- * "The host notices on its next cycle" is fine for a passive change but wrong
- * for a direct user action: the palette command that restores dismissed chips
- * is registered by Supertask, and if Reference Extravaganza happens to be the
- * host (load order decides, both ship the same module version) the chips only
- * came back when some incidental trigger fired — measured at ~0.5s off the
- * palette closing, which reads as "it did nothing until I clicked the line"
- * (his report, 2026-08-13).
- *
- * `poke` is the second function on the host record, alongside `release`. That
- * record is the ONE place a live handle is legitimate — it is the handle TO the
- * copy that is rendering — and every call into it is typeof-guarded, so an
- * older host without poke simply falls back to the next-cycle behaviour. */
-function rsVoInvalidate() {
-	const R = rsVoRoot();
-	if (!R) return;
-	R.rev++;
-	rsVoRefresh(true);   /* repaints if the claim is ours */
-	const h = R.host;
-	if (h && h !== rsVO.host && typeof h.poke === 'function') {
-		try { h.poke(); } catch (e) {}
-	}
-}
-
-/* HOST ELECTION: highest module version wins, with live handover.
- * The stale-id case is the hot reload: a code push re-evaluates the plugin file
- * into a FRESH scope while the previous evaluation's DOM and listeners are
- * still live. Its host record is reachable through the global, so calling its
- * release() is the only way to clean it up — and it must happen even though the
- * versions are equal, because that host is a dead copy of us. */
-function rsVoElect(R) {
-	const h = R.host;
-	if (h && h === rsVO.host) return;                    /* already ours */
-	if (h) {
-		const stale = !!(h.id && rsVO.pid && h.id === rsVO.pid);
-		const older = typeof h.version === 'number' && h.version < rsVO_MODULE_VERSION;
-		if (!stale && !older) return;                         /* equal or newer holds it */
-		try { if (typeof h.release === 'function') h.release(); } catch (e) {}
-	}
-	if (!rsVO.pid) return;              /* never claim without a provider */
-	rsVoClaim(R);
-}
-
-function rsVoClaim(R) {
-	const rec = {
-		version: rsVO_MODULE_VERSION,
-		id: rsVO.pid,
-		release: () => {
-			try {
-				const RR = window[rsVO_GLOBAL];
-				if (RR && RR.host === rec) RR.host = null;
-			} catch (e) {}
-			rsVoRelease();
-		},
-		/* "repaint now" from a copy that is not us — see VoInvalidate. Guarded
-		 * against being called on a record that has since been released. */
-		poke: () => {
-			if (rsVO.host !== rec) return;
-			rsVoRefresh(true);
-			rsVoTick();   /* and once more after the frame settles */
-		},
-	};
-	rsVO.host = rec;
-	R.host = rec;
-	rsVoStart();
-}
-
-function rsVoRelease() {
-	/* put his tree back before letting go: our record of what WE opened dies
-	 * with this scope, and the copy taking over cannot know to fold it again */
-	try { rsVoApplyUnfold(new Set()); } catch (e) {}
-	rsVO.host = null;
-	rsVoCloseMenu();
-	rsVoStop();
-	if (rsVO.chips) {
-		for (const [, el] of rsVO.chips) { try { el.remove(); } catch (e) {} }
-		rsVO.chips = null;
-	}
-	rsVO.guids = null;
-	rsVoCloseFilter();
-	try { if (rsVoHighlightAvailable()) window.CSS.highlights.delete('tvo-filter-hit'); } catch (e) {}
-	if (rsVO.style) { try { rsVO.style.remove(); } catch (e) {} rsVO.style = null; }
-	if (rsVO.filterStyle) { try { rsVO.filterStyle.remove(); } catch (e) {} rsVO.filterStyle = null; }
-}
-
-/* ── Host duties: stylesheet, triggers ─────────────────────────────────── */
-
-function rsVoStart() {
-	rsVO.chips = new Map();
-	try {
-		const st = document.createElement('style');
-		st.setAttribute('data-tvo', String(rsVO_MODULE_VERSION));
-		st.textContent = rsVO_CSS;
-		document.head.appendChild(st);
-		rsVO.style = st;
-		/* the filter's hide rules get their OWN sheet: they change on every
-		 * keystroke while the chip styles never change */
-		const fs = document.createElement('style');
-		fs.setAttribute('data-tvo-filter', '1');
-		document.head.appendChild(fs);
-		rsVO.filterStyle = fs;
-	} catch (e) {}
-	rsVoMenuColors();
-
-	const on = {};
-	/* The chips follow the content EVERY FRAME (cached guids, measure only) —
-	 * a debounce alone makes them visibly lag and hop during a scroll. The
-	 * 120ms tail then settles with a full rescan. */
-	on.tick = () => rsVoTick();
-	/* THE HOVERED ROW, which is what gives a plain text block a chip at all, and
-	 * doubles as the recovery trigger after an app start (g_universe is null
-	 * until the first click into an editor, so an early scan draws nothing).
-	 * Throttled; a move that does not change the row costs one closest(). */
-	on.move = (e) => {
-		const now = Date.now();
-		if (now - (rsVO.lastMove || 0) < 80) return;
-		rsVO.lastMove = now;
-		let t = null;
-		try { t = e.target; } catch (err) { return; }
-		if (!t || !t.closest) return;
-		/* FREEZE while the pointer is on our own surfaces, or the chip would
-		 * vanish the instant you moved off the row to click it */
-		if (rsVO.menu || rsVO.filterPop) return;
-		if (t.closest('.tvo-chip') || t.closest('.tvo-menu')) return;
-		let g = null;
-		try {
-			const row = t.closest('.listitem[data-guid]');
-			g = row ? row.getAttribute('data-guid') : null;
-		} catch (err) { g = null; }
-		if (g === rsVO.hoverGuid) {
-			/* nothing on screen yet: still worth a tick, this is the recovery
-			 * path after an app start */
-			if (!rsVO.chips || !rsVO.chips.size) rsVoTick();
-			return;
-		}
-		rsVO.hoverGuid = g;
-		rsVO.guids = null; /* eligibility changed, so the cache must go */
-		rsVoTick();
-	};
-	/* Folding is a click, and a fold that only re-layouts (no row added or
-	 * removed) escapes both the observer and scroll, so a chip could outlive
-	 * its heading's visibility. Any pointer release re-measures. */
-	on.theme = () => {
-		if (on.themeTimer) clearTimeout(on.themeTimer);
-		on.themeTimer = setTimeout(() => {
-			on.themeTimer = 0;
-			if (!rsVO.host) return;
-			/* a theme swap changes font metrics, so every measured position is
-			 * stale, and the menu surface colours are sampled per theme */
-			rsVoMenuColors();
-			rsVoRefresh(true);
-		}, 120);
-	};
-	try {
-		window.addEventListener('scroll', on.tick, true);
-		window.addEventListener('resize', on.tick);
-		window.addEventListener('pointerup', on.tick, true);
-		window.addEventListener('pointermove', on.move, true);
-		document.addEventListener('themecsschange', on.theme);
-	} catch (e) {}
-	/* NEVER watch `class` on <html> — Thymer toggles classes there on nearly
-	 * every interaction. data-theme is the only attribute worth watching. */
-	try {
-		on.themeObs = new MutationObserver(on.theme);
-		on.themeObs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
-	} catch (e) {}
-	/* Rows appearing or leaving outside any event we hear about (a live search
-	 * rendering, a page opening, a fold removing rows). The observer only ever
-	 * moves our own overlay layer — it never touches a line. */
-	try {
-		rsVO.obs = new MutationObserver((muts) => {
-			for (const m of muts) {
-				/* A DIRECT child of <body> arriving or leaving is how every
-				 * overlay in this app appears and disappears — a modal, a
-				 * click-catcher, another plugin's popover. Those change what
-				 * the occlusion test sees, and closing one with Escape produces
-				 * no scroll, no pointerup and no row mutation, so without this
-				 * a chip removed while an overlay was up would never return. */
-				if (m.target === document.body) { rsVoTick(); return; }
-				for (const list of [m.addedNodes, m.removedNodes]) {
-					for (const n of list) {
-						if (!n || n.nodeType !== 1) continue;
-						if ((n.matches && n.matches('.listitem'))
-							|| (n.querySelector && n.querySelector('.listitem'))) {
-							rsVoTick();
-							return;
-						}
-					}
-				}
-			}
-		});
-		rsVO.obs.observe(document.body, { childList: true, subtree: true });
-	} catch (e) {}
-	rsVO.on = on;
-}
-
-function rsVoStop() {
-	const on = rsVO.on;
-	rsVO.on = null;
-	if (on) {
-		try { window.removeEventListener('scroll', on.tick, true); } catch (e) {}
-		try { window.removeEventListener('resize', on.tick); } catch (e) {}
-		try { window.removeEventListener('pointerup', on.tick, true); } catch (e) {}
-		try { window.removeEventListener('pointermove', on.move, true); } catch (e) {}
-		try { document.removeEventListener('themecsschange', on.theme); } catch (e) {}
-		try { if (on.themeObs) on.themeObs.disconnect(); } catch (e) {}
-		try { if (on.themeTimer) clearTimeout(on.themeTimer); } catch (e) {}
-	}
-	try { if (rsVO.obs) rsVO.obs.disconnect(); } catch (e) {}
-	rsVO.obs = null;
-	try { if (rsVO.raf) cancelAnimationFrame(rsVO.raf); } catch (e) {}
-	rsVO.raf = 0;
-	try { if (rsVO.tail) clearTimeout(rsVO.tail); } catch (e) {}
-	rsVO.tail = 0;
-	try { if (rsVO.hoverTimer) clearTimeout(rsVO.hoverTimer); } catch (e) {}
-	rsVO.hoverTimer = 0;
-	try { if (rsVO.hlTail) clearTimeout(rsVO.hlTail); } catch (e) {}
-	rsVO.hlTail = 0;
-}
-
-function rsVoTick() {
-	if (!rsVO.host) return;
-	if (!rsVO.raf) {
-		rsVO.raf = requestAnimationFrame(() => {
-			rsVO.raf = 0;
-			if (rsVO.host) rsVoRefresh(false);
-		});
-	}
-	if (rsVO.tail) return;
-	rsVO.tail = setTimeout(() => {
-		rsVO.tail = 0;
-		if (rsVO.host) rsVoRefresh(true);
-	}, 120);
-}
-
-/* Menu surface colours, recomputed from the LIVE theme. THE DISCRIMINATOR IS
- * THE CLASS, not a sampled colour: document.body has no background at all, and
- * --cmdpal-bg-color can be a display-p3 triple that no naive parse survives. */
-function rsVoMenuColors() {
-	try {
-		const cl = document.documentElement.classList;
-		const dark = cl.contains('is-dark')
-			|| (!cl.contains('is-light') && !!(window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches));
-		document.documentElement.style.setProperty('--tvo-menu-bg', dark
-			? '#2A2A31'
-			: 'color-mix(in srgb, var(--cmdpal-bg-color, #fff) 94%, var(--cmdpal-fg-color, #000))');
-		document.documentElement.style.setProperty('--tvo-menu-fg', dark
-			? '#D5D4D4'
-			: 'var(--cmdpal-fg-color, var(--text-color, #333))');
-		/* NOTE the filter hit's colour is NOT set here: it comes from Thymer's
-		 * own --selection-bg / --selection-fg in the stylesheet, so the mark is
-		 * literally the app's text-selection green. An inline value written
-		 * here would beat that. */
-	} catch (e) {}
-}
-
-/* ── IN-BLOCK FILTER ────────────────────────────────────────────────────────
- * Type in a block and only the children that match stay on screen. It searches
- * the line's text, its hashtags and its references, through the whole subtree.
- *
- * A BUILT-IN OF THE MODULE, not a provider (his call, 2026-08-13: "Den ska
- * finnas med i alla view options, oavsett vilken plugin som aktiverar den").
- * Which is also the only place it can live and still obey the rule that this
- * module depends on no plugin: matching reads line states out of the universe
- * and hiding is a stylesheet of our own, so a plugin that lends nothing gets
- * filtering anyway.
- *
- * A filter PERSISTS once set, so you can filter and then work in the result,
- * and every filtered block therefore carries a visible indicator that clears it
- * in one click. Lines hidden with no way to see why would be a trap. */
-const rsVO_FILTER_KEY = 'thymer-view-options-filters';
-
-function rsVoStoredFilters() {
-	try {
-		const raw = localStorage.getItem(rsVO_FILTER_KEY);
-		const o = raw ? JSON.parse(raw) : {};
-		if (!o || typeof o !== 'object') return {};
-		const out = {};
-		for (const g in o) if (typeof o[g] === 'string' && o[g]) out[g] = o[g];
-		return out;
-	} catch (e) { return {}; }
-}
-
-/* Per device, deliberately: a filter is view state, not a property of the
- * content, and it should not follow you to another screen mid-thought. It does
- * survive a reload, because a plugin reload happens on every deploy and losing
- * every filter to that would be its own annoyance. */
-function rsVoStoreFilters(map) {
-	try { localStorage.setItem(rsVO_FILTER_KEY, JSON.stringify(map)); } catch (e) {}
-}
-
-function rsVoFilterOf(R, guid) {
-	const q = R.filters[guid];
-	return typeof q === 'string' ? q : '';
-}
-
-function rsVoSetFilter(guid, q) {
-	const R = rsVoRoot();
-	if (!R || !guid) return;
-	const s = String(q == null ? '' : q).trim();
-	if (s) R.filters[guid] = s; else delete R.filters[guid];
-	rsVoStoreFilters(R.filters);
-	rsVoInvalidate();
-}
-
-/* `+` is an AND, same as the destination picker's search, so one convention
- * covers every search surface in these plugins. */
-function rsVoNorm(s) {
-	return String(s == null ? '' : s).toLowerCase().replace(/\s+/g, ' ').trim();
-}
-
-function rsVoParts(q) {
-	return String(q || '').split('+').map(rsVoNorm).filter(Boolean);
-}
-
-/* One segment's searchable text. A plain carrier stores a string; a chip stores
- * an object, and which key holds the words differs per type. A ref is worth the
- * extra hop: its alias is often NOT what you remember it by, so fall back to the
- * target line's own text. One hop only, never recursing through refs. */
-function rsVoSegText(type, data, byGuid, depth) {
-	if (typeof data === 'string') return data;
-	const t = data || {};
-	if (type === 'ref') {
-		let out = t.title ? String(t.title) : '';
-		if (!depth && t.guid && byGuid[t.guid]) out += ' ' + rsVoLineText(byGuid[t.guid], byGuid, 1);
-		return out;
-	}
-	return String(t.title || t.text || t.name || t.formatted || '');
-}
-
-/* text_segments is PAIR-ENCODED: [type, data, type, data, …] */
-function rsVoLineText(st, byGuid, depth) {
-	const ts = (st && st.text_segments) || [];
-	let out = '';
-	for (let i = 0; i + 1 < ts.length; i += 2) {
-		out += ' ' + rsVoSegText(String(ts[i]), ts[i + 1], byGuid, depth || 0);
-	}
-	return out;
-}
-
-function rsVoMatches(st, parts, byGuid) {
-	const hay = rsVoNorm(rsVoLineText(st, byGuid, 0));
-	if (!hay) return false;
-	for (const p of parts) if (hay.indexOf(p) < 0) return false;
-	return true;
-}
-
-/* The caret's line is never hidden: filtering the row you are typing on would
- * yank it out from under you. */
-function rsVoCaretGuid() {
-	try {
-		for (const lv of ((window.g_universe && window.g_universe.listviews) || [])) {
-			const pos = lv.selection && lv.selection._caret && lv.selection._caret.pos;
-			const g = pos && pos.list_item && pos.list_item.state && pos.list_item.state.guid;
-			if (g) return g;
-		}
-	} catch (e) {}
-	return null;
-}
-
-/* Which descendants a set of active filters hides. A line survives if it
- * matches, if any descendant of it matches (or the hit would float with no
- * context), or if an ancestor of it matched (a hit is shown with its own
- * children intact, which is usually the whole point of finding it). */
-function rsVoFilterHidden(R, openOut, keepOut) {
-	const byGuid = (window.g_universe && window.g_universe.itemsByGuid) || {};
-	const hide = [];
-	const caret = rsVoCaretGuid();
-	for (const g in R.filters) {
-		const parts = rsVoParts(R.filters[g]);
-		const root = byGuid[g];
-		if (!parts.length || !root) continue;
-		/* the filtered block itself has to be open, or none of it renders */
-		if (openOut) openOut.add(g);
-		const keep = new Set();
-		const all = [];
-		const kids = (st) => ((st && st.children) || []).filter((k) => k && !k.is_trashed && !k.is_deleted);
-		const keepAll = (st) => {
-			for (const k of kids(st)) { keep.add(k.guid); keepAll(k); }
-		};
-		/* returns true when this line, or anything under it, matched */
-		const walk = (st) => {
-			let any = false;
-			for (const k of kids(st)) {
-				all.push(k.guid);
-				if (rsVoMatches(k, parts, byGuid)) {
-					keep.add(k.guid);
-					keepAll(k);
-					walk(k); /* still collect the ids below it for `all` */
-					any = true;
-					continue;
-				}
-				if (walk(k)) {
-					keep.add(k.guid);
-					/* kept only because something UNDER it matched: if this one
-					 * is folded, the hit never reaches the screen */
-					if (openOut) openOut.add(k.guid);
-					any = true;
-				}
-			}
-			return any;
-		};
-		walk(root);
-		for (const gg of all) {
-			if (keep.has(gg) || gg === caret) { if (keepOut) keepOut.add(gg); continue; }
-			hide.push(gg);
-		}
-	}
-	return hide;
-}
-
-/* UNFOLDING: drive Thymer's OWN control, do not write the fold store.
- *
- * The first attempt wrote `folded_items` in localStorage and mirrored it into
- * each listview's `fold_loaded_keys`, which is how Supertask FOLDS a group. It
- * does not unfold one: that Set is read once when a listview builds its items,
- * so changing it afterwards leaves an already-rendered folded line exactly as
- * it was, and his match stayed buried (his report, 2026-08-13).
- *
- * What works is clicking the control the user would click, with the same
- * synthetic pointer sequence Reference Extravaganza proved on the unfold
- * affordance. Thymer then does its own bookkeeping, including persistence, so
- * there is no store for us to keep in step.
- *
- * `.listitem-folded` is the state (both class names verified in the live CSS);
- * `.line-fold-chevron` is the toggle on a foldable line and
- * `.lineitem-btn-unfold` the dots that appear on a folded one. */
-function rsVoFoldState(el) {
-	if (el.classList.contains('listitem-folded')) return true;
-	/* the dots only exist on a folded line, so they are a second opinion for a
-	 * build where the class is not applied */
-	return !!el.querySelector('.lineitem-btn-unfold');
-}
-
-function rsVoFoldToggle(guid, wantFolded) {
-	let el = null;
-	try { el = document.querySelector('.listitem[data-guid="' + rsVoCssAttr(guid) + '"]'); } catch (e) {}
-	if (!el) return;
-	if (rsVoFoldState(el) === !!wantFolded) return;
-	/* Retry-limited. A click can land mid-render and do nothing, and without a
-	 * limit every refresh cycle would fire another one at the same row. */
-	const now = Date.now();
-	const last = rsVO.foldTried.get(guid) || 0;
-	if (now - last < 800) return;
-	rsVO.foldTried.set(guid, now);
-	const btn = el.querySelector('.lineitem-btn-unfold') || el.querySelector('.line-fold-chevron');
-	if (!btn) return;
-	const r = btn.getBoundingClientRect();
-	if (!r.width && !r.height) return;
-	const x = Math.round(r.left + r.width / 2);
-	const y = Math.round(r.top + r.height / 2);
-	const down = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, button: 0, buttons: 1 };
-	const up = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, button: 0, buttons: 0 };
-	try { btn.dispatchEvent(new PointerEvent('pointerdown', down)); } catch (e) {}
-	try { btn.dispatchEvent(new MouseEvent('mousedown', down)); } catch (e) {}
-	try { btn.dispatchEvent(new PointerEvent('pointerup', up)); } catch (e) {}
-	try { btn.dispatchEvent(new MouseEvent('mouseup', up)); } catch (e) {}
-	try { btn.dispatchEvent(new MouseEvent('click', up)); } catch (e) {}
-}
-
-/* A MATCH INSIDE A FOLDED GROUP MUST STILL SHOW. A folded line's children are
- * not rendered at all, so no stylesheet can reveal them: filtering has to open
- * the group (his report, 2026-08-13 — a hit inside a collapsed "Done" left the
- * group visible with nothing in it). We remember exactly which lines WE opened
- * and fold them again when they are no longer needed, so clearing a filter puts
- * his tree back the way he had it. */
-function rsVoApplyUnfold(open) {
-	const mine = rsVO.unfolded;
-	/* OWNERSHIP IS "IT WAS COLLAPSED AND WE OPENED IT", nothing weaker. Marking
-	 * every line the filter NEEDS open as ours collapsed things on clear that
-	 * were never closed in the first place, the filtered block itself included
-	 * (his report, 2026-08-13: removing the search collapsed the whole main
-	 * group). A line that is already open when we reach it is simply left
-	 * alone, and never lands on the list.
-	 * Note there is no early-out on `mine.has(g)`: a line that is ours and has
-	 * somehow gone back to folded gets another attempt, which is what makes a
-	 * click that landed mid-render recoverable. */
-	for (const g of open) {
-		let el = null;
-		try { el = document.querySelector('.listitem[data-guid="' + rsVoCssAttr(g) + '"]'); } catch (e) {}
-		if (!el || !rsVoFoldState(el)) continue;
-		mine.add(g);
-		rsVoFoldToggle(g, false);
-	}
-	/* CLEARING A FILTER PUTS THE TREE BACK: a group we opened is collapsed
-	 * again, exactly as he had it. We keep it on the list until it really has
-	 * closed, rather than crossing it off on the attempt — a click can land
-	 * mid-render and do nothing, and forgetting it there would leave the group
-	 * hanging open with nobody left who knows it should not be. */
-	for (const g of [...mine]) {
-		if (open.has(g)) continue;
-		let el = null;
-		try { el = document.querySelector('.listitem[data-guid="' + rsVoCssAttr(g) + '"]'); } catch (e) {}
-		if (!el || rsVoFoldState(el)) { mine.delete(g); continue; }
-		rsVoFoldToggle(g, true);
-	}
-}
-
-/* MARKING THE HIT ON THE LINE, without touching the line.
- *
- * The obvious way to highlight a word is to wrap it in a span, and that is the
- * one thing a plugin may never do to an editor line: the editor derives caret
- * offsets from its own node tree, so an inserted node makes the line flicker,
- * swallows every other Backspace and walks the caret backwards (playbook §1.2).
- *
- * The CSS Custom Highlight API paints arbitrary text ranges with NO DOM change
- * at all, which puts it in the same safe class as a pseudo-element: Ranges live
- * outside the tree, and styling comes from a ::highlight() rule in our own
- * stylesheet. Ranges do go stale when the editor re-renders a line, so they are
- * rebuilt on the same cycle as everything else here.
- *
- * Feature-detected, because it is a young API: without it the filter simply
- * hides non-matches and marks nothing, which is still the whole feature. */
-/* EVERYTHING THROUGH `window.`, never a bare global. Measured over CDP
- * 2026-08-13: the page has CSS.highlights and Highlight (Chromium 144), the
- * filter's own stylesheet was being written, and yet the highlight pass never
- * ran — because a bare `CSS` does not resolve in the plugin's scope, so the
- * availability probe threw into its own catch and answered "no API". Nothing in
- * the feature was wrong; it was reading the wrong scope. The DOM names these
- * plugins already use bare (document, localStorage, MutationObserver) are fine;
- * the newer ones are not, so do not "tidy" these back. */
-function rsVoHighlightAvailable() {
-	try {
-		return !!(window.CSS && window.CSS.highlights && typeof window.Highlight === 'function');
-	} catch (e) { return false; }
-}
-
-function rsVoTextTarget(el) {
-	return el.querySelector('.lineitem-text') || el.querySelector('.line-div') || el;
-}
-
-function rsVoCollectRanges(el, parts, out) {
-	const scope = rsVoTextTarget(el);
-	let walker = null;
-	const SHOW_TEXT = (window.NodeFilter && window.NodeFilter.SHOW_TEXT) || 4;
-	try { walker = document.createTreeWalker(scope, SHOW_TEXT, null); } catch (e) { return; }
-	let node = walker.nextNode();
-	while (node) {
-		const low = String(node.nodeValue || '').toLowerCase();
-		if (low.trim()) {
-			for (const p of parts) {
-				if (!p) continue;
-				let at = low.indexOf(p);
-				while (at >= 0) {
-					try { const rg = document.createRange(); rg.setStart(node, at); rg.setEnd(node, at + p.length); out.push(rg); } catch (e) {}
-					at = low.indexOf(p, at + p.length);
-				}
-			}
-		}
-		node = walker.nextNode();
-	}
-}
-
-function rsVoRefreshHighlight(R, keep) {
-	if (!rsVoHighlightAvailable()) return;
-	const name = 'tvo-filter-hit';
-	const ranges = [];
-	try {
-		for (const g in R.filters) {
-			const parts = rsVoParts(R.filters[g]);
-			if (!parts.length) continue;
-			/* the filtered block's own line matches nothing by definition, but
-			 * every surviving descendant is worth marking */
-			for (const gg of keep) {
-				let els = [];
-				try { els = document.querySelectorAll('.listitem[data-guid="' + rsVoCssAttr(gg) + '"]'); } catch (e) {}
-				els.forEach((el) => rsVoCollectRanges(el, parts, ranges));
-			}
-			break; /* ranges are per query; one filtered block at a time is the case that matters */
-		}
-	} catch (e) {}
-	try {
-		if (!ranges.length) { window.CSS.highlights.delete(name); return; }
-		window.CSS.highlights.set(name, new window.Highlight(...ranges));
-	} catch (e) {}
-}
-
-/* One stylesheet, guid-keyed, exactly like every other decoration in these
- * plugins: nothing is ever removed from the document, so nothing can be lost,
- * and a re-render cannot undo it.
- * KNOWN EDGE, documented rather than solved: the rule keys on the guid, so a
- * hidden line that ALSO renders inside a transclusion elsewhere on the page is
- * hidden there too. Lines are flat siblings in the DOM, so there is no
- * container to scope the selector to. */
-function rsVoRefreshFilterStyle() {
-	if (!rsVO.filterStyle) return;
-	const R = rsVoRoot();
-	let css = '';
-	const open = new Set();
-	const keep = new Set();
-	if (R) {
-		const hide = rsVoFilterHidden(R, open, keep);
-		if (hide.length) {
-			css = hide.map((g) => '.listitem[data-guid="' + rsVoCssAttr(g) + '"]').join(',')
-				+ '{display:none !important;}';
-		}
-	}
-	if (rsVO.filterStyle.textContent !== css) rsVO.filterStyle.textContent = css;
-	rsVoApplyUnfold(open);
-	if (R) rsVoRefreshHighlight(R, keep);
-	/* AND AGAIN A BEAT LATER. A Range points at a text NODE, so it dies the
-	 * moment the editor re-renders that line — and a re-render that lands right
-	 * after our pass would leave the mark absent with nothing scheduled to
-	 * notice. One trailing rebuild, coalesced, costs nothing and covers it. */
-	if (R && !rsVO.hlTail) {
-		rsVO.hlTail = setTimeout(() => {
-			rsVO.hlTail = 0;
-			if (!rsVO.host) return;
-			const RR = rsVoRoot();
-			if (!RR) return;
-			const again = new Set();
-			rsVoFilterHidden(RR, null, again);
-			rsVoRefreshHighlight(RR, again);
-		}, 140);
-	}
-}
-
-/* EVERY plugin text input needs a key shield, or Thymer's dispatcher forwards
- * the keystroke to whatever component still holds focus — in a collection view
- * that is the table, which eats Space and letters while your field has DOM
- * focus (playbook §8). The module cannot borrow a plugin's, so it owns one. */
-function rsVoShieldKeys(el) {
-	for (const t of ['keydown', 'keypress', 'keyup']) {
-		el.addEventListener(t, (e) => {
-			const n = e.target;
-			if (n && (n.tagName === 'INPUT' || n.tagName === 'TEXTAREA')) e.stopPropagation();
-		});
-	}
-}
-
-function rsVoCloseFilter() {
-	const f = rsVO.filterPop;
-	rsVO.filterPop = null;
-	if (!f) return;
-	try { document.removeEventListener('pointerdown', f.outside, true); } catch (e) {}
-	try { f.el.remove(); } catch (e) {}
-}
-
-/* Filtering is LIVE as you type. Enter and Escape both just close the popover:
- * the filter persists either way, and the indicator on the line is what takes
- * it off again. */
-function rsVoOpenFilter(guid, anchor) {
-	rsVoCloseMenu();
-	rsVoCloseFilter();
-	const R = rsVoRoot();
-	if (!R || !guid) return;
-	rsVoMenuColors();
-	const box = document.createElement('div');
-	box.className = 'tvo-menu tvo-filterbox';
-	const input = document.createElement('input');
-	input.type = 'text';
-	input.className = 'tvo-filterinput';
-	input.placeholder = 'Filter this block…';
-	input.value = rsVoFilterOf(R, guid);
-	const hint = document.createElement('div');
-	hint.className = 'tvo-filterhint';
-	hint.textContent = 'Text, hashtags and references · + for AND';
-	box.appendChild(input);
-	box.appendChild(hint);
-	document.body.appendChild(box);
-	rsVoShieldKeys(box);
-
-	const f = { el: box, guid: guid };
-	rsVO.filterPop = f;
-	f.outside = (e) => { if (!box.contains(e.target)) rsVoCloseFilter(); };
-	setTimeout(() => {
-		if (rsVO.filterPop !== f) return;
-		document.addEventListener('pointerdown', f.outside, true);
-	}, 0);
-
-	input.addEventListener('input', () => rsVoSetFilter(guid, input.value));
-	input.addEventListener('keydown', (e) => {
-		if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); rsVoCloseFilter(); }
-	});
-	/* vertical anchor is the ROW, horizontal is the chip: the box hangs off the
-	 * chip's own left edge, which sits after the line's text, so aligning it to
-	 * the row cannot cover the heading it belongs to */
-	let rowR = null;
-	try {
-		const rowEl = anchor.__tvoRow;
-		if (rowEl && document.body.contains(rowEl)) rowR = rowEl.getBoundingClientRect();
-	} catch (e) {}
-	rsVoPlaceAbove(box, anchor.getBoundingClientRect(), rowR);
-	setTimeout(() => { try { input.focus(); input.select(); } catch (e) {} }, 0);
-}
-
-/* ── Providers ─────────────────────────────────────────────────────────── */
-
-/* A provider from ANOTHER plugin must never be able to break this menu, so
- * every call into one is contained. A thrower is simply treated as "does not
- * apply" / "contributes nothing". */
-function rsVoApplies(p, ctx) {
-	try { return !!(p && typeof p.appliesTo === 'function' && p.appliesTo(ctx)); } catch (e) { return false; }
-}
-
-/* Whether this provider's ROWS belong in a menu on this line — a wider question
- * than whether it warrants a chip. Defaults to appliesTo. */
-function rsVoAppliesRow(p, ctx) {
-	try {
-		if (p && typeof p.appliesToRow === 'function') return !!p.appliesToRow(ctx);
-	} catch (e) { return false; }
-	return rsVoApplies(p, ctx);
-}
-
-function rsVoBuild(p, ctx) {
-	try {
-		const items = (p && typeof p.build === 'function') ? p.build(ctx) : null;
-		return Array.isArray(items) ? items : [];
-	} catch (e) { return []; }
-}
-
-function rsVoCtx(guid, st, node) {
-	return { guid: guid, type: (st && st.type) || 'text', state: st || null, node: node || null };
-}
-
-/* WHO GETS A CHIP ON HOVER, as opposed to permanently.
- *
- * A permanent chip is summoned by a provider's appliesTo, and every one of those
- * is about something being ACTIVE on the line: ordering, a progress bar, a
- * description, a filter. That left a plain heading with plain text under it with
- * no chip at all, and therefore no way to reach Description or the filter, which
- * have nothing to do with tasks (his diagnosis, 2026-08-13).
- *
- * Thymer's own per-line affordances appear on hover, so ours does too, and
- * exactly one such chip exists at a time.
- *
- * BUT ONLY ON A BLOCK: a line with children. Keying it on "would any provider
- * offer a row here" put a chip under the pointer on EVERY line in the document,
- * because Reference Extravaganza offers Description on any line at all — which
- * is right for a row riding a chip that already exists, and quite wrong as a
- * reason to summon one (his report, 2026-08-13). A block is also what the two
- * things reachable this way are about: the filter searches a block's children,
- * and the case he raised was a heading with plain text under it. Setting a
- * description on a childless line stays the command palette's job, exactly as
- * it was before any of this. */
-function rsVoHoverEligible(R, ctx) {
-	const kids = ((ctx.state && ctx.state.children) || []).filter((k) => k && !k.is_trashed && !k.is_deleted);
-	return kids.length > 0;
-}
-
-/* ── The chip ──────────────────────────────────────────────────────────────
- * Thymer's own +/... affordances live in an OVERLAY layer, never inside the
- * line, and so must ours (never-insert-a-node-into-a-line, playbook §1.2).
- * Each chip is parented INSIDE its row's SCROLL CONTAINER (absolute) so it
- * rides the scroll natively at zero lag; a fixed-layer chip chased the content
- * one frame behind however it was scheduled. Coordinates are solved by
- * PLACE-MEASURE-CORRECT, which is immune to whatever coordinate space (and
- * UI-zoom scaling) the container happens to use. */
-function rsVoScrollParent(el) {
-	let p = el.parentElement;
-	while (p && p !== document.body) {
-		const cs = getComputedStyle(p);
-		if (/(auto|scroll|overlay)/.test(cs.overflowY + ' ' + cs.overflowX)
-			&& (p.scrollHeight > p.clientHeight + 1 || p.scrollWidth > p.clientWidth + 1)) return p;
-		p = p.parentElement;
-	}
-	return null;
-}
-
-function rsVoPlaceChips(R, full) {
-	if (!rsVO.chips) return;
-	/* the byGuid sweep is the expensive half — cache the eligible guids and let
-	 * the scroll path (rAF, every frame) skip straight to measuring */
-	rsVoRefreshFilterStyle();
-	if (full || !rsVO.guids) {
-		const byGuid = (window.g_universe && window.g_universe.itemsByGuid) || {};
-		const out = [];
-		const provs = R.providers;
-		for (const g in byGuid) {
-			const st = byGuid[g];
-			if (!st || st.is_trashed || st.is_deleted) continue;
-			if (rsVoLineHidden(R, st, g)) continue; /* dismissed on this line */
-			/* A FILTERED BLOCK ALWAYS GETS A CHIP, whatever the providers say:
-			 * it carries the indicator, and a filter you cannot turn off
-			 * would be a trap. */
-			if (rsVoFilterOf(R, g)) { out.push(g); continue; }
-			const ctx = rsVoCtx(g, st);
-			let want = false;
-			for (let i = 0; i < provs.length; i++) {
-				if (rsVoApplies(provs[i], ctx)) { want = true; break; }
-			}
-			/* and the row under the pointer, if anything would be offered on it */
-			if (!want && g === rsVO.hoverGuid) want = rsVoHoverEligible(R, ctx);
-			if (want) out.push(g);
-		}
-		rsVO.guids = out;
-	}
-	const want = new Map(); /* domKey -> {guid, x, y, h, parent} */
-	for (const g of rsVO.guids) {
-		const els = document.querySelectorAll('.listitem[data-guid="' + rsVoCssAttr(g) + '"]');
-		els.forEach((el, i) => {
-			const r = el.getBoundingClientRect();
-			/* a FOLDED-AWAY row can keep one dimension (width) while the other
-			 * collapses, and its chip then floats over whatever took its place —
-			 * either dimension gone means gone */
-			if (r.width < 2 || r.height < 2) return;
-			const spans = Array.from(el.querySelectorAll('span[class*="lineitem-"]'));
-			const last = spans[spans.length - 1];
-			/* anchor BOTH axes to the row's own text span: the listitem box can
-			 * be taller than the text (children, indent chrome), which floats
-			 * the chip above the line */
-			const lr = last ? last.getBoundingClientRect() : r;
-			if (lr.width < 1 || lr.height < 1) return;
-			/* OCCLUSION: a row scrolled under a sticky bar or covered by another
-			 * surface kept its chip drawn on top. If the topmost element at the
-			 * row's own midpoint is not inside this row, the row is not the
-			 * visible thing there — no chip.
-			 *
-			 * EXCEPT A FULL-VIEWPORT LAYER, which is a modal's click-catcher,
-			 * not something covering this particular row. Reference
-			 * Extravaganza's description editor drops a transparent
-			 * `position:fixed; inset:0` catcher over everything, so every chip
-			 * in the workspace read as occluded and vanished the moment the
-			 * editor opened — and closing it with Escape produced no scroll, no
-			 * pointerup and no .listitem mutation, so they never came back (his
-			 * report, 2026-08-13). A chip left in place under such a layer is
-			 * painted beneath it anyway (the layer is a later body child at a
-			 * higher z-index), so keeping it is both correct and stable. */
-			const topEl = document.elementFromPoint(
-				Math.min(lr.left + 8, lr.left + lr.width / 2),
-				lr.top + lr.height / 2
-			);
-			if (!topEl) return;
-			if (!el.contains(topEl) && topEl !== el && !rsVoFullScreen(topEl)) return;
-			/* the chip sits after EVERYTHING the row renders — Thymer's backlink
-			 * counter (.lineitem-backlink-pill is a line-button, so the span scan
-			 * above misses it) extends past the text span. When a pill is there
-			 * the chip also aligns to the PILL's box (top + height), so the two
-			 * read as one row of controls. */
-			let x = lr.right + 8;
-			let box = null;
-			el.querySelectorAll('.lineitem-backlink-pill').forEach((p) => {
-				const pr = p.getBoundingClientRect();
-				if (!pr.width) return;
-				if (pr.right + 6 > x) { x = pr.right + 6; box = pr; }
-			});
-			want.set(g + ':' + i, {
-				guid: g, x: x, el: el,
-				y: box ? box.top : lr.top + (lr.height - 20) / 2,
-				h: box ? box.height : 20,
-				parent: rsVoScrollParent(el) || document.body,
-			});
-		});
-	}
-	const seen = new Set();
-	for (const [key, pos] of want) {
-		let btn = rsVO.chips.get(key);
-		/* the row changed scroller (view rebuild, panel move) -> remake */
-		if (btn && btn.parentNode !== pos.parent) { try { btn.remove(); } catch (e) {} btn = null; }
-		if (!btn) {
-			btn = document.createElement('div');
-			btn.className = 'tvo-chip';
-			btn.setAttribute('data-guid', pos.guid);
-			/* inside a scroller: absolute + modest z so sticky bars cover it
-			 * naturally; the body fallback keeps the old fixed behaviour */
-			if (pos.parent === document.body) {
-				btn.style.position = 'fixed';
-				btn.style.zIndex = '9000';
-			} else {
-				btn.style.position = 'absolute';
-				btn.style.zIndex = '5';
-			}
-			btn.addEventListener('click', (e) => {
-				/* the indicator's x clears the filter and nothing else */
-				let x = null;
-				try { x = e.target && e.target.closest && e.target.closest('.tvo-chip-x'); } catch (err) {}
-				if (x) {
-					e.stopPropagation();
-					rsVoSetFilter(btn.getAttribute('data-guid'), '');
-					return;
-				}
-				/* a click on the chip that just closed the menu must not
-				 * reopen it: the outside-pointerdown handler fires FIRST and
-				 * has already closed, so without this the chip can never be
-				 * clicked shut again */
-				if (rsVO.reopenGuard && Date.now() - rsVO.reopenGuard < 400) {
-					rsVO.reopenGuard = 0;
-					return;
-				}
-				try { rsVoOpenMenu(btn); } catch (e) {}
-			});
-			pos.parent.appendChild(btn);
-			rsVO.chips.set(key, btn);
-		}
-		btn.setAttribute('data-guid', pos.guid);
-		rsVoPaintChip(btn, rsVoFilterOf(R, pos.guid));
-		/* the row this chip belongs to, so the menu can hand a provider the
-		 * exact rendered line to anchor its own popover against — the same line
-		 * can render more than once (a transclusion), and "the first match in
-		 * the document" would be the wrong one */
-		btn.__tvoRow = pos.el;
-		/* PLACE-MEASURE-CORRECT: shift the current offsets by the viewport
-		 * error, whatever coordinate space the parent uses. Sub-pixel deltas are
-		 * skipped so the steady state writes no styles at all. */
-		const br = btn.getBoundingClientRect();
-		const dx = pos.x - br.left;
-		const dy = pos.y - br.top;
-		if (Math.abs(dx) > 0.5) btn.style.left = ((parseFloat(btn.style.left) || 0) + dx) + 'px';
-		if (Math.abs(dy) > 0.5) btn.style.top = ((parseFloat(btn.style.top) || 0) + dy) + 'px';
-		if (btn.style.height !== (pos.h || 20) + 'px') btn.style.height = (pos.h || 20) + 'px';
-		seen.add(key);
-	}
-	for (const [key, btn] of rsVO.chips) {
-		if (!seen.has(key)) { try { btn.remove(); } catch (e) {} rsVO.chips.delete(key); }
-	}
-	/* an open menu whose row left the screen has nothing to point at */
-	if (rsVO.menu && rsVO.menu.chip && !document.body.contains(rsVO.menu.chip)) rsVoCloseMenu();
-}
-
-/* A plain dots chip normally; while a filter runs on the line it becomes the
- * INDICATOR — funnel glyph, the term, and an x that takes the filter off. One
- * element rather than two, so there is still only one thing to measure and
- * place, and it still opens the menu when you click the body of it. */
-function rsVoPaintChip(btn, query) {
-	const want = query ? 'f:' + query : 'dots';
-	if (btn.__tvoPaint === want) return;
-	btn.__tvoPaint = want;
-	btn.textContent = '';
-	btn.className = 'tvo-chip' + (query ? ' tvo-chip-filtering' : '');
-	/* THE DOTS ALWAYS STAY. The filter indicator is APPENDED AFTER them (his
-	 * call, 2026-08-13), never a replacement: the menu has to remain reachable
-	 * on a filtered block, not least to change or clear the filter. */
-	const dots = document.createElement('span');
-	dots.className = 'tvo-chip-dots ti ti-dots';
-	btn.appendChild(dots);
-	if (!query) return;
-	const pill = document.createElement('span');
-	pill.className = 'tvo-chip-flt';
-	const ic = document.createElement('span');
-	/* the SAME glyph as the header button that opens it (his call): one symbol
-	 * for the feature, wherever it appears. Not a funnel. */
-	ic.className = 'ti ti-search tvo-chip-ic';
-	pill.appendChild(ic);
-	const lbl = document.createElement('span');
-	lbl.className = 'tvo-chip-term';
-	lbl.textContent = query;
-	pill.appendChild(lbl);
-	const x = document.createElement('span');
-	x.className = 'ti ti-x tvo-chip-x';
-	x.title = 'Clear the filter';
-	pill.appendChild(x);
-	btn.appendChild(pill);
-}
 
 /* THE TOUCH GATE (2026-08-28). Neither plugin had any touch detection: the
  * long-press model existed, but nothing told the UI to change SHAPE. A coarse
@@ -2437,546 +1162,79 @@ function rsTouchUI() {
 	} catch (e) { return false; }
 }
 
-function rsVoCssAttr(s) { return String(s == null ? '' : s).replace(/["\\]/g, '\\$&'); }
-
-/* Does this element blanket the whole viewport? That is the signature of a
- * modal backdrop or click-catcher, as opposed to a sticky bar or a panel that
- * genuinely covers one row. See the occlusion test. */
-function rsVoFullScreen(el) {
-	try {
-		const r = el.getBoundingClientRect();
-		return r.left <= 2 && r.top <= 2
-			&& r.right >= window.innerWidth - 2
-			&& r.bottom >= window.innerHeight - 2;
-	} catch (e) { return false; }
-}
-
-/* ── The menu ──────────────────────────────────────────────────────────── */
-
-/* Every applicable provider contributes its items, in `order`, separated by a
- * divider. The tree is plain data, so an OLD host renders a NEW plugin's menu
- * faithfully; the host only invokes onSelect. Nodes are BUILT, never assembled
- * as HTML — labels come from other plugins and must never be parsed as markup. */
-function rsVoItemsFor(R, ctx) {
-	const out = [];
-	for (const p of R.providers) {
-		/* the ROW predicate, not the chip one: a provider can be worth reaching
-		 * wherever a chip already is without being worth a chip of its own */
-		if (!rsVoAppliesRow(p, ctx)) continue;
-		const items = rsVoBuild(p, ctx).filter((it) => it && typeof it === 'object');
-		if (!items.length) continue;
-		if (out.length) out.push({ sep: true });
-		for (const it of items) out.push(it);
-	}
-	return out;
-}
-
-function rsVoItemKey(it, i) {
-	return String((it && it.key) || (it && it.label) || ('#' + i));
-}
-
-function rsVoOpenMenu(chip) {
-	const guid = chip.getAttribute('data-guid');
-	if (rsVO.menu && rsVO.menu.chip === chip) { rsVoCloseMenu(); return; }
-	rsVoCloseMenu();
-	const R = rsVoRoot();
-	if (!R || !guid) return;
-	rsVoMenuColors();
-	const m = { guid: guid, chip: chip, path: [], panels: [] };
-	rsVO.menu = m;
-
-	const outside = (e) => {
-		if (m.panels.some((p) => p.contains(e.target))) return;
-		let onChip = null;
-		try { onChip = e.target && e.target.closest && e.target.closest('.tvo-chip'); } catch (err) {}
-		rsVoCloseMenu();
-		if (onChip === chip) rsVO.reopenGuard = Date.now();
-	};
-	/* Enter finishes a multi-pick; Escape too when it reaches us (Electron can
-	 * swallow it before any JS — playbook §8). Window capture, because the menu
-	 * never holds focus. */
-	const keys = (e) => {
-		if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); rsVoCloseMenu(); }
-	};
-	m.outside = outside;
-	m.keys = keys;
-	setTimeout(() => {
-		if (rsVO.menu !== m) return;
-		document.addEventListener('pointerdown', outside, true);
-		window.addEventListener('keydown', keys, true);
-	}, 0);
-	rsVoRenderMenu();
-}
-
-function rsVoCloseMenu() {
-	const m = rsVO.menu;
-	rsVO.menu = null;
-	if (!m) return;
-	try { if (rsVO.hoverTimer) clearTimeout(rsVO.hoverTimer); } catch (e) {}
-	rsVO.hoverTimer = 0;
-	try { document.removeEventListener('pointerdown', m.outside, true); } catch (e) {}
-	try { window.removeEventListener('keydown', m.keys, true); } catch (e) {}
-	for (const p of m.panels) { try { p.remove(); } catch (e) {} }
-}
-
-/* Rebuilt from the providers on every repaint, with the open submenu path
- * preserved by KEY. Rebuilding wholesale is what lets a pick repaint the menu
- * (Supertask's status rows stay open while you tick several) without any state
- * of the host's own that could disagree with the provider. */
-function rsVoRenderMenu() {
-	const m = rsVO.menu;
-	if (!m) return;
-	const R = rsVoRoot();
-	if (!R) { rsVoCloseMenu(); return; }
-	const byGuid = (window.g_universe && window.g_universe.itemsByGuid) || {};
-	let node = null;
-	try {
-		node = m.chip.__tvoRow || null;
-		if (node && !document.body.contains(node)) node = null;
-	} catch (e) {}
-	const ctx = rsVoCtx(m.guid, byGuid[m.guid], node);
-	m.ctx = ctx;
-
-	for (const p of m.panels) { try { p.remove(); } catch (e) {} }
-	m.panels = [];
-
-	let items = rsVoItemsFor(R, ctx);
-	if (!items.length) { rsVoCloseMenu(); return; }
-	/* The module's OWN row, always last and in its own group: it is about the
-	 * chip rather than about any one plugin's feature, so it belongs to nobody's
-	 * provider. Its group of one also keeps it out of the fill-yields-on-hover
-	 * scope of whatever sits above it. */
-	/* The module's own row. The FILTER is not here: it lives as an icon in the
-	 * header (his call, 2026-08-13, pointing at the empty space beside the
-	 * title). It is an action on the block rather than one of the features the
-	 * main menu lists, and a row of its own competed with them. */
-	items = items.concat([
-		{ sep: true },
-		{
-			key: '__tvo_hide',
-			label: 'Hide View Options',
-			onSelect: (c, api) => { api.close(); rsVoHideLine(c.guid); },
-		},
-	]);
-	let depth = 0;
-	let anchor = m.chip.getBoundingClientRect();
-	let anchorIsChip = true;
-	while (items) {
-		const panel = rsVoPanel(items, depth, ctx);
-		document.body.appendChild(panel);
-		m.panels.push(panel);
-		/* THE ROOT PANEL IS POSITIONED ONCE, on open, and only nudged back on
-		 * screen afterwards. A repaint changes its height (switching mode swaps
-		 * a long row set for a short one), and re-deciding flip-above from the
-		 * new height makes the box jump under the pointer. Submenus DO follow
-		 * their row on every repaint, because their anchor genuinely moves. */
-		const pos = rsVoPlacePanel(panel, anchor, anchorIsChip, anchorIsChip ? m.rootPos : null);
-		if (anchorIsChip) m.rootPos = pos;
-		const key = m.path[depth];
-		if (key == null) break;
-		let next = null, row = null;
-		items.forEach((it, i) => {
-			if (next || it.sep) return;
-			if (rsVoItemKey(it, i) !== key) return;
-			if (Array.isArray(it.submenu) && it.submenu.length) {
-				next = it.submenu;
-				row = panel.querySelector('[data-tvo-i="' + i + '"]');
-			}
-		});
-		if (!next) { m.path = m.path.slice(0, depth); break; }
-		anchor = (row || panel).getBoundingClientRect();
-		anchorIsChip = false;
-		items = next;
-		depth++;
-	}
-}
-
-function rsVoPanel(items, depth, ctx) {
-	const panel = document.createElement('div');
-	panel.className = 'tvo-menu' + (depth === 0 ? ' tvo-root' : '');
-	if (depth === 0) {
-		const head = document.createElement('div');
-		head.className = 'tvo-head';
-		const title = document.createElement('span');
-		title.className = 'tvo-head-lbl';
-		title.textContent = 'View Options';
-		head.appendChild(title);
-		/* THE FILTER LIVES IN THE HEADER, as a glyph in the space beside the
-		 * title. Offered only where there is something to filter, and lit when
-		 * a filter is already running on this block. */
-		const R0 = rsVoRoot();
-		const kids = ((ctx.state && ctx.state.children) || []).filter((k) => k && !k.is_trashed && !k.is_deleted);
-		if (R0 && kids.length) {
-			const term = rsVoFilterOf(R0, ctx.guid);
-			const act = document.createElement('span');
-			act.className = 'tvo-head-act ti ti-search' + (term ? ' tvo-on' : '');
-			act.title = term ? 'Filtered by: ' + term : 'Filter this block';
-			act.addEventListener('click', (e) => {
-				e.stopPropagation();
-				const chip = rsVO.menu && rsVO.menu.chip;
-				rsVoOpenFilter(ctx.guid, chip || act);
-			});
-			head.appendChild(act);
-		}
-		panel.appendChild(head);
-		const hsep = document.createElement('div');
-		hsep.className = 'tvo-sep';
-		panel.appendChild(hsep);
-	}
-	/* Rows are wrapped in a GROUP per divider-delimited run. Grouping is not
-	 * decoration: it is the scope of the active-fill-yields-on-hover rule (his
-	 * call, 2026-08-13), and a divider is exactly where one set of choices ends
-	 * and another begins. Expressing it as real elements lets the CSS say it in
-	 * one selector; sibling combinators cannot express "with no divider
-	 * between", and a group is what the rule is actually about. */
-	let group = null;
-	const closeGroup = () => {
-		if (group && group.childNodes.length) panel.appendChild(group);
-		group = null;
-	};
-	const openGroup = () => {
-		if (!group) { group = document.createElement('div'); group.className = 'tvo-group'; }
-		return group;
-	};
-	items.forEach((it, i) => {
-		if (it.sep) {
-			closeGroup();
-			const s = document.createElement('div');
-			s.className = 'tvo-sep';
-			panel.appendChild(s);
-			return;
-		}
-		const hasSub = Array.isArray(it.submenu) && it.submenu.length;
-		/* WHICH ACTIVE ROWS CARRY A FILL, and not just accent text:
-		 *   - the current MODE inside a submenu (`selected`), as before;
-		 *   - an active LEAF in the main menu (his call, 2026-08-13) — a leaf
-		 *     IS its own state, so it should read as pressed. A row that opens
-		 *     a submenu only reports what is inside it, so it stays accent
-		 *     text: filling it would compete with the submenu it summons. */
-		const filled = !!it.selected || (depth === 0 && !!it.checked && !hasSub);
-		const row = document.createElement('div');
-		row.className = 'tvo-row'
-			+ (it.selected ? ' tvo-cur' : '')
-			+ (it.checked ? ' tvo-on' : '')
-			+ (filled ? ' tvo-fill' : '')
-			+ (it.disabled ? ' tvo-dis' : '');
-		row.setAttribute('data-tvo-i', String(i));
-		openGroup().appendChild(row);
-		/* AN ICON SLOT IS ONLY RENDERED WHEN THERE IS AN ICON — never as an
-		 * empty spacer. A row without one starts its label at the row's own
-		 * padding, level with where the icons sit, which is how this menu has
-		 * always looked: the mode rows line up with the status rows' GLYPHS,
-		 * not with their labels. Reserving the slot indents every iconless row
-		 * and he caught it immediately.
-		 * At depth 0 there are no icons at all: the main menu is a list of the
-		 * FEATURES each plugin contributes, and dropping the column is what puts
-		 * its labels on the same left edge as the VIEW OPTIONS header. An
-		 * `icon` on a root item is therefore ignored, deliberately. */
-		if (depth > 0 && it.icon) {
-			const ic = document.createElement('span');
-			ic.className = 'tvo-ic ti ' + it.icon;
-			row.appendChild(ic);
-		}
-		const lbl = document.createElement('span');
-		lbl.className = 'tvo-lbl';
-		lbl.textContent = String(it.label == null ? '' : it.label);
-		row.appendChild(lbl);
-		if (hasSub) {
-			const ch = document.createElement('span');
-			ch.className = 'tvo-chev ti ti-chevron-right';
-			row.appendChild(ch);
-		}
-		const key = rsVoItemKey(it, i);
-		row.addEventListener('mouseenter', () => rsVoHover(depth, key, hasSub));
-		row.addEventListener('click', (e) => {
-			e.stopPropagation();
-			if (it.disabled) return;
-			if (hasSub) { rsVoSetPath(depth, key); return; }
-			rsVoSelect(it, ctx);
-		});
-	});
-	closeGroup();
-	return panel;
-}
-
-/* Hovering a row with a submenu opens it; hovering a plain row closes anything
- * deeper, but on a longer delay so a diagonal trip into an open submenu is not
- * punished for passing over its neighbours. */
-function rsVoHover(depth, key, hasSub) {
-	const m = rsVO.menu;
-	if (!m) return;
-	try { if (rsVO.hoverTimer) clearTimeout(rsVO.hoverTimer); } catch (e) {}
-	rsVO.hoverTimer = 0;
-	if (m.path[depth] === key) return;
-	if (!hasSub && m.path.length <= depth) return;
-	rsVO.hoverTimer = setTimeout(() => {
-		rsVO.hoverTimer = 0;
-		if (rsVO.menu !== m) return;
-		m.path = hasSub ? m.path.slice(0, depth).concat([key]) : m.path.slice(0, depth);
-		rsVoRenderMenu();
-	}, hasSub ? 90 : 260);
-}
-
-function rsVoSetPath(depth, key) {
-	const m = rsVO.menu;
-	if (!m) return;
-	m.path = m.path.slice(0, depth).concat([key]);
-	rsVoRenderMenu();
-}
-
-/* The menu STAYS OPEN after a pick and repaints from the provider — closing on
- * the first pick forces a reopen per status. An item that means "done here"
- * calls api.close() itself. */
-function rsVoSelect(it, ctx) {
-	const m = rsVO.menu;
-	let closed = false;
-	const api = {
-		close: () => { closed = true; rsVoCloseMenu(); },
-		refresh: () => { if (rsVO.menu === m) rsVoRenderMenu(); },
-	};
-	try { if (typeof it.onSelect === 'function') it.onSelect(ctx, api); } catch (e) {}
-	if (!closed && rsVO.menu === m) rsVoRenderMenu();
-	/* who may show a chip can change with the pick itself (turning ordering off
-	 * on a heading with no bar takes its chip away), so re-place either way */
-	rsVoRefresh(true);
-}
-
-/* THE FILTER BOX OPENS ABOVE THE LINE, unlike the menu. A menu covers content
- * while it is open and that is fine, because it closes on the first pick. This
- * box STAYS open while you type and watch what survives, so opening downwards
- * put it straight on top of the very children it was filtering (his report,
- * 2026-08-13). It only drops below when there is no room above. */
-function rsVoPlaceAbove(panel, anchor, row) {
-	const w = panel.offsetWidth;
-	const h = panel.offsetHeight;
-	const vw = window.innerWidth;
-	const vh = window.innerHeight;
-	/* BOTTOM AGAINST THE BOTTOM OF THE ROW (his call): flush with the line it
-	 * belongs to, rather than floating a gap above it. */
-	const base = row || anchor;
-	let top = base.bottom - h;
-	if (top < 8) top = base.bottom + 6;
-	const wantTop = Math.max(8, Math.min(top, vh - h - 8));
-	const wantLeft = Math.max(8, Math.min(anchor.left, vw - w - 8));
-	panel.style.top = wantTop + 'px';
-	panel.style.left = wantLeft + 'px';
-	/* place-measure-correct, same reason as every other body-parented popup
-	 * here: a style.left in px does not necessarily land at that viewport x */
-	const got = panel.getBoundingClientRect();
-	const dx = wantLeft - got.left;
-	const dy = wantTop - got.top;
-	if (Math.abs(dx) > 0.5) panel.style.left = ((parseFloat(panel.style.left) || 0) + dx) + 'px';
-	if (Math.abs(dy) > 0.5) panel.style.top = ((parseFloat(panel.style.top) || 0) + dy) + 'px';
-}
-
-/* Positioned ONCE per render against a rect that is already on screen, and
- * clamped to the viewport unconditionally. A body-parented popup and the panels
- * can sit in different coordinate spaces under the app's UI zoom, so the root
- * panel is placed, MEASURED and corrected rather than trusted. */
-function rsVoPlacePanel(panel, anchor, below, keep) {
-	const w = panel.offsetWidth;
-	let h = panel.offsetHeight; /* re-read if a submenu has to be capped below */
-	const vw = window.innerWidth;
-	const vh = window.innerHeight;
-	let top;
-	let left;
-	if (keep) {
-		/* a repaint of a panel already on screen: keep where it was decided,
-		 * and let the clamp below nudge the edge back in if it grew */
-		top = keep.top;
-		left = keep.left;
-	} else if (below) {
-		top = anchor.bottom + 4 + h > vh - 8 ? anchor.top - h - 4 : anchor.bottom + 4;
-		left = anchor.left;
-	} else {
-		/* A submenu's top edge lines up with the TOP OF ITS TITLE ROW's box (the
-		 * row div, not its text), so the two visibly belong together (his call,
-		 * 2026-08-13). That alignment is only keepable if the panel can be
-		 * SHORTER than the room below the row — otherwise the viewport clamp
-		 * pulls it up and it floats away from its title, which is exactly what
-		 * he screenshotted in a short window. So cap the height to the room and
-		 * let it scroll inside; on a normal window nothing scrolls and nothing
-		 * is capped. */
-		top = anchor.top;
-		left = anchor.right - 4;
-		if (left + w > vw - 8) left = anchor.left - w + 4;
-		const room = vh - top - 8;
-		if (h > room) {
-			panel.style.maxHeight = Math.max(160, room) + 'px';
-			h = panel.offsetHeight;
-		}
-	}
-	const wantTop = Math.max(8, Math.min(top, vh - h - 8));
-	const wantLeft = Math.max(8, Math.min(left, vw - w - 8));
-	panel.style.top = wantTop + 'px';
-	panel.style.left = wantLeft + 'px';
-	/* PLACE-MEASURE-CORRECT: a style.left in px does NOT necessarily land at
-	 * that viewport x — the app's UI-scale zoom puts body-parented popups and
-	 * the panels in different coordinate spaces. Measure and correct. */
-	const got = panel.getBoundingClientRect();
-	const dx = wantLeft - got.left;
-	const dy = wantTop - got.top;
-	if (Math.abs(dx) > 0.5) panel.style.left = ((parseFloat(panel.style.left) || 0) + dx) + 'px';
-	if (Math.abs(dy) > 0.5) panel.style.top = ((parseFloat(panel.style.top) || 0) + dy) + 'px';
-	return { top: wantTop, left: wantLeft };
-}
-
-/* The chip and the menu look the same whichever plugin happens to be hosting —
- * that is half the point of sharing them. Everything rides theme variables:
- * a mixed accent (60-70% accent, the rest the theme's own text colour) darkens
- * on light themes and lightens on dark ones, where --color-primary-500 alone
- * washes out. 4px radius on boxes and row fills, per the standing rule. */
-const rsVO_CSS = `
-/* THE CRITERIA COLOUR, one definition used in BOTH places: the pill in the chip
- * and the mark on the line must be the same thing, foreground included. The
- * values are the pill's originals, written out instead of riding currentColor,
- * because a ::highlight() cannot see the pill and currentColor there resolves to
- * the line's own text. That last part is what kept getting this wrong: matching
- * only the background left the marked word teal, white, or link-coloured
- * depending on what it was. */
-:root {
-	--tvo-sel-fg: color-mix(in srgb, var(--color-primary-500, #3aa37f) 70%, var(--text-color, #dddddd));
-	--tvo-sel-bg: color-mix(in srgb, var(--tvo-sel-fg) 14%, transparent);
-}
-.tvo-chip { display: flex; align-items: center; gap: 4px; cursor: pointer; }
-/* Self-mixed from the line's own colour, NOT the backlink pill's variables.
- * Matching --ed-backlink-bg exactly was tried on 2026-08-13 and he rejected the
- * result: beside the pill it read heavier than the quiet affordance this is
- * meant to be. Leave it mixed. */
-.tvo-chip-dots {
-	display: flex; align-items: center; justify-content: center;
-	flex: 0 0 auto; width: 22px; height: 20px; border-radius: 4px;
-	font-size: 13px; opacity: .45;
-	background: color-mix(in srgb, currentColor 10%, transparent);
-}
-.tvo-chip-dots:hover { opacity: 1; background: color-mix(in srgb, currentColor 18%, transparent); }
-/* THE FILTER INDICATOR, sitting AFTER the dots as its own small control. A
- * filter persists, so the block it runs on has to say so at a glance and be
- * clearable in one click, or lines are missing with no visible reason. Accent,
- * not grey: this is an active state, and it matches how an active row reads. */
-.tvo-chip-flt {
-	display: flex; align-items: center; gap: 4px; flex: 0 1 auto;
-	max-width: 220px; min-width: 0; height: 20px; padding: 0 5px;
-	border-radius: 4px; box-sizing: border-box;
-	font-family: inherit; font-size: var(--text-size-smaller, 11px);
-	color: var(--tvo-sel-fg);
-	background: var(--tvo-sel-bg);
-}
-.tvo-chip-flt:hover { background: color-mix(in srgb, currentColor 22%, transparent); }
-.tvo-chip-ic { font-size: 11px; flex: 0 0 auto; }
-.tvo-chip-term { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.tvo-chip-x { font-size: 12px; flex: 0 0 auto; opacity: .65; border-radius: 4px; }
-.tvo-chip-x:hover { opacity: 1; background: color-mix(in srgb, currentColor 25%, transparent); }
-.tvo-filterbox { min-width: 260px; padding: 8px; }
-.tvo-filterinput {
-	width: 100%; box-sizing: border-box; border: 1px solid rgba(127,127,127,.35);
-	border-radius: 4px; padding: 5px 8px; font-family: inherit; font-size: 13px;
-	background: transparent; color: inherit; outline: none;
-}
-.tvo-filterinput:focus { border-color: color-mix(in srgb, var(--color-primary-500, #3aa37f) 60%, var(--text-color, currentColor)); }
-/* The hit itself, painted through the Custom Highlight API — no node is ever
- * added to a line (see VoRefreshHighlight for why that matters).
- * Identical to the criteria pill, plate AND text, through the shared variables.
- * CONFIRMED RIGHT BY HIM after five wrong attempts (an accent wash, a deep green
- * of mine, the app's --selection-bg, a #313E44 plate with white text, and
- * matching only the background). Do not touch it.
- * The text half is what kept it wrong for so long: match only the plate and the
- * marked word stays teal, white or link-coloured depending on what it is, so it
- * never looks like the pill however close the background gets. */
-::highlight(tvo-filter-hit) {
-	background-color: var(--tvo-sel-bg);
-	color: var(--tvo-sel-fg);
-}
-.tvo-filterhint { padding: 6px 2px 0; font-size: var(--text-size-smaller, 11px); opacity: .5; white-space: nowrap; }
-.tvo-menu {
-	position: fixed; z-index: 100000; min-width: 240px; padding: 6px;
-	background: var(--tvo-menu-bg, #2A2A31);
-	color: color-mix(in srgb, var(--cmdpal-fg-color, var(--text-color, #dadadb)) 86%, transparent);
-	border: 1px solid rgba(127,127,127,.4); border-radius: 4px;
-	box-shadow: 0 2px 8px rgba(0,0,0,.10), 0 8px 28px rgba(0,0,0,.16);
-	font-size: 13px;
-	/* a submenu taller than the room below its title row is CAPPED rather than
-	 * shoved up the screen, so it can stay aligned with the title it belongs
-	 * to (see VoPlacePanel). Nothing scrolls until that happens. */
-	overflow-x: hidden; overflow-y: auto;
-}
-.tvo-head {
-	display: flex; align-items: center; justify-content: space-between; gap: 12px;
-	padding: 6px 9px 8px 13px; user-select: none; white-space: nowrap;
-}
-.tvo-head-lbl {
-	font-size: 11.5px; font-weight: 600; opacity: .5;
-	text-transform: uppercase; letter-spacing: .04em;
-}
-/* The filter's way in: a real BUTTON in the header's own empty space (his call),
- * so it reads as pressable at rest rather than as decoration, and it does not
- * compete with the rows below, which list FEATURES rather than actions.
- * 4px radius, per the standing rule for every button and field. */
-.tvo-head-act {
-	flex: 0 0 auto; cursor: pointer; font-size: 13px;
-	display: flex; align-items: center; justify-content: center;
-	width: 24px; height: 20px; border-radius: 4px;
-	border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
-	background: color-mix(in srgb, currentColor 8%, transparent);
-	opacity: .75;
-}
-.tvo-head-act:hover {
-	opacity: 1;
-	background: color-mix(in srgb, currentColor 18%, transparent);
-	border-color: color-mix(in srgb, currentColor 34%, transparent);
-}
-/* a filter is RUNNING on this block: same accent treatment an active row gets */
-.tvo-head-act.tvo-on {
-	opacity: 1;
-	color: color-mix(in srgb, var(--color-primary-500, #3aa37f) 70%, var(--text-color, currentColor));
-	border-color: color-mix(in srgb, currentColor 55%, transparent);
-	background: color-mix(in srgb, currentColor 14%, transparent);
-}
-/* .tvo-root carries NO icon column (VoPanel skips it at depth 0), which is what
- * puts its labels on the same left edge as the header. Nothing to declare here:
- * the alignment is the absence of the icon span, so do not "restore" it. */
-.tvo-row {
-	display: flex; align-items: center; gap: 12px; white-space: nowrap;
-	padding: 8px 13px; border-radius: 4px; font-weight: 400; cursor: pointer;
-}
-/* HOVER IS NEUTRAL GREY, never a tint of the row's own colour. Riding
- * currentColor made an accent row hover accent-tinted, so an active row read as
- * "more active" rather than merely hovered. This is the same flat grey the menu
- * used before it was shared. */
-.tvo-row:hover { background: rgba(127,127,127,.2); }
-.tvo-ic { width: 17px; flex: 0 0 auto; font-size: 15px; opacity: .6; text-align: center; }
-.tvo-lbl { flex: 1 1 auto; }
-.tvo-chev { flex: 0 0 auto; font-size: 13px; opacity: .45; margin-right: -4px; }
-/* ACTIVE = accent text; see VoPanel for which active rows also carry a fill */
-.tvo-row.tvo-cur,
-.tvo-row.tvo-on { color: color-mix(in srgb, var(--color-primary-500, #3aa37f) 70%, var(--text-color, currentColor)); }
-.tvo-row.tvo-fill { background: color-mix(in srgb, currentColor 13%, transparent); }
-/* THE ACTIVE FILL STANDS DOWN WHILE ANOTHER ROW IN ITS OWN GROUP IS HOVERED,
- * and comes straight back. Two filled rows at once — the accent one and the
- * grey hovered one — clash, so the active one yields while you are choosing
- * inside the same set of options.
+/* ── VIEW OPTIONS: registration ─────────────────────────────────────────────
+ * The ⋯ chip on a line and the menu behind it belong to the View Options
+ * plugin. We contribute ONE provider record — plain data plus our own
+ * callbacks — and it does all of the rendering: the chip, the menu surface,
+ * the in-block filter, the geometry. Nothing here draws anything.
  *
- * THE SCOPE IS THE DIVIDER-DELIMITED GROUP. Three scopes were tried on him in
- * one session and the story is worth keeping: ADJACENCY (inherited from the
- * pre-shared menu) made the fill vanish for neighbours and survive for
- * everything else, which reads as instability rather than as a rule; NONE at
- * all let the accent fill sit next to the grey hover fill and clash; the WHOLE
- * PANEL dropped a fill in an unrelated set of options that had nothing to do
- * with what the pointer was on. A divider is exactly where one set of choices
- * ends and another begins, so hovering a status row leaves the active MODE
- * green, and hovering Description leaves Progress Bar green.
+ * With View Options not installed every call below is a no-op: there is no
+ * host to poke, our record simply sits in a list nobody reads, and this plugin
+ * keeps all its other features. That is the whole dependency, and it is on the
+ * plugin that provides the menu, not on another contributor.
  *
- * The hovered row keeps its own fill (the :not(:hover) half): an active row you
- * are pointing at has nothing to clash with. Panels are separate elements, so
- * hovering inside a submenu leaves the main menu's fills alone.
- * (NO BACKTICKS ANYWHERE IN THIS BLOCK — it is a template literal.) */
-.tvo-group:has(> .tvo-row:hover) > .tvo-row.tvo-fill:not(:hover) { background: transparent; }
-.tvo-row.tvo-on .tvo-ic { opacity: .9; }
-.tvo-row.tvo-dis { opacity: .4; cursor: default; }
-.tvo-row.tvo-dis:hover { background: transparent; }
-.tvo-sep { height: 1px; margin: 6px 4px; background: color-mix(in srgb, currentColor 14%, transparent); }
-`;
-// >>>SHARED
+ * THIS SNIPPET IS STABLE — the contract is what is shared, not this code, so
+ * there is nothing to re-sync when the menu changes. Its canonical text, the
+ * provider shape and the contract live in
+ * Thymer_plugins/shared/SHARED-VIEW-OPTIONS.md. */
+const RS_VO_GLOBAL = '__thymerViewOptions';
+const RS_VO_CONTRACT = 1;
+/* OUR STABLE IDENTITY in the registry, and the one thing in this snippet a
+ * plugin must change: registering replaces the record with the same id, and
+ * unregistering removes it by id. */
+const RS_VO_ID = 'supertask.section';
+
+/* Either side may create the record — load order between plugins is nobody's
+ * to decide — so we seed it too. It holds DATA and never implementation, which
+ * is what makes that safe: nothing of ours can end up imposed on anyone else,
+ * whatever version each plugin happens to be. */
+function rsVoRoot() {
+	let R = null;
+	try { R = window[RS_VO_GLOBAL]; } catch (e) { return null; }
+	if (!R) {
+		R = { contract: RS_VO_CONTRACT, providers: [], rev: 0, host: null };
+		try { window[RS_VO_GLOBAL] = R; } catch (e) { return null; }
+		return R;
+	}
+	/* a contract we do not know is a shape we cannot write safely: stand down
+	 * entirely rather than guess */
+	if (R.contract !== RS_VO_CONTRACT) return null;
+	if (!Array.isArray(R.providers)) R.providers = [];
+	if (typeof R.rev !== 'number') R.rev = 0;
+	return R;
+}
+
+/* Registering REPLACES the record with the same id, which is what keeps a hot
+ * reload — a fresh evaluation of this file while the previous one's record is
+ * still in the registry — from contributing our rows twice. */
+function rsVoRegister(rec) {
+	const R = rsVoRoot();
+	if (!R || !rec || !rec.id) return;
+	const i = R.providers.findIndex((p) => p && p.id === rec.id);
+	if (i >= 0) R.providers.splice(i, 1, rec); else R.providers.push(rec);
+	rsVoPoke(R);
+}
+
+/* onUnload. Safe on an instance whose onLoad never ran (playbook §2). */
+function rsVoUnregister(id) {
+	const R = rsVoRoot();
+	if (!R) return;
+	const i = R.providers.findIndex((p) => p && p.id === id);
+	if (i >= 0) R.providers.splice(i, 1);
+	rsVoPoke(R);
+}
+
+/* "What I contribute just changed" — bump the shared rev and ask the renderer
+ * to repaint NOW. Its own cycle would get there on the next scroll or pointer
+ * release, which is fine for a passive change and reads as "it did nothing"
+ * after a direct user action (measured at ~0.5s, his report 2026-08-13). */
+function rsVoPoke(R) {
+	const RR = R || rsVoRoot();
+	if (!RR) return;
+	RR.rev++;
+	const h = RR.host;
+	if (h && typeof h.poke === 'function') { try { h.poke(); } catch (e) {} }
+}
 
 // <<<SHARED option-menu — GENERATED, DO NOT EDIT HERE.
 // Source: shared/option-menu.js  |  regenerate: node tools/sync-option-menu.mjs
@@ -3001,11 +1259,22 @@ function rsMenu(anchor, items, current, onPick, cfg) {
 	rsM.focusAfter = (cfg.controlRef ? cfg.controlRef(anchor) : null);
 	// Thymer's own picker markup, class for class — the app styles it for us.
 	const menu = document.createElement("div");
-	menu.className = "cmdpal--inline active qb-menu" + (cfg.dark ? " qb-menu-dark" : "");
+	menu.className = "cmdpal--inline active qb-menu" + (cfg.dark ? " qb-menu-dark" : "") + (cfg.checks === false ? " qb-menu-nocheck" : "");
 	menu.style.position = "fixed";
 	menu.addEventListener("mousedown", (e) => e.stopPropagation());
 	rsM.el = menu;
 
+	// Rows marked `head` live above the search field, in their own list, and never take part in filtering.
+	const headItems = items.filter((it) => it.head);
+	let headList = null;
+	if (headItems.length) {
+		const hs = document.createElement("div");
+		hs.className = "autocomplete clickable qb-menu-head";
+		headList = document.createElement("div");
+		headList.className = "vcontent";
+		hs.appendChild(headList);
+		menu.appendChild(hs);
+	}
 	let search = null;
 	if (cfg.search) {
 		const ic = document.createElement("div");
@@ -3049,6 +1318,58 @@ function rsMenu(anchor, items, current, onPick, cfg) {
 		cells.forEach((c, k) => c.classList.toggle("autocomplete--option-selected", k === active));
 		if (scroll !== false && cells[active].scrollIntoView) cells[active].scrollIntoView({ block: "nearest" });
 	};
+	const makeRow = (it, into) => {
+		const row = document.createElement("div");
+		row.className = "autocomplete--option";
+		row.setAttribute("data-v", it.v == null ? "" : String(it.v));
+		if (cfg.dots !== false || it.icon || it.glyph || it.svg) {
+			const ic = document.createElement("span");
+			ic.className = "autocomplete--option-icon";
+			if (it.svg) {
+				ic.innerHTML = it.svg;
+			} else if (it.glyph) {
+				ic.textContent = it.glyph;
+			} else if (it.icon) {
+				const g = document.createElement("span");
+				g.className = "ti " + it.icon;
+				ic.appendChild(g);
+			} else {
+				// No glyph on this option — a dot in its enum colour, like native.
+				const d = document.createElement("span");
+				d.className = "qb-mi-dot";
+				d.style.color = rsEnumVar(it.color);
+				ic.appendChild(d);
+			}
+			row.appendChild(ic);
+		}
+		const lb = document.createElement("span");
+		lb.className = "autocomplete--option-label";
+		lb.textContent = it.label;
+		row.appendChild(lb);
+		// Multi-select hosts mark chosen rows with a trailing check AND a class
+		// they can tint. The row's own icon stays put — a picker row always
+		// shows its real icon.
+		if (cfg.isChecked && cfg.isChecked(it.v)) {
+			row.classList.add("qb-checked");
+			// `checks: false` hosts show the chosen rows by background only (an active-button look), no glyph.
+			if (cfg.checks !== false) {
+				const ck = document.createElement("span");
+				ck.className = "qb-mi-check";
+				ck.textContent = "\u2713";
+				row.appendChild(ck);
+			}
+		}
+		row.addEventListener("mouseenter", () => highlight(cells.indexOf(row), false));
+		row.addEventListener("click", (e) => {
+			e.stopPropagation();
+			if (cfg.keepOpen) { onPick(it.v); paint(); return; }   // multi-select: stay open
+			rsCloseMenu();
+			onPick(it.v);
+		});
+		into.appendChild(row);
+		cells.push(row);
+		return row;
+	};
 	const paint = () => {
 		const q = (search && search.value || "").trim();
 		// "+" is an AND across parts, and ranking is prefix-first — the same
@@ -3056,8 +1377,13 @@ function rsMenu(anchor, items, current, onPick, cfg) {
 		const parts = q ? q.toLowerCase().split("+").map((s) => s.trim()).filter(Boolean) : [];
 		const scored = [];
 		for (const it of items) {
+			if (it.head) continue;                    // drawn above the search field, never filtered
+			if (it.hidden && !parts.length) continue; // a wider set the search can reach, hidden until something is typed
+			if (it.idle && parts.length) continue;    // the mirror: a short default list the search replaces
+			if (it.title) { scored.push({ it, s: 0 }); continue; }
 			// Match against the label plus any alternate text (a keyword's @form).
 			const lab = ((it.label || "") + (it.alt ? " " + it.alt : "")).toLowerCase();
+			if (it.sep) { if (!parts.length) scored.push({ it, s: 0 }); continue; }
 			if (!parts.length) { scored.push({ it, s: 0 }); continue; }
 			let total = 0, ok = true;
 			for (const p of parts) {
@@ -3074,6 +1400,14 @@ function rsMenu(anchor, items, current, onPick, cfg) {
 		if (parts.length) scored.sort((a, b) => b.s - a.s || a.it.label.length - b.it.label.length || a.it.label.localeCompare(b.it.label));
 		list.innerHTML = "";
 		cells = [];
+		if (headList) {
+			headList.innerHTML = "";
+			headItems.forEach((it) => {
+				if (it.sep) { const d = document.createElement("div"); d.className = "qb-menu-sep"; headList.appendChild(d); return; }
+				if (it.title) { const t = document.createElement("div"); t.className = "qb-menu-title" + (it.caps ? " qb-caps" : ""); t.textContent = it.title; headList.appendChild(t); return; }
+				makeRow(it, headList);
+			});
+		}
 		if (!scored.length) {
 			const e = document.createElement("div");
 			e.className = "qb-menu-empty";
@@ -3081,46 +1415,18 @@ function rsMenu(anchor, items, current, onPick, cfg) {
 			list.appendChild(e);
 			return;
 		}
-		scored.slice(0, 200).forEach(({ it }) => {
-			const row = document.createElement("div");
-			row.className = "autocomplete--option";
-			row.setAttribute("data-v", it.v == null ? "" : String(it.v));
-			if (cfg.dots !== false || it.icon || it.glyph) {
-				const ic = document.createElement("span");
-				ic.className = "autocomplete--option-icon";
-				if (it.glyph) {
-					ic.textContent = it.glyph;
-				} else if (it.icon) {
-					const g = document.createElement("span");
-					g.className = "ti " + it.icon;
-					ic.appendChild(g);
-				} else {
-					// No glyph on this option — a dot in its enum colour, like native.
-					const d = document.createElement("span");
-					d.className = "qb-mi-dot";
-					d.style.color = rsEnumVar(it.color);
-					ic.appendChild(d);
-				}
-				row.appendChild(ic);
-			}
-			const lb = document.createElement("span");
-			lb.className = "autocomplete--option-label";
-			lb.textContent = it.label;
-			row.appendChild(lb);
-			row.addEventListener("mouseenter", () => highlight(cells.indexOf(row), false));
-			row.addEventListener("click", (e) => {
-				e.stopPropagation();
-				rsCloseMenu();
-				onPick(it.v);
-			});
-			list.appendChild(row);
-			cells.push(row);
+		scored.slice(0, cfg.maxRows || 200).forEach(({ it }) => {
+			if (it.sep) { const d = document.createElement("div"); d.className = "qb-menu-sep"; list.appendChild(d); return; }
+			if (it.title) { const t = document.createElement("div"); t.className = "qb-menu-title" + (it.caps ? " qb-caps" : ""); t.textContent = it.title; list.appendChild(t); return; }
+			makeRow(it, list);
 		});
-		// Start on whatever is already chosen, else the first row.
-		const at = cells.findIndex((c) => c.getAttribute("data-v") === String(current == null ? "" : current));
+		// Start on whatever is already chosen, else the first row. cfg.startTop: begin at the top (long, searchable
+		// lists where the current item may sit far down; Down then walks from the first row, not from the current one).
+		const at = cfg.startTop ? -1 : cells.findIndex((c) => c.getAttribute("data-v") === String(current == null ? "" : current));
 		highlight(at >= 0 ? at : 0, false);
 	};
 	paint();
+	rsM.repaint = paint;
 
 	// Up/Down walk the list, Enter takes the highlighted row — the menu is
 	// keyboard-drivable whether or not it has a search box.
@@ -3175,15 +1481,18 @@ function rsMenu(anchor, items, current, onPick, cfg) {
 	 * anchor, and hanging a 300px menu off its left edge puts the menu far out
 	 * to the right of the thing it belongs to (his 2026-08-15 report). */
 	const r = (cfg.alignTo || anchor).getBoundingClientRect();
-	const M = 8;
+	const M = cfg.edge != null ? cfg.edge : 8;
 	// Native picker width, never narrower than the control it belongs to.
 	menu.style.width = Math.max(r.width, cfg.width != null ? cfg.width : 320) + "px";
 	menu.style.maxWidth = "calc(100vw - 20px)";
 	// The list scrolls at the native 350px, or shrinks to fit a short one. Measured
 	// from the rendered content, not counted: native rows are 26px and the estimate
 	// here was 30, which left a visible strip of dead space under a short list.
-	const wanted = list.scrollHeight || (list.children.length * 26);
-	scroller.style.height = Math.min(350, Math.max(30, wanted)) + "px";
+	const seps = list.querySelectorAll(".qb-menu-sep").length;
+	const wanted = Math.max(list.scrollHeight || 0, (list.children.length - seps) * 26 + seps * 9); // scrollHeight can lag a row or two behind the rendered list; the count is the floor, and a separator is 9px, not a row
+	scroller.style.height = Math.min(cfg.maxHeight || 350, Math.max(30, wanted)) + "px"; // cfg.maxHeight lets a short fixed menu show every row without scrolling
+	// the virtual list settles a frame later; grow to the real content once, so nothing is left to scroll for
+	requestAnimationFrame(() => { const real = vnode.scrollHeight || 0; const cap = cfg.maxHeight || 350; if (real > wanted) scroller.style.height = Math.min(cap, real) + "px"; else if (real > 0 && real < cap && Math.abs(real - wanted) > 2) scroller.style.height = Math.max(30, real) + "px"; });
 	const h = menu.offsetHeight;
 	// Value menus align on their RIGHT edge with the control; the rest hang left.
 	const left = cfg.alignRight ? (r.right - menu.offsetWidth) : r.left;
@@ -3205,25 +1514,36 @@ function rsCloseMenu() {
 	if (rsM.key) { document.removeEventListener("keydown", rsM.key, true); rsM.key = null; }
 	if (rsM.outside) { document.removeEventListener("mousedown", rsM.outside, true); rsM.outside = null; }
 	if (rsM.el) { rsM.el.remove(); rsM.el = null; }
+	rsM.repaint = null;
 	document.querySelectorAll(".qb-sel.qb-open").forEach((b) => b.classList.remove("qb-open"));
 }
 
 // The menu's stylesheet, appended to the host's CSS string.
 const rsMENU_CSS = `
 .qb-sel.qb-open, .qb-val:focus { border-color: var(--ed-button-primary-bg, #4caea1); }
-.qb-menu { z-index: 100002; padding-bottom: 10px; border-radius: 4px; }
+.qb-menu { z-index: 100002; padding-top: 5px; padding-bottom: 5px; border-radius: var(--radius-normal, 3px); }
 .qb-menu .vscroll-node { overflow-y: auto; scrollbar-width: none; }
 .qb-menu .vscroll-node::-webkit-scrollbar { width: 0; height: 0; }
 .qb-menu .autocomplete--option { cursor: pointer; }
 .qb-menu .autocomplete--option { gap: 11px; }
 .qb-menu .cmdpal--inline-input { font-size: var(--text-size-smaller, .8125rem); }
 .qb-menu-empty { padding: 6px 10px; opacity: .6; }
+.qb-menu-title { padding: 5px 10px 3px; font-size: var(--text-size-smaller, .8125rem); color: var(--text-color-muted, rgba(196,196,196,.55)); text-transform: none; }
+.qb-menu-title.qb-caps { text-transform: uppercase; letter-spacing: .06em; }
+.qb-menu-sep { height: 1px; margin: 4px 8px; background: var(--border-color, rgba(196,196,196,.14)); }
+/* head rows sit above the search field. The host draws its own divider with a head sep row, because it decides which of
+   those rows the line belongs under. NO BACKTICKS: this block is a template literal. */
+.qb-menu .qb-menu-head { padding-bottom: 2px; }
+.autocomplete--option-icon svg { width: 14px; height: 14px; display: block; }
 .qb-menu .autocomplete--option-icon {
 	flex: 0 0 16px; width: 16px; min-width: 16px; height: 16px;
 	display: inline-flex; align-items: center; justify-content: center;
 }
 .qb-menu .autocomplete--option-icon > .ti { line-height: 1; }
 .qb-mi-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.qb-menu .qb-mi-check { margin-left: auto; padding-left: 10px; opacity: .9; }
+.qb-menu .autocomplete--option.qb-checked { border-radius: 4px; }
+.qb-menu.qb-menu-nocheck .autocomplete--option.qb-checked { background: color-mix(in srgb, var(--color-primary-500, #65c8bb) 16%, transparent); color: var(--color-primary-500, #65c8bb); }
 .qb-menu.qb-menu-dark .autocomplete--option { color: #AFAFB0; justify-content: center; font-weight: 600; letter-spacing: .04em; }
 .qb-menu.qb-menu-dark .autocomplete--option:hover { background: #3B3B42; }
 .qb-menu.qb-menu-dark .autocomplete--option-selected:hover { background: #313E44; color: var(--ed-button-primary-bg, #4caea1); }
@@ -3428,8 +1748,8 @@ class Plugin extends AppPlugin {
 			/* a theme swap changes font metrics, so every measured position is
 			 * stale: the progress bars carry a measured indent (his report: a
 			 * decoration on a line jumped once the theme changed). The ⋯ chips
-			 * are re-measured by the shared view-options module, which watches
-			 * the theme itself — whichever plugin is hosting it. */
+			 * are re-measured by the View Options plugin, which watches the
+			 * theme itself. */
 			if (!this.dead) { try { this.refreshProgressStyle(); } catch (e) {} }
 			/* the page checkbox copies the native check's measured px, so it
 			 * is stale for the same reason — and so is the icon-ink shift,
@@ -3510,11 +1830,12 @@ class Plugin extends AppPlugin {
 		});
 		this.domObserver.observe(document.body, { childList: true, subtree: true });
 
-		/* THE SHARED VIEW OPTIONS MENU. The ⋯ chip and everything behind it now
-		 * belong to the shared module, which several plugins register into; we
-		 * contribute one provider and it does the rendering. Registering
-		 * REPLACES any record with our id, which is what keeps a hot reload from
-		 * duplicating entries, and it elects a host on the spot. */
+		/* THE SHARED VIEW OPTIONS MENU. The ⋯ chip and everything behind it
+		 * belong to the View Options plugin; we contribute one provider record
+		 * and it does the rendering. Registering REPLACES any record with our
+		 * id, which is what keeps a hot reload from duplicating our rows, and
+		 * it pokes the renderer so the chip appears at once. With View Options
+		 * not installed this is a no-op and no chip ever appears. */
 		try { rsVoRegister(this.voProvider()); } catch (e) {}
 		/* the deferred-arrival drain used to ride the chip's own pointerup
 		 * listener; the chip has no listener of ours any more, so it keeps its
@@ -3563,7 +1884,6 @@ class Plugin extends AppPlugin {
 			icon: 'ti-tags',
 			onSelected: () => this.openSettings(),
 		});
-		this.voSyncCommand();
 		this.cmdProg = this.rsCmd({
 			label: 'Supertask: Progress Bar',
 			icon: 'ti-progress',
@@ -3681,11 +2001,10 @@ class Plugin extends AppPlugin {
 			window.removeEventListener('keydown', this.hotkeyHandler, true);
 			this.hotkeyHandler = null;
 		}
-		/* Leave the shared menu: drop our provider, and if we were the copy
-		 * rendering it, release the claim and bump rev so another live copy
-		 * takes over on its next refresh cycle. Safe on an instance whose
-		 * onLoad never ran — the module guards that itself. */
-		try { rsVoUnregister(); } catch (e) {}
+		/* Leave the shared menu: drop our provider by id, so our rows go and
+		 * View Options repaints without them. Safe on an instance whose onLoad
+		 * never ran — the snippet guards that itself. */
+		try { rsVoUnregister(RS_VO_ID); } catch (e) {}
 		if (this.arrivalScroll) {
 			window.removeEventListener('pointerup', this.arrivalScroll, true);
 			this.arrivalScroll = null;
@@ -3698,8 +2017,6 @@ class Plugin extends AppPlugin {
 		try { if (this.cmd6) this.cmd6.remove(); } catch (e) {}
 		try { if (this.cmd7) this.cmd7.remove(); } catch (e) {}
 		try { if (this.cmd8) this.cmd8.remove(); } catch (e) {}
-		try { if (this.cmdVo) this.cmdVo.remove(); } catch (e) {}
-		this.cmdVo = null;
 		this.style = this.cmd = this.cmd2 = this.cmd3 = this.cmd5 = this.cmd6 = this.cmd7 = this.cmd8 = null;
 	}
 
@@ -4860,7 +3177,9 @@ class Plugin extends AppPlugin {
 					userGuid = self && (self.guid || (self._getRow && self._getRow().guid));
 				} catch (e) {}
 			}
-			if (!userGuid) return null;
+			// ref.guid is interpolated into the record id, so a non-string mints a page
+			// called S-<coll>-[object Object]-0-<date> that breaks Markdown Mirror sync
+			if (typeof userGuid !== 'string' || !userGuid) return null;
 			const wsGuid = (window.g_universe && window.g_universe.workspaceGuid) || null;
 			const y = +m[2].slice(0, 4);
 			const mo = +m[2].slice(4, 6) - 1;
@@ -6065,11 +4384,6 @@ class Plugin extends AppPlugin {
 			this.refreshRepeatStyle();
 			this.refreshBinStyle();
 			this.refreshProgressStyle();
-			/* the shared View Options menu, on the same cycle: rows just
-			 * (re)rendered, and this is also where a copy that is NOT the host
-			 * notices a vacated claim (no polling interval anywhere) */
-			try { rsVoRefresh(true); } catch (e) {}
-			this.voSyncCommand(); /* ownership moves when a contributor comes or goes */
 			try { this.refreshPageChecks(); } catch (e) {}
 			this.arrivalScan();
 			this.drainDeferredArrivals();
@@ -8382,7 +6696,17 @@ class Plugin extends AppPlugin {
 		this.progRemember(counts);
 		/* the lines that actually DREW a bar this pass — the ⋯ chip follows
 		 * this set, so a bar always has a menu behind it (see chipWanted) */
+		const litWas = this.progLit;
 		this.progLit = new Set(counts.keys());
+		/* Which lines we claim a chip on therefore just changed, and this is the
+		 * one input to chipWanted that no user action of ours announces (a bar
+		 * can be lit by the global switch, or by a page loading and revealing
+		 * sub-tasks). Poke ONLY when the set actually moved: this runs on a
+		 * 300ms cycle, and poking every time would put the whole-workspace
+		 * sweep back on a timer, which is exactly what the extraction removed. */
+		if (!litWas || litWas.size !== this.progLit.size || [...this.progLit].some((g) => !litWas.has(g))) {
+			try { rsVoPoke(); } catch (e) {}
+		}
 		/* THE SAME BAR ON EVERY OTHER SURFACE THAT RENDERS THE LINE.
 		 * A live-search hit and a transclusion draw the line under a DIFFERENT
 		 * data-guid, so a stylesheet keyed on the real guid misses them (his
@@ -8797,9 +7121,8 @@ class Plugin extends AppPlugin {
 			await new Promise((r) => setTimeout(r, 350));
 		}
 		if (conf) await this.organizeSection(t, conf);
-		/* who may show a chip just changed — bump the shared rev so the copy
-		 * currently hosting the menu repaints, whichever plugin that is */
-		try { rsVoInvalidate(); } catch (e) {}
+		/* who may show a chip just changed — tell View Options to repaint now */
+		try { rsVoPoke(); } catch (e) {}
 	}
 
 	/* Retroactive pass when a section opts in or its conf changes. Status
@@ -8910,22 +7233,22 @@ class Plugin extends AppPlugin {
 	}
 
 	// ---- the shared View Options menu: Supertask's provider -------------------
-	/* The ⋯ chip, the menu surface and all the rendering moved to the shared
-	 * view-options module (the generated region at the top of this file) on
-	 * 2026-08-13, so several plugins can hang their own options off ONE menu on
-	 * a line instead of each growing a chip of its own. What stays here is
+	/* The ⋯ chip, the menu surface and all the rendering belong to the View
+	 * Options plugin, so several plugins can hang their own options off ONE menu
+	 * on a line instead of each growing a chip of its own. What stays here is
 	 * Supertask's PROVIDER, and that is the whole seam: we say WHEN the chip is
-	 * wanted and WHAT rows we contribute, as plain data; the module renders them
-	 * and calls our onSelect back. It never learns what a row does.
+	 * wanted and WHAT rows we contribute, as plain data; View Options renders
+	 * them and calls our onSelect back. It never learns what a row does.
 	 *
 	 * Everything that used to live here — the measured chip, the scroll rAF, the
-	 * three liveness checks, the menu surface — is now shared property. Do not
-	 * re-grow a copy here; fix it in shared/view-options.js and re-sync. */
+	 * three liveness checks, the menu surface — is over there now, and until
+	 * 2026-09-19 it was ALSO spliced into this file as a generated region. Do
+	 * not re-grow a copy here; fix it in the View Options plugin. */
 	voProvider() {
 		let version = '';
 		try { version = String((this.getConfiguration() || {}).version || ''); } catch (e) {}
 		return {
-			id: 'supertask.section',
+			id: RS_VO_ID,
 			version: version,
 			order: 10,
 			appliesTo: (ctx) => {
@@ -9141,54 +7464,6 @@ class Plugin extends AppPlugin {
 				const q = this.voPending.get(guid);
 				if (q && --q.n <= 0) this.voPending.delete(guid);
 			});
-	}
-
-	/* THE WAY BACK from "Hide View Options" (the row at the bottom of the shared
-	 * menu, which dismisses the chip on ONE line): a dismissed line has nothing
-	 * left to click and nothing marks which lines are dismissed, so this
-	 * restores them ALL rather than playing guess-the-line.
-	 *
-	 * The command belongs to the SHARED surface — hence the unprefixed label —
-	 * and only ONE plugin may register it or the palette shows duplicates. Who
-	 * that is comes from the module's claim, not from a convention here, so it
-	 * survives another contributor arriving and moves on if we unload. Re-checked
-	 * on every refresh cycle, because ownership changes when a plugin comes or
-	 * goes and a palette command can be added and removed at any time. */
-	/* A dismissed chip is stored as a meta property ON THE LINE, so it syncs to
-	 * every device and travels with the line. The shared module reads it for
-	 * free (its scan already walks each line's props) but cannot WRITE — it has
-	 * no data API — so a participating plugin lends it one. Same claim shape as
-	 * the palette command: one writer, and only while it is still registered. */
-	voSyncCommand() {
-		try { rsVoSetWriter((guid, on) => this.voWriteHide(guid, on)); } catch (e) {}
-		let mine = false;
-		try { mine = rsVoClaimCommand(); } catch (e) {}
-		if (mine && !this.cmdVo) {
-			this.cmdVo = this.rsCmd({
-				label: 'Show View Options',
-				icon: 'ti-dots',
-				onSelected: () => {
-					let n = 0;
-					try { n = rsVoShowAll(); } catch (e) {}
-					this.toast(n ? 'View Options shown again on ' + n + (n === 1 ? ' line' : ' lines')
-						: 'View Options were not hidden anywhere');
-				},
-			});
-		} else if (!mine && this.cmdVo) {
-			try { this.cmdVo.remove(); } catch (e) {}
-			this.cmdVo = null;
-		}
-	}
-
-	/* Serialized on the same chain as our other menu writes so a dismissal
-	 * cannot interleave with an ordering pass on the same line. The '' rather
-	 * than null is the documented tombstone: setMetaProperty(key, null) is
-	 * suspect, and '' clears reliably. */
-	voWriteHide(guid, on) {
-		this.voChain = (this.voChain || Promise.resolve())
-			.then(() => this.voTarget(guid))
-			.then((t) => (t ? t.headLi.setMetaProperty('tvo_hide', on ? '1' : '') : null))
-			.catch(() => {});
 	}
 
 	/* setOrderConf / setProgress want a live LineItem handle, which needs the
