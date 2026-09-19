@@ -1,5 +1,29 @@
 # Changelog
 
+## v1.11.0 - 2026-09-20
+
+- **The `⋯` menu on a line is now its own plugin.** Ordering, grouping and the progress-bar toggle used to open from a menu Supertask drew itself. That menu has moved out into **[View Options](https://github.com/parham-shafti/thymer-view-options)**, a plugin that several plugins contribute rows to, so one menu serves them all instead of each growing a chip of its own next to the same line. Install it and Supertask's two rows, *Order/Group Section* and *Progress Bar*, appear there.
+- **Nothing is lost without it.** Every feature still works and every one is still reachable from the command palette: `Supertask: Group by Status`, `Supertask: Group by Hashtags`, `Supertask: Group Done Tasks`, `Supertask: Order by Status` and `Supertask: Progress Bar`, plus the global switches in Settings. You simply get no `⋯` chip on the line.
+
+## v1.10.0 - 2026-08-28
+
+- **Undo now reaches repeating items.** The Undo in the date box's toast used to stand down whenever a repeat rule was involved at all. Only one kind of rule actually fans out into copies, the forward trail, so every other one is undoable now: the rule and the date are two reversible writes, and nothing was created that would have to be found and removed again.
+
+## v1.9.0 - 2026-08-28
+
+- **The date box has a touch shape.** On a touch device, or in a narrow window, it lays itself out for fingers instead of for a mouse.
+
+## v1.8.0 - 2026-08-28
+
+- **Pages get a checkbox, like todos have.** A page shown as a reference, as a row in a live query or in a transclusion can now carry a real checkbox, driven by a property you already keep on that collection. Map the property's values onto the statuses you use and the row draws exactly as a todo of that status would, on any theme: Done, Not Done, In Progress, Important, Alert, Starred, Billable, Discuss, Blocked, Cancelled. A value you have not mapped, or an empty property, draws no box at all. Clicking the box writes the property, so it syncs like any other edit.
+- **One rule can cover every collection.** Instead of wiring each collection separately, *On every Page* matches a single property **by name** across the whole workspace, which is enough when every collection calls its status the same thing. Per-collection configuration is kept while the global rule is on, and comes back untouched when you switch it off.
+- **The `⌘`- and `⌃`-digit chords work on pages too, not only on lines.** `⌘`-digits write the collection's *Timeblock* property, `⌃`-digits write the mapped status. They resolve the same way the date commands do: the focused row in a collection view, a page row in a live query, or a line that is nothing but a reference to a page. The same chord again clears, and on a page "cleared" means the Not Done value, which is what unchecking the box gives you.
+- **Ten chord slots instead of nine, holes allowed.** The chord is the position, so slot ten answers to `⌘0` and `⌃0`. An empty slot keeps its place rather than closing the gap, which is what makes `⌘0` reachable without filling the nine before it.
+- **Other plugins can open the date box.** Supertask publishes its picker, so a plugin rendering its own rows can open the real box on them instead of building a second one that drifts. Timeline uses it for a click on a day. A box opened that way knows the line it belongs to, so it shows that item's actual repeat rule rather than an empty one, and it can right-align itself under the row's own date slot.
+- **Date ranges got their own mode.** `+ End date` now greys out the days before the start, previews the span as you hover, and draws one continuous band across the calendar instead of leaving two loose endpoints. An end on the same day is read as a duration: move the start and the end comes with it, so a two-hour block stays two hours.
+- **A line with only a time now shows that time in the box.** It used to open with the clock hidden and *Set time* off although the row plainly read `11:00 - 12:00`.
+- **Setting a date can be undone.** The toast carries an Undo. On a page it puts the property's previous value back, on a line it restores the segments it replaced.
+
 ## v1.7.0 — 2026-08-10
 
 - **A sub-task now says so when you meet it away from home.** A todo that lives under another todo reads fine on its own page, where the indentation tells you. In a live search result or in Thymer's Tasks view it arrives with no context at all, so those rows get a small glyph in front of the title. The page itself is left alone: the indentation already carries it there.
