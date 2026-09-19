@@ -98,6 +98,8 @@ A todo that lives under another todo reads fine on its own page, because the ind
 
 Those rows get a small glyph in front of the title. Nothing to switch on, and the page itself is left alone, since the indentation already carries it there. Like the progress bars, it works on pages you have never opened.
 
+![A sub-task met away from its page: the glyph sits in front of the title](assets/subtask-glyph.png)
+
 ## Which date moves
 
 One set of chords covers both halves of a GTD system. The target resolves in this order:
