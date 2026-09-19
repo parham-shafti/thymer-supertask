@@ -98,7 +98,7 @@ Half of a GTD system is not lines. A project, a client, an article is a page, an
 
 Point Supertask at that property and those rows get a real checkbox, wherever the page is rendered: as a reference on a line, as a row in a live query, inside a transclusion.
 
-![Three pages in a list, each drawing its own status: In Progress, Blocked, Done](assets/page-checkboxes.png)
+![Three pages in a list drawing In Progress, Blocked and Done, and the property on one of them that says so](assets/page-checkboxes.png)
 
 Map the property's values onto the statuses you use, and the row draws exactly as a todo of that status would, on any theme, because it borrows Thymer's own tokens for it: **Done, Not Done, In Progress, Important, Alert, Starred, Billable, Discuss, Blocked, Cancelled**. An Alert page pulses like an Alert todo does. A value you have not mapped, and an empty property, draw no box at all, which is what keeps the decoration honest: a page with no status set does not pretend to have one.
 
