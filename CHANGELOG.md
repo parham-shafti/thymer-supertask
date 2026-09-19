@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.11.1 - 2026-09-20
+
+- **Fixed: deleting your last configured collection hid the global rule.** With *On every Page* switched on, removing every per-collection entry in Page Checkboxes made the whole **Global Page Checkboxes** block vanish from Settings, property and status mappings and all. The settings list was returning its "no collections yet" state before the global row was built. Nothing was ever lost: the rule stayed in your configuration and kept drawing boxes the whole time, it was only this view that stopped showing it. The note about adding a collection now appears only when the global switch is off, since with it on there is no collection missing and no button to point at.
+
 ## v1.11.0 - 2026-09-20
 
 The first public release since v1.6.0, so this is everything that arrived in between.

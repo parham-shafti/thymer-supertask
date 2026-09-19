@@ -2312,9 +2312,13 @@ class Plugin extends AppPlugin {
 			const cfg = this.pcCfg();
 			const guids = Object.keys(cfg);
 			if (!this.pcCat) return '<div class="rs-pcd-empty">Reading collections…</div>';
-			if (!guids.length) {
-				return '<div class="rs-pcd-empty">No collections yet. “+ Collection” gives one’s pages a checkbox.</div>';
-			}
+			/* NO EARLY RETURN ON AN EMPTY LIST (his 2026-09-20 report: he
+			 * deleted his last two collections and the whole global rule went
+			 * with them, property and mappings and all). The global rule is not
+			 * a collection: it is matched by property NAME across the
+			 * workspace, so it has to render whether or not any collection is
+			 * configured. Its data was never touched, only this view bailed
+			 * before glRow below was built. The note moved into the list. */
 			/* one line per status: its own glyph, then the values that mean it.
 			 * `which` is a state key for the status rows and 'off' for the
 			 * reset row, so both share the chip plumbing and the pickers. */
@@ -2457,7 +2461,13 @@ class Plugin extends AppPlugin {
 					: '')
 				+ '</div>';
 
-			return '<div class="rs-pclist">' + glRow + guids.map((g) => {
+			/* only when the switch is OFF: with it on there is no
+			 * "+ Add Collection" button to point at, and no collection is
+			 * missing — the global rule IS the configuration. */
+			const none = (!guids.length && !on)
+				? '<div class="rs-pcd-empty">No collections yet. “+ Collection” gives one’s pages a checkbox.</div>'
+				: '';
+			return '<div class="rs-pclist">' + glRow + none + guids.map((g) => {
 				const c = cfg[g];
 				const info = (this.pcCat || []).find((x) => x.guid === g);
 				const name = (info && info.name) || ('…' + g.slice(-6));

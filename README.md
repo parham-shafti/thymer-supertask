@@ -116,6 +116,8 @@ Half of a GTD system is not lines. A project, a client, an article is a page, an
 
 Point Supertask at that property and those rows get a real checkbox, wherever the page is rendered: as a reference on a line, as a row in a live query, inside a transclusion.
 
+![Three pages in a list, each drawing its own status: In Progress, Blocked, Done](assets/page-checkboxes.png)
+
 Map the property's values onto the statuses you use, and the row draws exactly as a todo of that status would, on any theme, because it borrows Thymer's own tokens for it: **Done, Not Done, In Progress, Important, Alert, Starred, Billable, Discuss, Blocked, Cancelled**. An Alert page pulses like an Alert todo does. A value you have not mapped, and an empty property, draw no box at all, which is what keeps the decoration honest: a page with no status set does not pretend to have one.
 
 Clicking the box writes the property, so it syncs and collaborates like a hand-made edit. The `⌃`-digit chords reach those rows too, so any mapped status is one chord away without opening the page.
@@ -123,6 +125,8 @@ Clicking the box writes the property, so it syncs and collaborates like a hand-m
 **One rule for every collection.** Wiring each collection separately gets old fast, so *On every Page* matches a single property **by name** across the whole workspace, which is all you need when every collection calls its status the same thing. Your per-collection wiring is kept while the global rule is on, and comes back untouched when you switch it off.
 
 It is all configured under **Page Checkboxes** in Settings.
+
+![The Page Checkboxes settings: one property matched by name, and its values mapped onto the statuses](assets/page-checkbox-settings.png)
 
 ## Group and order your sections
 
