@@ -1251,6 +1251,7 @@ function rsEnumVar(idx) {
 function rsMenu(anchor, items, current, onPick, cfg) {
 	rsCloseMenu();
 	cfg = cfg || {};
+	if (cfg.sheet == null && typeof rsM.sheetDefault === "function" && rsM.sheetDefault()) cfg.sheet = true;
 	anchor.classList.add("qb-open");
 	// Picking with the MOUSE leaves focus on <body>, so the rebuild that follows
 	// has nothing to restore and Tab starts over from the top of the panel.
@@ -1500,6 +1501,13 @@ function rsMenu(anchor, items, current, onPick, cfg) {
 	let top = r.bottom + 4;
 	if (top + h > window.innerHeight - M) top = Math.max(M, r.top - 4 - h);
 	menu.style.top = top + "px";
+	if (cfg.sheet) {
+		// hand the placement to Thymer's phone sheet rule: full viewport width, pinned to the bottom above the keyboard
+		menu.classList.add("cmdpal--sheet", "qb-menu-sheet");
+		menu.style.left = "var(--mobile-viewport-left, 0px)"; menu.style.top = "auto"; menu.style.right = "auto";
+		menu.style.width = "var(--mobile-viewport-width, 100vw)"; menu.style.maxWidth = "none";
+		scroller.style.height = Math.min(Math.round(window.innerHeight * 0.6), Math.max(30, wanted)) + "px";
+	}
 	if (search) search.focus();
 
 	rsM.outside = (e) => {
@@ -1534,6 +1542,8 @@ const rsMENU_CSS = `
 /* head rows sit above the search field. The host draws its own divider with a head sep row, because it decides which of
    those rows the line belongs under. NO BACKTICKS: this block is a template literal. */
 .qb-menu .qb-menu-head { padding-bottom: 2px; }
+.qb-menu.qb-menu-sheet { border-radius: var(--radius-normal, 3px) var(--radius-normal, 3px) 0 0 !important; }
+.qb-menu.qb-menu-sheet .autocomplete--option { min-height: 44px; }
 .autocomplete--option-icon svg { width: 14px; height: 14px; display: block; }
 .qb-menu .autocomplete--option-icon {
 	flex: 0 0 16px; width: 16px; min-width: 16px; height: 16px;
