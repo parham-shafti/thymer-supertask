@@ -450,6 +450,11 @@ const IS_MAC = /Mac|iPhone|iPad|iPod/.test((navigator.platform || '') + (navigat
 /* SLOT 10 IS THE 0 KEY — it sits right after 9 on the keyboard, so the tenth
  * slot is ⌘0 / ⌃0 rather than a chord nobody can reach (his 2026-08-15 ask). */
 const TB_SLOTS = 10; /* ⌘1-9 then ⌘0 — ten keys, ten slots, holes allowed */
+/* THE HASHTAGS STOP AT ⌘9 (his 2026-09-22 call): ⌘0 is a fixed Clear
+ * Timeblock, so the hashtag side has nine slots while the status side keeps
+ * all ten (⌃0 is still a status slot). TB_SLOTS is shared with rsStatusOrder,
+ * which is why this is a second constant and not a change to that one. */
+const TB_TAG_SLOTS = 9;
 const KEY_N = (n) => (n >= 10 ? '0' : String(n));
 const KEY_TAG = (n) => (IS_MAC ? '⌘' : 'Ctrl+') + KEY_N(n);
 const KEY_STATUS = (n) => (IS_MAC ? '⌃' : 'Alt+') + KEY_N(n);
@@ -930,7 +935,9 @@ html.is-dark {
 /* the picker button in a status row: icon, label and chevron each spaced */
 .rs-pcstat-pick .rs-p-ic { flex: 0 0 auto; }
 .rs-pcstat-pick.is-fixed { color: #8C8C92; cursor: default; }
+.rs-p-secbox .rs-p-row.is-fixed { color: #8C8C92; cursor: default; }
 html.is-light .rs-pcstat-pick.is-fixed { color: color-mix(in srgb, currentColor 55%, transparent); }
+html.is-light .rs-p-secbox .rs-p-row.is-fixed { color: color-mix(in srgb, currentColor 55%, transparent); }
 .rs-pcstat-pick .lbl { padding: 0 2px; }
 .rs-p-secbox .rs-p-sec { margin: 0; }
 .rs-p-secbox .rs-p-secsub { margin: 8px 0 10px; }
@@ -2051,6 +2058,10 @@ class Plugin extends AppPlugin {
 			? (e.ctrlKey && !e.metaKey && !e.altKey)
 			: (e.altKey && !e.metaKey && !e.ctrlKey);
 
+		/* ⌘0 CLEARS THE TIMEBLOCK. Claimed here, in capture, so Thymer's own
+		 * ⌘0 (which opens the sidebar) never sees it; he has the sidebar on ⌘S
+		 * and asked for exactly this trade. */
+		if (tagMod && !e.shiftKey && code === 'Digit0') return { kind: 'tbclear' };
 		if (tagMod && !e.shiftKey) {
 			const tb = (this.timeblocks || TIMEBLOCKS).find((t) => t.code === code);
 			if (tb) return { kind: 'timeblock', tb };
@@ -2083,6 +2094,7 @@ class Plugin extends AppPlugin {
 		this.busy = true;
 		try {
 			if (act.kind === 'timeblock') await this.setTimeblock(act.tb);
+			else if (act.kind === 'tbclear') await this.clearTimeblock();
 			else if (act.kind === 'shift') await this.shift(act.days);
 			else if (act.kind === 'status') await this.setStatus(act);
 		} catch (e) {
@@ -2135,9 +2147,9 @@ class Plugin extends AppPlugin {
 	 * empty slot is `null` and keeps its place; every consumer skips nulls. */
 	applySlots(slots) {
 		if (!Array.isArray(slots)) return;
-		const out = new Array(TB_SLOTS).fill(null);
+		const out = new Array(TB_TAG_SLOTS).fill(null);
 		const seen = new Set();
-		for (let i = 0; i < Math.min(slots.length, TB_SLOTS); i++) {
+		for (let i = 0; i < Math.min(slots.length, TB_TAG_SLOTS); i++) {
 			const sIn = slots[i];
 			let tag = '';
 			let title = '';
@@ -2151,9 +2163,9 @@ class Plugin extends AppPlugin {
 			out[i] = { tag, title };
 		}
 		this.tbSlots = out;
-		/* slot 10 answers to Digit0, the key that actually sits after 9 */
+		/* Digit0 is not a slot any more: it is Clear Timeblock */
 		this.timeblocks = out.map((s2, i) => (s2
-			? { code: 'Digit' + (i === 9 ? 0 : i + 1), tag: s2.tag, label: s2.title || s2.tag.slice(1) }
+			? { code: 'Digit' + (i + 1), tag: s2.tag, label: s2.title || s2.tag.slice(1) }
 			: null)).filter(Boolean);
 		this.timeblockTags = new Set(out.filter(Boolean).map((s2) => s2.tag));
 	}
@@ -2592,13 +2604,13 @@ class Plugin extends AppPlugin {
 				+ '</div>'
 				+ '<div class="rs-p-secbox' + (fold.ordering ? ' is-folded' : '') + '">' + sec('ordering', 'Global Task Status') + orderingBody + '</div>'
 				+ '<div class="rs-p-secbox">'
-				+ sec('hashtags', 'Global Hashtags')
+				+ sec('hashtags', 'Timeblocks')
 				+ (fold.hashtags ? '' :
-					'<p class="rs-p-sub rs-p-secsub">' + KEY_TAG(1) + ' to ' + KEY_TAG(9) + ' tag the current line; the row is the key. '
+					'<p class="rs-p-sub rs-p-secsub">' + KEY_TAG(1) + ' to ' + KEY_TAG(9) + ' tag the current line and ' + KEY_TAG(10) + ' clears whichever one it has; the row is the key. '
 					+ 'Use anything your flow sorts by: timeblocks, priorities, statuses. '
 					+ 'The arrows decide which chord tags with which hashtag.</p>'
 					+ '<div class="rs-p-list">'
-				+ Array.from({ length: TB_SLOTS }, (_, i) => draft.slots[i]).map((slot, i) => {
+				+ Array.from({ length: TB_TAG_SLOTS }, (_, i) => draft.slots[i]).map((slot, i) => {
 					const so = typeof slot === 'string' ? { tag: slot, title: '' } : (slot || { tag: '', title: '' });
 					return i === editIdx
 						/* edit mode is the SAME row, not a different shape: same
@@ -2621,11 +2633,17 @@ class Plugin extends AppPlugin {
 								 * 1-4 and then 0 without filling the six between */
 								: '<button type="button" class="rs-p-name rs-tb-claim" data-i="' + i + '">Add a hashtag</button>')
 							+ '<span class="rs-p-acts">'
-							+ (slot ? arrows('rs-ho', i, TB_SLOTS) : '')
+							+ (slot ? arrows('rs-ho', i, TB_TAG_SLOTS) : '')
 							+ (slot ? '<button type="button" class="rs-p-btn rs-tb-edit ti ti-pencil" data-i="' + i + '"></button>' : '')
 							+ (slot ? '<button type="button" class="rs-p-btn is-danger rs-tb-x ti ti-trash" data-i="' + i + '"></button>' : '')
 							+ '</span></div><span class="rs-p-key">' + KEY_TAG_TXT(i + 1) + '</span></div>';
 				}).join('')
+				/* the fixed last row: not a slot, so no arrows, no edit, no trash,
+				 * muted like the fixed Done / Not Done rows in Page Checkboxes */
+				+ '<div class="rs-p-line"><div class="rs-p-row is-fixed">'
+					+ '<span class="rs-p-ic ti ti-eraser"></span>'
+					+ '<span class="rs-p-name">Clear Timeblock</span>'
+					+ '</div><span class="rs-p-key">' + KEY_TAG_TXT(10) + '</span></div>'
 				+ '</div>')
 				+ '</div>'
 				/* One button, and its LABEL is the honest state: Save while there
@@ -2768,8 +2786,9 @@ class Plugin extends AppPlugin {
 					: draft.slots;
 				/* the bound is the SLOT COUNT, not the filled length: swapping with
 				 * an empty neighbour is exactly how a status reaches ⌃0 */
-				if (j < 0 || j >= TB_SLOTS) return;
-				while (list.length < TB_SLOTS) list.push(null);
+				const bound = t.classList.contains('rs-so') ? TB_SLOTS : TB_TAG_SLOTS;
+				if (j < 0 || j >= bound) return;
+				while (list.length < bound) list.push(null);
 				const tmp = list[i]; list[i] = list[j]; list[j] = tmp;
 				if (t.classList.contains('rs-ho')) { this.applySlots(draft.slots); draft.slots = this.tbSlots.slice(); }
 				dirty = true;
@@ -2791,7 +2810,7 @@ class Plugin extends AppPlugin {
 			}
 			if (t.classList.contains('rs-tb-add')) {
 				if (editIdx >= 0) commitEdit();
-				const free = Array.from({ length: TB_SLOTS }, (_, k) => k).find((k) => !draft.slots[k]);
+				const free = Array.from({ length: TB_TAG_SLOTS }, (_, k) => k).find((k) => !draft.slots[k]);
 				if (free !== undefined) { draft.slots[free] = { tag: '', title: '' }; editIdx = free; }
 				render();
 			} else if (t.classList.contains('rs-tb-edit')) {
@@ -7730,6 +7749,48 @@ class Plugin extends AppPlugin {
 		this.toast(cleared ? 'Timeblock cleared' : tb.label);
 	}
 
+	/* ⌘0: CLEAR WHICHEVER TIMEBLOCK IS THERE (his 2026-09-22 ask). The per-slot
+	 * chords already clear on a second press, but only if you know which slot
+	 * the line holds; this one does not ask. Resolved through the same
+	 * dateTarget as every other chord, so it acts on exactly the line or page
+	 * ⌘1-⌘9 would. On a line it removes the one configured timeblock hashtag
+	 * and heals the gap it leaves, other hashtags untouched; on a page it
+	 * empties the collection's Timeblock property. Nothing there to clear says
+	 * so rather than doing nothing silently. */
+	async clearTimeblock() {
+		const t = this.dateTarget();
+		if (t && t.err) { this.toast(t.err); return; }
+		if (t && t.kind === 'record') { await this.clearPageTimeblock(t.guid); return; }
+		const line = t && t.kind === 'line' ? t.line : this.lineSelection();
+		if (line && line.recordGuid) { await this.clearPageTimeblock(line.recordGuid); return; }
+		if (!line || !line.lineGuid || !line.pageGuid) { this.toast('Put the caret on a line first.'); return; }
+		const li = await this.lineItem(line);
+		if (!li) { this.toast('Could not read that line.'); return; }
+		const segs = li.segments.map((s) => ({ type: s.type, text: s.text }));
+		const i = segs.findIndex((s) => s.type === 'hashtag' && this.timeblockTags.has(s.text));
+		if (i < 0) { this.toast('No timeblock on this line.'); return; }
+		segs.splice(i, 1);
+		this.healGap(segs, i);
+		await li.setSegments(segs);
+		if (!line.noCaret) await this.restoreCaret(line.domGuid || line.lineGuid, line.caret);
+		this.toast('Timeblock cleared');
+	}
+
+	/* the page half of ⌘0: the same "Timeblock" field setPageTimeblock writes */
+	async clearPageTimeblock(recGuid) {
+		const rec = this.data.getRecord(recGuid);
+		if (!rec) { this.toast('Could not read that page.'); return; }
+		const name = rec.getName() || 'Page';
+		const { fields } = await this.pageFields(rec);
+		const f = (fields || []).find((x) => x && x.active !== false
+			&& /^\s*timeblock\s*$/i.test(String(x.label || x.name || x.id || '')));
+		const prop = f && rec.prop(f.id);
+		if (!prop) { this.toast('No “Timeblock” property in this collection.'); return; }
+		if (!this.pagePropValues(prop).length) { this.toast(name + ' · no timeblock set'); return; }
+		await this.setPagePropValue(prop, f.type, null);
+		this.toast(name + ' · Timeblock cleared');
+	}
+
 	/* Close the hole left by removing a segment: join the text on either side
 	 * without doubling the space, and drop a separator left dangling at the end
 	 * of the line. Without this, clearing a timeblock leaves trailing blanks that
@@ -7743,6 +7804,13 @@ class Plugin extends AppPlugin {
 		}
 		const last = segs[segs.length - 1];
 		if (last && last.type === 'text' && /^\s*$/.test(last.text)) segs.pop();
+		/* the removed segment was the LAST one, so the space that separated it
+		 * now trails the line. Typed text keeps that space inside the word's own
+		 * segment ("Read " before "#lateevening"), not in a segment of its own,
+		 * which is why the pop above misses it. Found by the ⌘0 test; the same
+		 * blank was already left by a second ⌘-digit press and by the date
+		 * box's Clear, the "no trailing blank" rule of 4f3e3d0. */
+		else if (last && last.type === 'text' && i >= segs.length) last.text = last.text.replace(/\s+$/, '');
 	}
 
 	// ---- the date box -------------------------------------------------------
@@ -9050,7 +9118,8 @@ class Plugin extends AppPlugin {
 	// ---- misc ---------------------------------------------------------------
 
 	showShortcuts() {
-		const rows = (this.timeblocks || []).map((t) => KEY_TAG(t.code.slice(5)) + '&nbsp; ' + t.label + ' &nbsp;<span style="opacity:.5">' + t.tag + '</span>').join('<br>');
+		const rows = (this.timeblocks || []).map((t) => KEY_TAG(t.code.slice(5)) + '&nbsp; ' + t.label + ' &nbsp;<span style="opacity:.5">' + t.tag + '</span>').join('<br>')
+			+ '<br>' + KEY_TAG(10) + '&nbsp; Clear timeblock';
 		this.ui.addToaster({
 			title: 'Supertask',
 			messageHTML: rows

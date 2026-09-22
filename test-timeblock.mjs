@@ -21,6 +21,7 @@ function healGap(segs, i) {
 	}
 	const last = segs[segs.length - 1];
 	if (last && last.type === 'text' && /^\s*$/.test(last.text)) segs.pop();
+	else if (last && last.type === 'text' && i >= segs.length) last.text = last.text.replace(/\s+$/, '');
 }
 
 function needsGap(segs, i) {
@@ -40,6 +41,16 @@ function setTimeblock(segs, tag) {
 		segs[i] = { type: 'hashtag', text: tag };
 		if (i === segs.length - 1) segs.push({ type: 'text', text: ' ' });
 	}
+	return segs;
+}
+
+// ⌘0: the plugin's clearTimeblock segment logic, verbatim. null = nothing to clear.
+function clearTimeblock(segs) {
+	segs = segs.map((s) => ({ ...s }));
+	const i = segs.findIndex((s) => s.type === 'hashtag' && TIMEBLOCK_TAGS.has(s.text));
+	if (i < 0) return null;
+	segs.splice(i, 1);
+	healGap(segs, i);
 	return segs;
 }
 
@@ -122,6 +133,23 @@ check('dinner swaps for lateafternoon',
 	'Cook #dinner');
 check('pressing lunch twice clears it',
 	render(setTimeblock(setTimeblock([{ type: 'text', text: 'Eat' }], '#lunch'), '#lunch')), 'Eat');
+
+check('a second press on a TYPED trailing tag leaves no blank either',
+	render(setTimeblock([{ type: 'text', text: 'Read ' }, { type: 'hashtag', text: '#lateevening' }], '#lateevening')), 'Read');
+
+console.log('\n⌘0 clears whichever timeblock is there, without being told which');
+check('clears a trailing timeblock, no blank left behind',
+	render(clearTimeblock(recording)), 'Testing Sat Aug 8');
+check('clears one mid-sentence and keeps exactly one space',
+	render(clearTimeblock([{ type: 'text', text: 'Call ' }, { type: 'hashtag', text: '#lunch' }, { type: 'text', text: ' about the invoice' }])),
+	'Call about the invoice');
+check('any slot, not just the first: #lateevening goes too',
+	render(clearTimeblock([{ type: 'text', text: 'Read ' }, { type: 'hashtag', text: '#lateevening' }])), 'Read');
+check('other hashtags are left alone',
+	render(clearTimeblock([{ type: 'text', text: 'Water plants ' }, { type: 'hashtag', text: '#recurring' }, { type: 'text', text: ' ' }, { type: 'hashtag', text: '#morning' }])),
+	'Water plants #recurring');
+check('a line with no timeblock reports nothing to clear',
+	clearTimeblock([{ type: 'text', text: 'Plain todo ' }, { type: 'hashtag', text: '#recurring' }]), null);
 
 console.log(fails ? '\n' + fails + ' FAILED\n' : '\nall passed\n');
 process.exit(fails ? 1 : 0);
