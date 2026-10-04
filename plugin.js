@@ -1589,7 +1589,7 @@ class Plugin extends AppPlugin {
 			const ruleOf = (guid) => { const pr = this.pageRuleFor(guid); return pr && pr.rule && pr.rule.f ? pr.rule : null; };
 			window.__rsRecur = {
 				contract: 1, owner: 'supertask',
-				rule: (guid) => { const r = ruleOf(guid); return r ? { label: recurLabel(r), f: r.f, n: r.n || 1, wd: r.wd || null, from: r.from || 'a', dp: r.dp || null, sp: r.sp || null, dv: r.dv || null, rv: r.rv || null } : null; },
+				rule: (guid) => { const r = ruleOf(guid); return r ? { label: recurLabel(r), f: r.f, n: r.n || 1, wd: r.wd || null, a: r.a || null, from: r.from || 'a', dp: r.dp || null, sp: r.sp || null, dv: r.dv || null, rv: r.rv || null } : null; },
 				next: (guid, fromYmd) => { const r = ruleOf(guid); if (!r || r.from === 'c') return null; return recurNext(r, +fromYmd) || null; },
 				matches: (guid, ymd) => { const r = ruleOf(guid); if (!r || r.from === 'c') return null; return recurMatches(r, +ymd); },
 			};
