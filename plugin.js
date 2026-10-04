@@ -1592,6 +1592,36 @@ class Plugin extends AppPlugin {
 				rule: (guid) => { const r = ruleOf(guid); return r ? { label: recurLabel(r), f: r.f, n: r.n || 1, wd: r.wd || null, a: r.a || null, from: r.from || 'a', dp: r.dp || null, sp: r.sp || null, dv: r.dv || null, rv: r.rv || null } : null; },
 				next: (guid, fromYmd) => { const r = ruleOf(guid); if (!r || r.from === 'c') return null; return recurNext(r, +fromYmd) || null; },
 				matches: (guid, ymd) => { const r = ruleOf(guid); if (!r || r.from === 'c') return null; return recurMatches(r, +ymd); },
+				/* Habits switches a habit off and on (2026-10-04, stage 3). clear() removes a page's rule
+				 * exactly as the date box's "Never" does (series copies reconciled, the rule deleted, prefs
+				 * saved, which drops the glyph everywhere) and hands back a copy of the stored rule; the
+				 * delete is synchronous, so a status write right after it is no longer a tick. restore()
+				 * stores such a rule again on its own anchor, and refuses when the page already has a rule
+				 * (one set in the meantime wins). Both save prefs, which reloads this plugin. */
+				clear: (guid) => {
+					const pr = this.pageRuleFor(guid);
+					if (!pr || !pr.rule) return null;
+					const snap = JSON.parse(JSON.stringify(pr.rule));
+					const originRec = this.data.getRecord(pr.origin);
+					delete this.pageRules[pr.origin];
+					(async () => {
+						if (originRec) { try { await this.reconcilePageSeries(originRec, { ...JSON.parse(JSON.stringify(snap)), tr: null }); } catch (e) {} }
+						await this.savePrefs(); /* LAST: it reloads the plugin */
+					})();
+					return snap;
+				},
+				restore: (guid, rule) => {
+					if (!guid || !rule || typeof rule !== 'object' || !rule.f) return false;
+					if (this.pageRuleFor(guid)) return false;
+					const r = { ...JSON.parse(JSON.stringify(rule)), copies: {} };
+					this.pageRules[guid] = r;
+					const rec = this.data.getRecord(guid);
+					(async () => {
+						if (rec && rsIsTrail(r)) { try { await this.reconcilePageSeries(rec, r); } catch (e) {} }
+						await this.savePrefs(); /* LAST: it reloads the plugin */
+					})();
+					return true;
+				},
 			};
 		} catch (e) {}
 		/* a page-rule commit reloads us through savePrefs; re-make the offer it
