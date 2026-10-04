@@ -1580,6 +1580,20 @@ class Plugin extends AppPlugin {
 		 * like ⌘⇧S — so with both plugins installed there is exactly ONE
 		 * picker and ONE repeat engine on the page. */
 		try { window.__rsDateBox = { contract: 1, owner: 'supertask', open: () => { this.openPicker(); return true; } }; } catch (e) {}
+		/* The repeat ENGINE for other plugins (Habits, 2026-10-04): which days a PAGE's
+		 * rule schedules, asked of this engine instead of a fork of it. Same
+		 * shared-runtime contract as the date box: data plus the owner's callbacks,
+		 * YMD integers in and out, null when the page has no schedule-based rule
+		 * ("after completion" rules have no fixed days, so matches/next answer null). */
+		try {
+			const ruleOf = (guid) => { const pr = this.pageRuleFor(guid); return pr && pr.rule && pr.rule.f ? pr.rule : null; };
+			window.__rsRecur = {
+				contract: 1, owner: 'supertask',
+				rule: (guid) => { const r = ruleOf(guid); return r ? { label: recurLabel(r), f: r.f, n: r.n || 1, wd: r.wd || null, from: r.from || 'a', dp: r.dp || null, sp: r.sp || null, dv: r.dv || null, rv: r.rv || null } : null; },
+				next: (guid, fromYmd) => { const r = ruleOf(guid); if (!r || r.from === 'c') return null; return recurNext(r, +fromYmd) || null; },
+				matches: (guid, ymd) => { const r = ruleOf(guid); if (!r || r.from === 'c') return null; return recurMatches(r, +ymd); },
+			};
+		} catch (e) {}
 		/* a page-rule commit reloads us through savePrefs; re-make the offer it
 		 * took with it, once the UI is there to show it */
 		setTimeout(() => { try { this.reofferPageUndo(); } catch (e) {} }, 600);
@@ -1964,6 +1978,7 @@ class Plugin extends AppPlugin {
 		this.cmds = null;
 		try { window.__rsCmds = []; } catch (e) {}
 		try { if (window.__rsDateBox && window.__rsDateBox.owner === 'supertask') delete window.__rsDateBox; } catch (e) {}
+		try { if (window.__rsRecur && window.__rsRecur.owner === 'supertask') delete window.__rsRecur; } catch (e) {}
 		this.closeSettings();
 		this.closePicker();
 		try { if (this.recurHandler) this.events.off(this.recurHandler); } catch (e) {}
