@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.12.0 - 2026-10-06
+
+- **Settings, redesigned.** One dialog with four pages in a side rail, **Task Status**, **Timeblocks**, **Progress Bar** and **Page Checkboxes**, in the same layout as the other plugins' settings. Shortcuts show as keys, the statuses and hashtags sit in tables with their chord on the left, and the button at the bottom reads *Save* when there is something to write and *Done* when there is not. On a narrow window it becomes a full-screen sheet with tabs.
+- **The hashtag field knows every tag in your workspace.** Editing a timeblock now lists all your hashtags the moment the field gets focus and narrows the list as you type. It used to suggest only tags on lines already loaded, which could be almost none.
+- **Pressing Enter under a group no longer moves your line.** Thymer now lets a heading own the lines after it, so Enter under a Done group made the new line part of that group, and Supertask lifted it out again with its indent reset. Grouping now only files a task with something on it: a plain line, an empty line or an empty task you are about to write is left where you put it. The groups also stay put while you type below them, and only move under a task once it has content and you have stopped typing.
+- **Indent Grouped Tasks.** Thymer draws a heading's lines flush, so a group's tasks sat level with their roof. This new switch under Task Status, on by default, puts them one step in again, the way a Tab would. Switch it off if you prefer them flush.
+- **`⌘0` clears a timeblock.** Whichever timeblock hashtag a line has, `⌘0` removes it, and on a page it empties the *Timeblock* property. The hashtags themselves run from `⌘1` to `⌘9`, and the section is called **Timeblocks**.
+- **A status row added by mistake can be removed.** *Add Status* in Page Checkboxes now gives the new row an `×`.
+- **For plugin authors:** Supertask publishes its repeat engine as `window.__rsRecur`, so another plugin can read a page's repeat rule, ask for its next occurrence, and take a rule away and give it back.
+
 ## v1.11.1 - 2026-09-20
 
 - **Fixed: deleting your last configured collection hid the global rule.** With *On every Page* switched on, removing every per-collection entry in Page Checkboxes made the whole **Global Page Checkboxes** block vanish from Settings, property and status mappings and all. The settings list was returning its "no collections yet" state before the global row was built. Nothing was ever lost: the rule stayed in your configuration and kept drawing boxes the whole time, it was only this view that stopped showing it. The note about adding a collection now appears only when the global switch is off, since with it on there is no collection missing and no button to point at.

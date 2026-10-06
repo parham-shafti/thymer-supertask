@@ -85,10 +85,11 @@ Everything else in the template is literal text, so the separator is yours: `{ti
 |---|---|---|
 | `⌘⇧S` | `Ctrl+Shift+S` | Open the date box: calendar, free-text parsing, time toggle, end dates, Repeat rule |
 | `⌃+` / `⌃−` | `Alt++` / `Alt+-` | Move the date one day forward / back |
-| `⌘1` … `⌘0` | `Ctrl+1` … `Ctrl+0` | Tag the caret's line with your own hashtags (timeblocks, priorities, contexts, yours to define in Settings). On a page it writes that collection's *Timeblock* property instead. Same key again clears. |
+| `⌘1` … `⌘9` | `Ctrl+1` … `Ctrl+9` | Tag the caret's line with your own hashtags (timeblocks, priorities, contexts, yours to define in Settings). On a page it writes that collection's *Timeblock* property instead. Same key again clears. |
+| `⌘0` | `Ctrl+0` | Clear the line's timeblock, whichever one it has. On a page it empties the *Timeblock* property. |
 | `⌃1` … `⌃0` | `Alt+1` … `Alt+0` | Set the task status: In Progress, Important, Alert, Starred, Billable, Discuss, Blocked, Clear, Done. On a page it writes the value you mapped to that status. Same chord again clears. |
 
-Ten slots, and a slot may be left empty. The chord is the position, so slot ten answers to `⌘0` and `⌃0` whether or not the nine before it are filled.
+The chord is the position, and a slot may be left empty. Statuses have ten slots, so slot ten answers to `⌃0` whether or not the nine before it are filled. Hashtags have nine, `⌘1` to `⌘9`, because `⌘0` is the one that clears.
 
 Keys are matched by physical position, so any keyboard layout works, and the Settings panel shows the chords for your platform. Thymer binds no digit key on any modifier, so the blocks are free in-app. Two OS-level caveats: macOS can claim `⌃`-digits for *Switch to Desktop* when you use multiple Spaces (System Settings → Keyboard → Shortcuts → Mission Control), and some Linux desktops bind `Alt`-digits to window or workspace switching — free the chord in your desktop's keyboard settings if one does nothing.
 
@@ -147,7 +148,9 @@ The `⋯` menu itself comes from **[View Options](https://github.com/parham-shaf
 
 The roofs are real H5 headings, so they fold natively. A roof only exists while it has tasks — empty ones disappear by themselves. Tasks arriving from anywhere — moved in from another page, captured, typed, retagged, restatused — file themselves under the right roof within a couple of seconds. Turn everything off with one click and the section returns to a flat list.
 
-Grouping can also be enabled **globally** in Settings: pick the statuses, and every heading in the workspace groups them as tasks change, no per-section setup. A section's own `⋯` menu always overrides the global choice.
+Grouping can also be enabled **globally** in Settings: tick a status's *Grouped* box under **Task Status**, and every heading in the workspace groups it as tasks change, no per-section setup. A section's own `⋯` menu always overrides the global choice.
+
+Thymer draws a heading's lines flush with the heading, so a group's tasks would sit level with its roof. **Indent Grouped Tasks** (on by default) puts them one step in, the way a Tab would; switch it off and they stay flush. A line you type yourself inside a group is never moved: only a task with something on it gets filed.
 
 ![Group Done Tasks](assets/demo-done.gif)
 
@@ -163,13 +166,22 @@ A heading counts its **direct** tasks, so a nested checklist stays its own busin
 
 Wherever a bar shows in a document, the line's `⋯` menu is there too, so you can switch that one off again, or reach its grouping and ordering.
 
-**Two switches in Settings**, under *Progress Bar Toggles*: **On every heading**, and **On every todo with sub-tasks**. They are separate on purpose, because a bar on every heading is calm and a bar on every sub-checklist is a different appetite. Either way, a section's `⋯` menu or the palette command always overrides the switch for that one line.
+**Two switches in Settings**, under *Progress Bar*: **On every heading**, and **On every todo with sub-tasks**. They are separate on purpose, because a bar on every heading is calm and a bar on every sub-checklist is a different appetite. Either way, a section's `⋯` menu or the palette command always overrides the switch for that one line.
 
 ![The two progress bar switches in Settings](assets/progress-settings.png)
 
 ## Settings
 
-`Supertask: Settings` in the command palette. **Progress Bar Toggles** holds the two global bar switches. **Page Checkboxes** is where you pick the property that drives a page's box and map its values onto the statuses you use, per collection or through the one global rule. **Task Status Settings** lists the `⌃`-digit shortcuts and the global grouping choices. **Hashtags Settings** defines your `⌘`-digit hashtags: the row is the key, and each row takes a title (shown on roofs and in menus) plus the hashtag that lands on the line.
+`Supertask: Settings` in the command palette. Four pages, one per job:
+
+- **Task Status** lists the `⌃`-digit shortcuts, which status each key sets (the arrows move a status to another key) and which statuses group under every heading, plus *Indent Grouped Tasks*.
+- **Timeblocks** defines your `⌘`-digit hashtags: the row is the key, and each row takes a name (shown on roofs and in menus) plus the hashtag that lands on the line. The hashtag field lists every tag in your workspace, so you can search for the right one.
+- **Progress Bar** holds the two global bar switches.
+- **Page Checkboxes** is where you pick the property that drives a page's box and map its values onto the statuses you use, per collection or through the one global rule.
+
+![Settings, Task Status](assets/settings.png)
+
+![Settings, Timeblocks](assets/timeblocks-settings.png)
 
 ## Install
 
