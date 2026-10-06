@@ -6295,6 +6295,16 @@ class Plugin extends AppPlugin {
 	 * termination guard; rides the debounced binGC cycle. */
 	async binOrderTidy() {
 		const byGuid = (window.g_universe && window.g_universe.itemsByGuid) || {};
+		/* the line being TYPED does not count yet, the sweep's 3 s guard: Enter
+		 * under a folded roof and a task typed there must not have the roofs
+		 * move under his cursor. The pass comes back once he stops. */
+		const sel = this.editorSelection();
+		const typing = sel && sel.lineGuid && Date.now() - (this.lastKeyAt || 0) < 3000 ? sel.lineGuid : null;
+		let recheck = false;
+		const ours = (k) => {
+			if (k.guid === typing) { if (this.fileable(k)) recheck = true; return false; }
+			return this.fileable(k);
+		};
 		const heads = new Map();
 		for (const g in byGuid) {
 			const st = byGuid[g];
@@ -6313,7 +6323,13 @@ class Plugin extends AppPlugin {
 			 * roof stranded ABOVE two tasks was never re-seated (the old
 			 * bins<2 bail), and everything downstream assumes roofs-at-the-
 			 * bottom, which set off the task leapfrog in his recording */
-			const lastTaskAt = (() => { let at = -1; kids.forEach((k, i) => { if (!this.binKeyOf(k)) at = i; }); return at; })();
+			/* ...but only below OUR rows: tasks with content (fileable). His
+			 * 2026-10-06 recording, after the sweep fix: Enter on the folded Done
+			 * roof puts the new line right AFTER it, and this pass then counted
+			 * that empty line as "an ordinary row below the roofs" and moved the
+			 * whole Done group down under it, so it still jumped. A line that is
+			 * not a task is his, and the roofs are not reseated around it. */
+			const lastTaskAt = (() => { let at = -1; kids.forEach((k, i) => { if (ours(k)) at = i; }); return at; })();
 			const firstBinAt = kids.findIndex((k) => this.binKeyOf(k));
 			if (ranksOk && (lastTaskAt < 0 || firstBinAt < 0 || firstBinAt > lastTaskAt)) continue; /* ordered */
 			const pl = await this.pageLines(headSt.rguid);
@@ -6322,8 +6338,12 @@ class Plugin extends AppPlugin {
 				.sort((a, b) => a.r - b.r || a.i - b.i);
 			/* re-seat after the last non-collector child, fresh handles per
 			 * move (the stale-handle law) */
-			const lastTask = [...kids].reverse().find((k) => !this.binKeyOf(k));
-			let prevGuid = lastTask ? lastTask.guid : null;
+			/* the block goes after whichever comes LATER: our last task, or the
+			 * line right before the first roof. The second keeps a pure rank
+			 * reorder in place instead of hoisting the roofs above his own
+			 * lines; the first is what pulls the roofs below a stray task. */
+			const anchorAt = Math.max(lastTaskAt, firstBinAt - 1);
+			let prevGuid = anchorAt >= 0 ? kids[anchorAt].guid : null;
 			for (const d of desired) {
 				const all = await pl.rec.getLineItems(false).catch(() => null);
 				if (!all) return;
@@ -6334,6 +6354,7 @@ class Plugin extends AppPlugin {
 				prevGuid = d.g;
 			}
 		}
+		if (recheck) this.scheduleBinGC();
 	}
 
 	/* Inside the Done roof: done tasks on top, canceled at the bottom (his
