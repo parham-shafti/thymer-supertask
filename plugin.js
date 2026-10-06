@@ -942,6 +942,7 @@ html.is-light .rs-p-secbox .rs-p-row.is-fixed { color: color-mix(in srgb, curren
 .rs-p-secbox .rs-p-sec { margin: 0; }
 .rs-p-secbox .rs-p-secsub { margin: 8px 0 10px; }
 .rs-p-secbox .rs-p-list { margin-bottom: 0; }
+.rs-p-secbox .rs-p-list + .rs-p-list { margin-top: 10px; }
 /* Page Checkboxes, INSIDE the settings panel (2026-08-15). It used to be a
  * "Configure collections…" button opening a second 900px two-pane dialog —
  * two modals, two sizes, one feature. His call: one modal. A collection is a
@@ -1571,6 +1572,8 @@ const rsMENU_CSS = `
 
 class Plugin extends AppPlugin {
 	onLoad() {
+		/* the dev loop's proof that a hot push reached the running instance (playbook 2b, rule 3) */
+		window.__rsGen = (window.__rsGen || 0) + 1;
 		this.busy = false;
 		this.recurBusy = new Set();
 		/* The date box for OTHER plugins (Timeline's day-click, 2026-08-28).
@@ -1702,6 +1705,7 @@ class Plugin extends AppPlugin {
 		/* the same switch for parent TODOS, kept separate (his call): a bar on
 		 * every heading and a bar on every sub-checklist are different appetites */
 		this.progressTodos = false;
+		this.indentGroups = true;
 		/* filled from the plugin's own config on load; '' until then */
 		this.pluginVersion = '';
 		/* PAGE RECURRENCE rules, keyed by record guid — records have no meta-
@@ -2222,6 +2226,7 @@ class Plugin extends AppPlugin {
 		 * to per-heading rs_order meta; ignored on read */
 		if (typeof p.progress === 'boolean') this.progressGlobal = p.progress;
 		if (typeof p.progressTodos === 'boolean') this.progressTodos = p.progressTodos;
+		if (typeof p.indentGroups === 'boolean') this.indentGroups = p.indentGroups;
 		if (p.pageCheckCfg && typeof p.pageCheckCfg === 'object') this.pageCheckCfg = p.pageCheckCfg;
 		if (p.pageCheckGlobal && typeof p.pageCheckGlobal === 'object') this.pageCheckGlobal = p.pageCheckGlobal;
 		if (Array.isArray(p.statusOrder)) this.statusOrder = rsStatusOrder(p.statusOrder);
@@ -2290,7 +2295,7 @@ class Plugin extends AppPlugin {
 	 * write-through to config for other devices. NOTE: saveConfiguration
 	 * reloads the plugin, so this is always the LAST thing an interaction does. */
 	async savePrefs() {
-		const p = { rev: Date.now(), slots: this.tbSlots, globalBins: (this.globalBins || []).slice(), progress: !!this.progressGlobal, progressTodos: !!this.progressTodos, statusOrder: this.statusOrder || rsStatusOrder(STATUS_SHORTCUTS), pageCheckGlobalOn: !!this.pageCheckGlobalOn, pageCheckGlobal: this.pageCheckGlobal || null, pageCheckCfg: this.pageCheckCfg || {}, pageRules: this.pageRules || {}, pageDefaults: this.pageDefaults || {} };
+		const p = { rev: Date.now(), slots: this.tbSlots, globalBins: (this.globalBins || []).slice(), progress: !!this.progressGlobal, progressTodos: !!this.progressTodos, indentGroups: this.indentGroups !== false, statusOrder: this.statusOrder || rsStatusOrder(STATUS_SHORTCUTS), pageCheckGlobalOn: !!this.pageCheckGlobalOn, pageCheckGlobal: this.pageCheckGlobal || null, pageCheckCfg: this.pageCheckCfg || {}, pageRules: this.pageRules || {}, pageDefaults: this.pageDefaults || {} };
 		this.prefsRev = p.rev;
 		try { localStorage.setItem('rs_prefs', JSON.stringify(p)); } catch (e) {}
 		try {
@@ -2580,6 +2585,13 @@ class Plugin extends AppPlugin {
 				+ 'the Done group starts collapsed. Nothing ticked turns it off, and a section’s ⋯ menu always overrides it. '
 				+ 'The ' + KEY_STATUS(1) + ' to ' + KEY_STATUS(9) + ' shortcuts set a line’s status anywhere, ticked or not; the same chord again clears it. '
 				+ 'The arrows decide which chord sets which status.</p>'
+				/* Thymer draws a heading's children flush since 2026-10-02; this
+				 * gives grouped tasks the indent back, per user (his call) */
+				+ '<div class="rs-p-list">'
+				+ '<label class="rs-p-row rs-p-switch">'
+				+ '<input type="checkbox" class="rs-gi"' + (this.indentGroups !== false ? ' checked' : '') + '>'
+				+ '<span class="rs-p-name">Indent Grouped Tasks</span></label>'
+				+ '</div>'
 				+ '<div class="rs-p-list">'
 				+ (() => {
 					const ord = this.statusChords();
@@ -2731,6 +2743,11 @@ class Plugin extends AppPlugin {
 				this.progressGlobal = !!e.target.checked;
 				this.progRecheck();
 				this.refreshProgressStyle();
+				dirty = true;
+			}
+			if (cl && cl.contains('rs-gi')) {
+				this.indentGroups = !!e.target.checked;
+				try { this.roofIndentPass(); } catch (e2) {}
 				dirty = true;
 			}
 			if (cl && cl.contains('rs-pgt')) {
@@ -4471,6 +4488,7 @@ class Plugin extends AppPlugin {
 			try { this.refreshPageChecks(); } catch (e) {}
 			this.arrivalScan();
 			this.drainDeferredArrivals();
+			try { this.roofIndentPass(); } catch (e) {}
 		}, 300);
 	}
 
@@ -5946,6 +5964,16 @@ class Plugin extends AppPlugin {
 		if (!st || st.is_trashed || st.is_deleted || st.is_virtual || !st.rguid) return;
 		if (st.props && (st.props.rs_recur || st.props.itemref)) return;
 		if (this.binKeyOf(st)) return; /* never sweep a collector itself */
+		/* ONLY TASKS WITH CONTENT ARE FILED (his 2026-10-06 report: "Supertask
+		 * forces the indentation to the same level when I press Enter under
+		 * it", gone with the plugin off). Since Thymer's 2026-10-02 build a
+		 * heading OWNS the lines after it, so Enter under a group's roof makes
+		 * the new line a child of that roof. This sweep never asked what it was
+		 * moving: a plain or empty line inside a roof counts as "not done" and
+		 * was lifted out above the roofs by moveOut, and line.move() resets the
+		 * indent to 0 on the way. A line that is not a task is the user's own,
+		 * and an empty task has nothing to file yet, so both stay put. */
+		if (!this.fileable(st)) return;
 		if (arrival) {
 			/* An arrival sweep never touches a line being WRITTEN — but a
 			 * merely PARKED caret must not block it forever: he sends a task,
@@ -6146,6 +6174,82 @@ class Plugin extends AppPlugin {
 			}
 		}
 		try { await li.move(binLi, afterKid); } catch (e) {}
+		/* line.move() hardcodes oind 0, so with Indent Grouped Tasks on the
+		 * indent is set right after, at the same position */
+		if (this.indentGroups !== false && binLi.guid) {
+			this.setOind(li.guid, binLi.guid, afterKid ? afterKid.guid : null, 1);
+		}
+	}
+
+	/* WHAT SUPERTASK MAY MOVE OR INDENT: a task with something on it. One rule
+	 * for the sweep and for the indent pass, so the two can never disagree
+	 * about whose line it is. Anything else is the user's own, and an empty
+	 * task is one they are about to write. */
+	fileable(st) {
+		if (!st || st.type !== 'task') return false;
+		const ts = st.text_segments || [];
+		for (let i = 0; i + 1 < ts.length; i += 2) {
+			const v = ts[i + 1];
+			if (String(ts[i]) === 'text' ? (typeof v === 'string' && v.trim()) : v) return true;
+		}
+		return false;
+	}
+
+	/* THYMER'S OWN INDENT UNDER A HEADING. Since the 2026-10-02 build a
+	 * heading's children draw FLUSH with it, and the indent the user gets from
+	 * Tab is the line's overindent (raw `oind`): the move_tree mutation
+	 * [pguid, aguid, oind], exactly what Tab enqueues. line.move() hardcodes
+	 * oind 0 and the SDK has no setter (playbook, 2026-10-04). The queue drops
+	 * a mutation for a line the editor has not loaded, hence getOrLoadItem
+	 * first. Best effort: a dropped write leaves the line flush, which is
+	 * Thymer's own default and never wrong. */
+	async setOind(guid, pguid, aguid, oind) {
+		const ops = window.g_universe && window.g_universe.operations;
+		if (!ops || typeof ops.enqueueMutation !== 'function') return false;
+		try {
+			if (typeof ops.getOrLoadItem === 'function') await ops.getOrLoadItem(guid);
+			ops.enqueueMutation({ action: 'move_tree', item_guid: guid, value: [pguid, aguid || null, oind] });
+			return true;
+		} catch (e) { return false; }
+	}
+
+	/* INDENT GROUPED TASKS, applied to every group already on the loaded pages
+	 * (his 2026-10-06 call: "some will want indented, others not"). Runs on the
+	 * refresh cycle and writes nothing when every task already matches, which
+	 * is the loop guard: an oind change alters no child list, so it does not
+	 * wake the arrival scan.
+	 * THE ORDER IS LOAD-BEARING. Thymer's normalization folds an indented line
+	 * that follows a FLUSH sibling into that sibling. So indenting goes top
+	 * down and stops at the first line that is not a task (a line he made in
+	 * the group is his, and indenting past it would fold tasks under it), and
+	 * flattening goes bottom up. Every intermediate state is then one Thymer
+	 * leaves alone. Only tasks are ever touched. */
+	roofIndentPass() {
+		const byGuid = (window.g_universe && window.g_universe.itemsByGuid) || {};
+		const want = this.indentGroups !== false ? 1 : 0;
+		if (!this.oindPending) this.oindPending = new Map();
+		const now = Date.now();
+		/* the line being typed is left alone, the same 3 s guard the sweep uses */
+		const sel = this.editorSelection();
+		const typing = sel && sel.lineGuid && now - (this.lastKeyAt || 0) < 3000 ? sel.lineGuid : null;
+		for (const g in byGuid) {
+			const roof = byGuid[g];
+			if (!roof || roof.is_trashed || roof.is_deleted || roof.is_virtual || !this.binKeyOf(roof)) continue;
+			const kids = (roof.children || []).filter((k) => k && !k.is_trashed && !k.is_deleted);
+			const order = want ? kids : kids.slice().reverse();
+			for (const k of order) {
+				/* not ours: indenting stops there (past it Thymer would fold the
+				 * next indented task under it), flattening steps over it */
+				if (!this.fileable(k) || k.guid === typing) { if (want) break; continue; }
+				const cur = k.overindent || 0;
+				if (want ? cur >= 1 : cur === 0) continue;
+				const pend = this.oindPending.get(k.guid);
+				if (pend && pend.v === want && now - pend.at < 4000) continue;
+				const at = kids.indexOf(k);
+				this.oindPending.set(k.guid, { v: want, at: now });
+				this.setOind(k.guid, roof.guid, at > 0 ? kids[at - 1].guid : null, want);
+			}
+		}
 	}
 
 	/* status no longer matches any active collector: back to the bottom of

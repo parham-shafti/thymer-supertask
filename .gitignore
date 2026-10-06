@@ -2,3 +2,5 @@ HANDOVER.md
 CHANGELOG-DEV.md
 .DS_Store
 assets/*.mp4
+server-config.json
+tools/
