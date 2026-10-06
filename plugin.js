@@ -640,10 +640,6 @@ const CSS = `
 }
 /* the Name Copies popover: template field + token hint + live preview */
 .rs-namepop { padding: 11px 12px; width: 318px; }
-/* the standalone switch frame: no fold header, so it needs its own inset */
-.rs-p-secbox-plain { padding: 4px 12px 2px; }
-.rs-p-secbox-plain .rs-p-row { border: 0; }
-.rs-p-secbox-plain .rs-p-secsub { margin: 0 0 8px; }
 /* PROGRESS BAR COLOURS, theme-scoped so no JS is involved. The fill no
  * longer mixes with --text-color: that mix BRIGHTENED the accent on dark
  * themes and darkened it on light ones (measured: fill luma 180 in dark),
@@ -779,356 +775,182 @@ html.is-dark {
 	border: 1px solid rgba(127,127,127,.3);
 }
 .rs-clear:hover { background: rgba(127,127,127,.2); }
-/* ── Settings modal, on Dumb Folders' design language: centered panel on
- * cmdpal tokens, h1 + sentence-case sub, bordered rows with borderless
- * inputs, quiet 28px icon buttons. ─────────────────────────────────────── */
+/* -- Settings, 2026-10-06 redesign: the shell Google Calendar's settings use
+ * (side rail, caps group labels, boxed rows, switches, one footer), so the
+ * plugins read as one family. Colour comes from Thymer's tokens with the dark
+ * values as fallbacks, so light themes follow. ---------------------------- */
 .rs-back {
 	position: fixed; inset: 0; z-index: 99998;
-	background: rgba(0, 0, 0, .38);
+	background: rgba(0, 0, 0, .35);
 	display: flex; align-items: center; justify-content: center;
 	padding: 24px;
 }
-.rs-panel {
+.rs-set {
+	--rs-fg: var(--color-text-100, #ededed);
+	--rs-fg2: color-mix(in srgb, var(--color-text-100, #ededed) 62%, var(--cmdpal-bg-color, #212126));
+	--rs-fg3: var(--color-text-700, #8a8a8a);
+	--rs-line: color-mix(in srgb, var(--color-text-100, #ededed) 6%, transparent);
+	--rs-edge: color-mix(in srgb, var(--color-text-100, #ededed) 10%, transparent);
+	--rs-raise: color-mix(in srgb, var(--color-text-100, #ededed) 2.5%, transparent);
+	--rs-hover: color-mix(in srgb, var(--color-text-100, #ededed) 7%, transparent);
+	--rs-field: var(--input-bg-color, #111113);
+	--rs-accent: var(--color-primary-500, #65c8bb);
+	--rs-sel: var(--cmdpal-selected-bg-color, #44837b);
+	--rs-sel-fg: var(--cmdpal-selected-fg-color, #ededed);
+	--rs-warn: #e0b050;
+	--rs-r: var(--radius-normal, 3px);
 	position: relative; z-index: 99999;
-	/* 560, not 480: the per-collection page-checkbox editor now lives INSIDE
-	 * this panel (it used to be a second, 900px dialog), and its value chips
-	 * need room to sit side by side instead of one per line. */
-	width: min(640px, 100%); max-height: min(680px, calc(100dvh - 48px));
-	overflow-y: auto;
-	padding: 24px; border-radius: 4px;
-	background: var(--rs-panel-bg);
-	border: 1px solid rgba(127,127,127,.4);
-	box-shadow: 0 24px 64px rgba(0,0,0,.5);
-	font-size: var(--text-size-small, .875rem);
-	color: var(--cmdpal-fg-color, var(--text-color, inherit));
+	width: 780px; height: 680px; max-width: 100%; max-height: calc(100dvh - 48px);
+	display: flex; flex-direction: column; overflow: hidden; box-sizing: border-box;
+	background: var(--cmdpal-bg-color, #212126); color: var(--rs-fg);
+	border: 1px solid var(--rs-edge); border-radius: var(--rs-r);
+	box-shadow: 0 24px 64px rgba(0,0,0,.55);
+	font-size: 13.5px;
 }
-/* HIS PALETTE, 2026-08-15 (design mockup). Four values, named once and used
- * everywhere, so the panel reads as one surface instead of a pile of
- * color-mix() guesses. Dark themes only: a #1A1A1E plate under light-theme
- * text is unreadable, so light themes keep the cmdpal tokens and the mixes.
- * The active FOREGROUND is Thymer's own contrast colour, not a literal — it
- * is the one value in the set that must follow the theme's accent. */
-:root {
-	--rs-panel-bg: var(--cmdpal-bg-color, var(--app-bg, #26262b));
-	--rs-field-bg: color-mix(in srgb, currentColor 6%, transparent);
-	--rs-active-bg: color-mix(in srgb, var(--color-primary-500, #4caea1) 18%, transparent);
-	--rs-active-fg: color-mix(in srgb, var(--color-primary-500, #4caea1) 70%, var(--text-color));
-	--rs-line: color-mix(in srgb, currentColor 16%, transparent);
-	--rs-field-hi: color-mix(in srgb, currentColor 9%, transparent);
+.rs-set * { box-sizing: border-box; }
+.rs-set .ti { font-size: 16px; line-height: 1; }
+.rs-set-head { display: flex; align-items: flex-start; gap: 12px; padding: 18px 20px 14px; border-bottom: 1px solid var(--rs-line); flex: none; }
+.rs-set-head-icon { width: 32px; height: 32px; border-radius: var(--rs-r); flex: none; display: flex; align-items: center; justify-content: center; color: var(--rs-accent); background: color-mix(in srgb, var(--rs-accent) 12%, transparent); }
+.rs-set-head-icon .ti { font-size: 18px; }
+.rs-set-head-text { flex: 1; min-width: 0; }
+.rs-set-head h1 { margin: 0; font-size: 15px; font-weight: 600; line-height: 1.3; }
+.rs-set-ver { margin-left: 8px; font-size: 12px; font-weight: 400; color: var(--rs-fg3); }
+.rs-set-head p { margin: 3px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--rs-fg2); }
+.rs-set-ib { width: 26px; height: 26px; flex: none; border: 0; padding: 0; border-radius: var(--rs-r); background: transparent; color: var(--rs-fg2); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.rs-set .rs-set-ib { font-size: 14px; }
+.rs-set-ib:hover { color: var(--rs-fg); background: var(--rs-hover); }
+.rs-set-ib.is-danger:hover { background: color-mix(in srgb, var(--enum-red-bg, #d64545) 40%, transparent); }
+.rs-set-ib.is-hidden { visibility: hidden; }
+.rs-set .rs-set-close { width: 30px; height: 30px; font-size: 16px; }
+.rs-set-body { flex: 1; min-height: 0; display: flex; }
+.rs-set-nav { width: 196px; flex: none; padding: 12px 10px; border-right: 1px solid var(--rs-line); display: flex; flex-direction: column; gap: 2px; }
+.rs-set-nav-short { display: none; }
+.rs-set-nav button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; border: 0; border-radius: var(--rs-r); background: transparent; color: var(--rs-fg2); font: inherit; font-size: 13px; text-align: left; cursor: pointer; white-space: nowrap; }
+.rs-set-nav button:hover { color: var(--rs-fg); }
+.rs-set-nav button.is-on { background: var(--rs-hover); color: var(--rs-fg); }
+.rs-set-content { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; padding: 20px 24px 24px; }
+.rs-set-pane { display: flex; flex-direction: column; gap: 22px; }
+.rs-set-pane h2 { margin: 0; font-size: 14px; font-weight: 600; }
+.rs-set-lead { margin: 4px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--rs-fg2); }
+.rs-set-group { display: flex; flex-direction: column; gap: 8px; }
+.rs-set-cap { display: flex; align-items: baseline; justify-content: space-between; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--rs-fg3); }
+.rs-set-cap span { font-size: 12px; letter-spacing: 0; text-transform: none; color: var(--rs-fg2); }
+.rs-set-box { border: 1px solid var(--rs-line); border-radius: var(--rs-r); background: var(--rs-raise); }
+.rs-set-row { display: flex; align-items: center; gap: 12px 16px; padding: 12px 14px; }
+.rs-set-row + .rs-set-row { border-top: 1px solid var(--rs-line); }
+.rs-set-row-text { flex: 1 1 auto; min-width: 0; }
+.rs-set-row-title { font-size: 13.5px; color: var(--rs-fg); }
+.rs-set-row-sub { font-size: 12px; line-height: 1.45; color: var(--rs-fg2); margin-top: 2px; }
+.rs-set-note { margin: 0; font-size: 12px; line-height: 1.55; color: var(--rs-fg3); }
+.rs-set-note.is-warn { color: var(--rs-warn); }
+.rs-set-note.is-pad { padding: 12px 14px; }
+/* switch: a real checkbox under a drawn track, so the change handlers and
+   the keyboard keep working */
+.rs-set-switch { position: relative; width: 36px; height: 20px; flex: none; cursor: pointer; }
+.rs-set-switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+.rs-set-switch span { position: absolute; inset: 0; border-radius: 10px; background: color-mix(in srgb, var(--rs-fg) 16%, transparent); transition: background .15s; pointer-events: none; }
+.rs-set-switch span::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--rs-fg); transition: transform .15s; }
+.rs-set-switch input:checked + span { background: var(--rs-sel); }
+.rs-set-switch input:checked + span::after { transform: translateX(16px); }
+.rs-set-switch input:focus-visible + span { outline: 2px solid color-mix(in srgb, var(--rs-accent) 60%, transparent); outline-offset: 2px; }
+.rs-set-check { appearance: none; -webkit-appearance: none; width: 18px; height: 18px; margin: 0; flex: none; border-radius: var(--rs-r); border: 1px solid color-mix(in srgb, var(--rs-fg) 28%, transparent); background: transparent; cursor: pointer; }
+.rs-set-check:checked { border-color: var(--rs-sel); background: var(--rs-sel) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ededed' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12l5 5l10 -10'/%3E%3C/svg%3E") center / 12px no-repeat; }
+.rs-set-check:focus-visible { outline: 2px solid color-mix(in srgb, var(--rs-accent) 60%, transparent); outline-offset: 2px; }
+/* the key tables: one grid per row, the same tracks in the header */
+.rs-set-table { padding: 4px 0; }
+.rs-set-thead { padding: 6px 14px; font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--rs-fg3); border-bottom: 1px solid var(--rs-line); margin-bottom: 2px; }
+.rs-set-trow { padding: 3px 14px; min-height: 34px; }
+.rs-set-st { display: grid; grid-template-columns: 52px minmax(0, 1fr) 64px 60px; align-items: center; column-gap: 10px; }
+.rs-set-tb { display: grid; grid-template-columns: 52px minmax(0, 1fr) minmax(0, 1fr) 112px; align-items: center; column-gap: 10px; }
+.rs-set-mid { display: flex; justify-content: center; text-align: center; }
+.rs-set-kbd { justify-self: start; font-size: 12px; color: var(--rs-fg2); padding: 2px 6px; min-width: 24px; text-align: center; white-space: nowrap; border: 1px solid var(--rs-edge); border-radius: var(--rs-r); background: var(--rs-field); line-height: 1.4; }
+.rs-set-name { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13.5px; color: var(--rs-fg); overflow-wrap: break-word; }
+.rs-set-name .ti { font-size: 15px; opacity: .8; flex: none; }
+.rs-set-name .rs-set-blank { width: 15px; } /* no glyph: Unused keeps the label column */
+.rs-set-trow.is-unused .rs-set-name, .rs-set-trow.is-fixed .rs-set-name { color: var(--rs-fg3); }
+.rs-set-tag { font-size: 12.5px; color: var(--rs-fg3); min-width: 0; overflow-wrap: break-word; }
+.rs-set-acts { display: flex; justify-content: flex-end; align-items: center; gap: 2px; opacity: .45; transition: opacity .12s; }
+.rs-set-trow:hover .rs-set-acts, .rs-set-coll-head:hover .rs-set-acts, .rs-set-acts:focus-within { opacity: 1; }
+.rs-set-trow.is-editing { background: color-mix(in srgb, var(--rs-accent) 5%, transparent); box-shadow: inset 2px 0 0 var(--rs-sel); }
+.rs-set-trow.is-editing .rs-set-acts { opacity: 1; }
+.rs-set-input { width: 100%; min-width: 0; padding: 5px 8px; border: 1px solid var(--rs-edge); border-radius: var(--rs-r); background: var(--rs-field); color: var(--rs-fg); font-family: inherit; font-size: 13px; outline: none; }
+.rs-set-input:focus { border-color: color-mix(in srgb, var(--rs-accent) 60%, transparent); }
+.rs-set-claim { justify-self: start; grid-column: 2 / -1; display: inline-flex; align-items: center; gap: 6px; padding: 3px 0; border: 0; background: transparent; color: var(--rs-fg3); font: inherit; font-size: 13px; cursor: pointer; }
+.rs-set .rs-set-claim .ti { font-size: 13px; }
+.rs-set-claim:hover { color: var(--rs-fg); }
+.rs-set-btn { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border: 1px solid var(--rs-edge); border-radius: var(--rs-r); background: transparent; color: var(--rs-fg2); font: inherit; font-size: 12.5px; cursor: pointer; white-space: nowrap; }
+.rs-set-btn:hover { color: var(--rs-fg); filter: brightness(1.15); }
+.rs-set .rs-set-btn .ti { font-size: 14px; }
+.rs-set-btn.rs-set-soft { background: color-mix(in srgb, var(--rs-fg) 3%, transparent); color: var(--rs-fg); }
+.rs-set-btn.rs-set-primary { background: var(--rs-sel); border-color: var(--rs-sel); color: var(--rs-sel-fg); font-weight: 600; }
+.rs-set-link { display: inline-flex; align-items: center; gap: 6px; padding: 3px 0; border: 0; background: transparent; color: var(--rs-accent); font: inherit; font-size: 12.5px; cursor: pointer; }
+.rs-set .rs-set-link .ti { font-size: 13px; }
+.rs-set-link:hover { filter: brightness(1.2); }
+.rs-set-pick { display: flex; align-items: center; gap: 8px; width: 220px; flex: none; padding: 6px 10px; border: 1px solid var(--rs-edge); border-radius: var(--rs-r); background: var(--rs-field); color: var(--rs-fg); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.rs-set .rs-set-pick .ti { color: var(--rs-fg2); font-size: 15px; }
+.rs-set-pick-label { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.rs-set-pick-label.is-empty { color: var(--rs-fg3); }
+.rs-set .rs-set-chev { color: var(--rs-fg3); font-size: 13px; }
+/* Page Checkboxes: one row per mapping, status on the left, values as chips */
+.rs-set-maprow { display: grid; grid-template-columns: 190px minmax(0, 1fr); align-items: center; column-gap: 12px; padding: 4px 14px; min-height: 34px; }
+.rs-set-thead.rs-set-maprow { min-height: 0; padding: 6px 14px; }
+.rs-set-stat { display: flex; align-items: center; gap: 8px; font: inherit; font-size: 13px; color: var(--rs-fg); text-align: left; }
+.rs-set .rs-set-stat .ti { font-size: 15px; opacity: .8; flex: none; }
+.rs-set-stat > span:not(.ti) { flex: 1; min-width: 0; white-space: nowrap; }
+.rs-set-stat.is-fixed { color: var(--rs-fg2); padding: 5px 0; }
+button.rs-set-stat { padding: 5px 8px; margin-left: -8px; border: 1px solid var(--rs-edge); border-radius: var(--rs-r); background: var(--rs-field); cursor: pointer; }
+.rs-set-vals { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.rs-set-chip { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; padding: 3px 4px 3px 8px; border: 1px solid var(--rs-edge); border-radius: var(--rs-r); background: var(--rs-field); font-size: 12.5px; color: var(--rs-fg); }
+.rs-set .rs-set-chip .ti { font-size: 13px; color: var(--rs-fg2); }
+.rs-set-chip-x { width: 18px; height: 18px; border: 0; padding: 0; border-radius: 2px; background: transparent; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.rs-set .rs-set-chip-x { font-size: 11px; color: var(--rs-fg3); }
+.rs-set .rs-set-chip-x:hover { color: var(--rs-fg); background: var(--rs-hover); }
+.rs-set-chip.is-add { width: 26px; height: 26px; padding: 0; justify-content: center; cursor: pointer; border-style: dashed; background: transparent; }
+.rs-set .rs-set-chip.is-add { font-size: 13px; color: var(--rs-fg2); }
+.rs-set .rs-set-chip.is-add:hover { color: var(--rs-fg); }
+.rs-set-addrow { padding: 6px 14px 8px; }
+.rs-set-empty { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 22px 14px; border: 1px dashed color-mix(in srgb, var(--rs-fg) 12%, transparent); border-radius: var(--rs-r); font-size: 13px; color: var(--rs-fg2); text-align: center; }
+.rs-set-coll-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px 8px 14px; min-height: 42px; cursor: pointer; user-select: none; font-size: 13.5px; }
+.rs-set-coll-name { flex: 1; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+.rs-set-coll.is-open > .rs-set-coll-head { border-bottom: 1px solid var(--rs-line); }
+.rs-set-coll > .rs-set-row { border-bottom: 1px solid var(--rs-line); }
+.rs-set-foot { display: flex; align-items: center; justify-content: flex-end; gap: 12px; padding: 12px 16px 12px 20px; border-top: 1px solid var(--rs-line); flex: none; }
+.rs-set-foot .rs-set-btn { padding: 7px 16px; font-size: 13px; min-width: 76px; justify-content: center; }
+@media (hover: none) {
+	.rs-set-acts { opacity: .8; }
 }
-html.is-dark {
-	--rs-panel-bg: #1A1A1E;
-	--rs-field-bg: #212126;
-	--rs-active-bg: #313E44;
-	--rs-active-fg: var(--color-primary-500, #4caea1);
-	--rs-field-hi: #26262B;
+/* phone: a full-screen sheet, the rail turns into short tabs, 16px fields so
+   iOS does not zoom on focus */
+@media (max-width: 640px) {
+	.rs-back { padding: 0; }
+	.rs-set { width: 100%; height: 100%; max-height: none; border: 0; border-radius: 0; box-shadow: none; }
+	.rs-set-body { flex-direction: column; }
+	.rs-set-nav { width: auto; flex-direction: row; gap: 6px; padding: 10px 16px; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--rs-line); flex: none; }
+	.rs-set-nav button .ti, .rs-set-nav-long { display: none; }
+	.rs-set-nav-short { display: inline; }
+	.rs-set-nav button { width: auto; flex: none; padding: 8px 14px; font-size: 14px; border: 1px solid var(--rs-edge); }
+	.rs-set-nav button.is-on { border-color: var(--rs-sel); background: color-mix(in srgb, var(--rs-accent) 12%, transparent); }
+	.rs-set-content { padding: 18px 16px 24px; }
+	.rs-set-row.has-pick { flex-wrap: wrap; }
+	.rs-set-pick { width: 100%; }
+	.rs-set-input { font-size: 16px; }
+	.rs-set-tb { grid-template-columns: 44px minmax(0, 1fr) minmax(0, 1fr) auto; }
+	.rs-set-st { grid-template-columns: 44px minmax(0, 1fr) 64px 60px; }
+	/* a Timeblocks row is too narrow for two text columns: the hashtag sits
+	   under the name instead of breaking words in half */
+	.rs-set-tb { grid-template-columns: 44px minmax(0, 1fr) auto; }
+	.rs-set-tb > .rs-set-kbd { grid-row: 1 / span 2; align-self: center; }
+	.rs-set-tb > .rs-set-name, .rs-set-tb > .rs-tb-title { grid-column: 2; grid-row: 1; }
+	.rs-set-tb > .rs-set-tag, .rs-set-tb > .rs-tb-tag { grid-column: 2; grid-row: 2; }
+	.rs-set-tb > .rs-set-acts { grid-column: 3; grid-row: 1 / span 2; }
+	.rs-set-tb.is-editing { row-gap: 6px; padding-top: 6px; padding-bottom: 6px; }
+	.rs-set-thead.rs-set-tb > span:nth-child(3) { display: none; }
+	/* a status and its values do not fit side by side: values go under */
+	.rs-set-maprow { grid-template-columns: minmax(0, 1fr); row-gap: 6px; padding-top: 6px; padding-bottom: 6px; }
+	.rs-set-thead.rs-set-maprow > span:nth-child(2) { display: none; }
+	button.rs-set-stat { justify-self: start; margin-left: 0; }
+	.rs-set-foot { padding: 12px 16px 28px; }
 }
-@media (prefers-color-scheme: dark) {
-	html:not(.is-light) {
-		--rs-panel-bg: #1A1A1E;
-		--rs-field-bg: #212126;
-		--rs-active-bg: #313E44;
-		--rs-active-fg: var(--color-primary-500, #4caea1);
-		--rs-field-hi: #26262B;
-	}
-}
-
-/* Header: title + version, a rule under it, then 22px of air (his mockup). */
-.rs-panel h1 {
-	font-size: 1.0625rem; font-weight: 600;
-	/* edge to edge: the rule belongs to the PANEL, not to the text, so the
-	 * heading is pulled out through the panel's 24px padding and given it back
-	 * as its own — otherwise the divider stops short at both ends (his call) */
-	/* 22 above the rule and 22 below it: the title sits off the divider by the
-	 * same distance the first group does (his call) */
-	margin: 0 -24px 22px; padding: 0 24px 22px;
-	border-bottom: 1px solid var(--rs-line);
-}
-/* the running version, trailing the title on the same line so it costs no
- * vertical space: quiet weight and opacity, it is a fact to look up, not a
- * thing to read. Rendered only when the config actually carried a version. */
-.rs-panel h1 .rs-ver {
-	margin-left: 8px; font-size: var(--text-size-smaller, .8125rem);
-	font-weight: 400; opacity: .45; letter-spacing: 0;
-}
-/* each section in its own quiet frame — boundaries read at a glance; radius
- * 4px everywhere (his call) */
-/* A section: a quiet frame, 20px of padding, 22px between frames. */
-.rs-p-secbox {
-	border: 1px solid var(--rs-line);
-	border-radius: 4px; padding: 20px;
-	margin-bottom: 22px;
-}
-/* a section with nothing showing is just its title: less air above and below
- * it, and less between it and the next one (his call) */
-.rs-p-secbox.is-folded { padding: 13px 20px; margin-bottom: 12px; }
-/* every field-like surface is one colour and one radius */
-.rs-p-secbox .rs-p-row, .rs-pcrow, .rs-pcstat-pick, .rs-pcd-chip, .rs-p-key {
-	background: var(--rs-field-bg); border-radius: 4px;
-}
-/* Section heading: title case, NOT the old tracked micro-caps. */
-.rs-p-secbox .rs-p-sec { display: flex; align-items: center; gap: 8px; margin: 0; }
-.rs-p-secbox .rs-p-sec-label {
-	flex: 1 1 auto; font-size: .9375rem; font-weight: 600;
-	letter-spacing: 0; text-transform: none; opacity: 1;
-}
-.rs-p-secbox .rs-p-chev { font-size: 12px; opacity: .5; }
-.rs-p-secbox .rs-p-secsub {
-	margin: 10px 0 20px; font-size: .8125rem; opacity: .55; line-height: 1.6;
-}
-/* a row and its shortcut chip are siblings: the chip is its OWN box to the
- * right of the row, exactly as he drew it — not a pill inside the field */
-.rs-p-line { display: flex; align-items: stretch; gap: 12px; margin-bottom: 10px; }
-.rs-p-line:last-child { margin-bottom: 0; }
-.rs-p-line > .rs-p-row { flex: 1; min-width: 0; margin: 0; }
-.rs-p-secbox .rs-p-row {
-	display: flex; align-items: center; gap: 10px;
-	min-height: 38px; padding: 0 14px; border: 0;
-}
-.rs-p-secbox .rs-p-row .rs-p-name {
-	flex: 1; min-width: 0; font-size: .875rem;
-	overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.rs-p-secbox .rs-p-row .rs-p-ic { font-size: 15px; opacity: .75; }
-.rs-p-acts { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; }
-.rs-p-btn.is-hidden { visibility: hidden; }
-/* the accent link sits above the rows it adds to */
-.rs-p-secbox .rs-pc-link { display: block; margin: 16px 0; }
-.rs-p-savebar { display: flex; justify-content: flex-end; margin: 18px 0 0; }
-/* an unclaimed slot: present, quiet, and clickable — it owns its chord */
-.rs-p-secbox .rs-p-row.is-empty { opacity: .45; }
-.rs-p-secbox .rs-p-row.is-empty:hover { opacity: .8; }
-.rs-tb-claim {
-	flex: 1; min-width: 0; text-align: left; padding: 0;
-	border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer;
-}
-/* The primary button, on the shape Move To and Dumb Folders already use:
- * Thymer's own --ed-button-primary-bg, white label, brightness on hover. Mine
- * was a quiet outline, which read as secondary next to theirs. */
-.rs-p-done {
-	min-width: 96px; padding: 8px 18px; border-radius: 4px; cursor: pointer;
-	border: 1px solid transparent;
-	background: var(--ed-button-primary-bg, var(--color-primary-500, #3aa37f));
-	color: #fff; font: inherit; font-weight: 600;
-}
-.rs-p-done:hover { filter: brightness(1.18); }
-/* the tick is Thymer's accent, as he drew it */
-.rs-p-secbox .rs-p-row input[type="checkbox"] {
-	width: 17px; height: 17px; margin: 0; flex: 0 0 auto;
-	accent-color: var(--color-primary-500, #4caea1);
-}
-/* the status glyph is its OWN column — it must not touch the label */
-.rs-p-secbox .rs-p-row .rs-p-ic { flex: 0 0 auto; margin-right: 4px; }
-.rs-p-secbox .rs-p-btn { width: 26px; height: 26px; opacity: .45; }
-/* the editing row keeps the row's shell and stacks its two fields inside it */
-.rs-p-secbox .rs-p-row.is-editing { align-items: center; padding: 10px 14px; }
-.rs-p-editcol { display: flex; flex-direction: column; gap: 8px; flex: 1; min-width: 0; }
-.rs-p-secbox .rs-p-editcol input.rs-pcd-inp {
-	-webkit-appearance: none; appearance: none;
-	background: var(--rs-panel-bg); border: 1px solid var(--rs-line);
-	border-radius: 4px; padding: 7px 10px; font-size: .875rem;
-	color: inherit; font-family: inherit; box-shadow: none;
-}
-.rs-p-secbox .rs-p-editcol input.rs-pcd-inp:focus { border-color: var(--rs-active-fg); }
-.rs-p-secbox .rs-p-row.is-editing .rs-tb-ok { opacity: .9; }
-.rs-p-secbox .rs-p-btn:hover { opacity: .95; background: color-mix(in srgb, currentColor 10%, transparent); }
-/* the picker button in a status row: icon, label and chevron each spaced */
-.rs-pcstat-pick .rs-p-ic { flex: 0 0 auto; }
-.rs-pcstat-pick.is-fixed { color: #8C8C92; cursor: default; }
-.rs-p-secbox .rs-p-row.is-fixed { color: #8C8C92; cursor: default; }
-html.is-light .rs-pcstat-pick.is-fixed { color: color-mix(in srgb, currentColor 55%, transparent); }
-html.is-light .rs-p-secbox .rs-p-row.is-fixed { color: color-mix(in srgb, currentColor 55%, transparent); }
-.rs-pcstat-pick .lbl { padding: 0 2px; }
-.rs-p-secbox .rs-p-sec { margin: 0; }
-.rs-p-secbox .rs-p-secsub { margin: 8px 0 10px; }
-.rs-p-secbox .rs-p-list { margin-bottom: 0; }
-.rs-p-secbox .rs-p-list + .rs-p-list { margin-top: 10px; }
-/* Page Checkboxes, INSIDE the settings panel (2026-08-15). It used to be a
- * "Configure collections…" button opening a second 900px two-pane dialog —
- * two modals, two sizes, one feature. His call: one modal. A collection is a
- * foldable row, and everything that collection needs unfolds underneath it. */
-.rs-pclist { display: flex; flex-direction: column; gap: 10px; }
-.rs-pcrow {
-	border: 1px solid var(--rs-line);
-	border-radius: 4px; overflow: hidden;
-}
-.rs-pcrow.is-open { border-color: color-mix(in srgb, currentColor 26%, transparent); }
-/* the collection's own header strip is a shade lighter than its body, which
- * is what separates them in his mockup */
-.rs-pcrow-head {
-	display: flex; align-items: center; gap: 8px;
-	min-height: 42px; padding: 0 12px; cursor: pointer; user-select: none;
-	background: transparent;
-}
-/* the whole collection block is ONE colour; the title is separated from its
- * body by a rule, not by a second shade (his call, see his Actions shot) */
-.rs-pcrow { background: var(--rs-field-bg); }
-.rs-pcrow.is-open > .rs-pcrow-head { border-bottom: 1px solid var(--rs-line); }
-.rs-pcrow-head .rs-p-name { font-size: .9375rem; font-weight: 600; }
-/* NO second shade on the title strip, open or hovered — the block is one
- * colour and a divider (his call; this pair was left from the first pass and
- * outranked the transparent background that replaced it). */
-.rs-pcrow-head:hover .rs-p-name { opacity: .85; }
-/* a collection is frozen while the global rule is on */
-.rs-pcrow.is-locked { opacity: .45; }
-.rs-pcrow.is-locked > .rs-pcrow-head { cursor: default; }
-.rs-pcrow-head.is-static { cursor: default; }
-.rs-pcrow-head.is-static:hover .rs-p-name { opacity: 1; }
-.rs-pcrow-head .rs-p-chev { font-size: 12px; opacity: .55; }
-.rs-pcrow-head .rs-p-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rs-pcrow-body { padding: 16px 16px 20px; }
-/* "Property", "Statuses": sentence case and readable, per his mockup — the
- * tracked 10.5px micro-caps were mine, and they are not what he drew. */
-.rs-pcd-label { font-size: .8125rem; font-weight: 600; text-transform: none; letter-spacing: 0; opacity: .9; }
-.rs-pcd-badge {
-	font-size: 10.5px; padding: 1px 7px; border-radius: 4px;
-	background: color-mix(in srgb, currentColor 12%, transparent); opacity: .8;
-	max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.rs-pcd-sec { margin: 22px 0 12px; }
-.rs-pcd-sec:first-child { margin-top: 0; }
-/* one line per status: its glyph and name, then the values that mean it */
-/* a mapping row: status picker, its values, a + to add another (his mockup) */
-.rs-pcstat { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 12px; }
-.rs-pcstat-pick {
-	display: inline-flex; align-items: center; gap: 6px;
-	padding: 6px 10px; border: 1px solid var(--rs-line); border-radius: 4px;
-	background: var(--rs-field-bg); color: inherit; font: inherit; cursor: pointer;
-}
-.rs-pcstat-pick:hover { border-color: color-mix(in srgb, currentColor 30%, transparent); }
-.rs-pcstat-pick .lbl { flex: 1; text-align: left; white-space: nowrap; }
-.rs-pcstat-pick .rs-p-ic { font-size: 13px; opacity: .8; }
-.rs-pcstat-chev { font-size: 11px; opacity: .5; }
-.rs-pcd-chip.is-plus { padding: 4px 9px; opacity: .75; }
-.rs-pcd-inp {
-	width: 100%; box-sizing: border-box; padding: 6px 9px; border-radius: 4px;
-	border: 1px solid var(--rs-line); background: var(--rs-field-bg);
-	color: inherit; font: inherit; outline: none;
-}
-.rs-pcd-inp:focus { border-color: var(--rs-active-fg); }
-/* a quiet accent link — "+ Add Collection", "+ Add New Status" */
-.rs-pc-link {
-	display: inline-block; margin: 4px 0 2px; padding: 2px 0;
-	border: 0; background: transparent; cursor: pointer; font: inherit;
-	font-size: var(--text-size-smaller, .8125rem);
-	color: var(--rs-active-fg);
-}
-.rs-pc-link:hover { opacity: .75; }
-.rs-pcd-warn { color: color-mix(in srgb, var(--fg-alert, #e8a0a8) 75%, var(--text-color)); opacity: .85; }
-.rs-pcd-hint { margin: -6px 0 14px; opacity: .55; font-size: var(--text-size-smaller, .8125rem); line-height: 1.5; }
-.rs-pcd-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.rs-pcd-chip {
-	display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px;
-	border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
-	border-radius: 4px; background: transparent; color: inherit; font: inherit; cursor: pointer;
-}
-.rs-pcd-chip.is-set, .rs-pcd-chip.is-val {
-	background: var(--rs-active-bg); color: var(--rs-active-fg);
-	border-color: transparent;
-}
-.rs-pcd-chip .x { border: 0; background: transparent; color: inherit; cursor: pointer; opacity: .55; font-size: 10px; padding: 0; }
-.rs-pcd-chip .x:hover { opacity: 1; }
-.rs-pcd-addval { border-style: dashed; opacity: .8; }
-.rs-pcd-empty { opacity: .5; padding: 10px 2px; font-size: var(--text-size-smaller, .8125rem); }
-.rs-pc.rs-pc-on {
-	background: color-mix(in srgb, var(--color-primary-500, #4caea1) 85%, var(--text-color) 0%);
-	border-color: transparent;
-	color: var(--app-bg, #1a1a1e);
-}
-.rs-p-sub { opacity: .6; margin: 0 0 18px; font-size: var(--text-size-smaller, .8125rem); line-height: 1.5; }
-.rs-p-close {
-	position: absolute; top: 14px; right: 14px;
-	display: flex; align-items: center; justify-content: center;
-	width: 28px; height: 28px; border: 0; border-radius: var(--radius-normal, 4px);
-	background: transparent; color: inherit; opacity: .5; cursor: pointer; font-size: 15px;
-}
-.rs-p-close:hover { opacity: 1; background: color-mix(in srgb, currentColor 14%, transparent); }
-.rs-p-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
-.rs-p-row {
-	display: flex; align-items: center; gap: 7px;
-	padding: 6px 10px; border-radius: 4px;
-	border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
-	background: color-mix(in srgb, currentColor 4%, transparent);
-	min-height: 40px; box-sizing: border-box; /* checkbox rows match the
-	hashtag rows' height (theirs comes from the 28px buttons) */
-}
-.rs-p-row:hover {
-	background: color-mix(in srgb, currentColor 8%, transparent);
-	border-color: color-mix(in srgb, currentColor 20%, transparent);
-}
-/* keycap chips — ONE look for every shortcut in the panel (his call:
- * they sat on different sides and bare ^1 read poorly) */
-/* The shortcut chip. His mockup puts it OUTSIDE the row as its own box,
- * right-aligned and a fixed width, so the column of chords reads as a column. */
-.rs-p-key {
-	display: flex; align-items: center; justify-content: center;
-	flex: 0 0 auto; min-width: 92px; padding: 0 12px;
-	border: 1px solid var(--rs-line); border-radius: 4px;
-	background: var(--rs-field-bg);
-	font-size: .8125rem; font-weight: 500; opacity: .8; white-space: nowrap;
-}
-.rs-p-where { opacity: .45; font-size: var(--text-size-xsmall, .75rem); white-space: nowrap; }
-.rs-p-editcol { display: flex; flex-direction: column; gap: 4px; }
-.rs-p-editcol input {
-	width: 100%; font: inherit; color: inherit; box-sizing: border-box;
-	background: color-mix(in srgb, currentColor 12%, transparent);
-	border: 0; border-radius: var(--radius-normal, 4px); padding: 3px 7px; outline: none;
-}
-.rs-p-name { flex: 1 1 auto; min-width: 0; }
-.rs-p-name input {
-	width: 100%; font: inherit; color: inherit; box-sizing: border-box;
-	background: color-mix(in srgb, currentColor 12%, transparent);
-	border: 0; border-radius: var(--radius-normal, 4px); padding: 3px 7px; outline: none;
-}
-.rs-p-acts { display: flex; align-items: center; flex: 0 0 auto; }
-.rs-p-btn {
-	display: flex; align-items: center; justify-content: center;
-	width: 28px; height: 28px; border-radius: var(--radius-normal, 4px); cursor: pointer;
-	border: 0; background: transparent; color: inherit; font-size: 14px; opacity: .6;
-}
-.rs-p-btn:hover { opacity: 1; background: color-mix(in srgb, currentColor 14%, transparent); }
-.rs-p-btn.is-danger:hover { background: color-mix(in srgb, var(--enum-red-bg, #d64545) 40%, transparent); }
-.rs-p-add {
-	display: inline-flex; align-items: center; gap: 6px;
-	height: 26px; padding: 0 8px; border: 0; border-radius: var(--radius-normal, 4px);
-	background: transparent; color: inherit; cursor: pointer;
-	font: inherit; font-size: var(--text-size-smaller, .8125rem); font-weight: 600; opacity: .6;
-}
-.rs-p-add:hover { opacity: 1; background: color-mix(in srgb, currentColor 14%, transparent); }
-.rs-p-add .ti { font-size: 13px; }
-.rs-p-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 16px; }
-.rs-p-save {
-	border: 0; border-radius: var(--radius-normal, 4px); cursor: pointer;
-	padding: 6px 16px; font: inherit; font-weight: 600;
-	background: var(--ed-button-primary-bg, #4caea1);
-	color: var(--ed-button-primary-fg, #101010);
-}
-.rs-p-save:hover { filter: brightness(1.08); }
-.rs-hint { opacity: .5; font-size: var(--text-size-smaller); }
-.rs-p-sec { display: flex; align-items: center; gap: 6px; margin: 0 0 8px; }
-.rs-p-sec-label {
-	flex: 1 1 auto;
-	font-size: var(--text-size-smaller, .8125rem); font-weight: 700;
-	letter-spacing: .06em; text-transform: uppercase; opacity: .65;
-}
-.rs-p-sec-add {
-	display: inline-flex; align-items: center; gap: 5px;
-	height: 24px; padding: 0 8px; border: 0; border-radius: var(--radius-normal, 4px);
-	background: transparent; color: inherit; cursor: pointer;
-	font: inherit; font-size: var(--text-size-xsmall, .75rem); font-weight: 600; opacity: .6;
-}
-.rs-p-sec-add:hover { opacity: 1; background: color-mix(in srgb, currentColor 14%, transparent); }
-.rs-p-sec-add .ti { font-size: 13px; }
-.rs-p-row.is-editing { border-color: color-mix(in srgb, var(--ed-button-primary-bg, #4caea1) 60%, transparent); }
-/* the Ordering status rows: labels so the whole row toggles; identical
- * .rs-p-row shell as the hashtag rows so the two sections share one voice */
-.rs-p-switch { cursor: pointer; gap: 10px; }
-.rs-p-switch input { accent-color: var(--ed-button-primary-bg, #4caea1); margin: 0; }
-.rs-p-ic { width: 16px; flex: 0 0 auto; text-align: center; font-size: 14px; opacity: .65; }
-/* foldable section headers */
-.rs-p-fold { cursor: pointer; user-select: none; }
-.rs-p-fold:hover .rs-p-sec-label { opacity: .8; }
-.rs-p-chev { flex: 0 0 auto; font-size: 11px; opacity: .5; }
 /* The section menu and its dots chip MOVED to the View Options plugin
  * (2026-08-13 to the shared module, 2026-09-19 to a plugin of its own): the
  * chip, the menu surface and the row treatment his 2026-08-08 mock settled are
@@ -1777,11 +1599,12 @@ class Plugin extends AppPlugin {
 		 * The eviction matches on CONTENT, not on a marker attribute: a sheet
 		 * left by a build that predates the marker could never carry it, and that
 		 * is exactly the copy that has to go. `.rs-p-secbox` is ours alone and is
-		 * in every version of this stylesheet, while our OTHER sheets (per-guid
-		 * rules for glyphs, bars, checkboxes) never contain it. */
+		 * in every version of this stylesheet up to the 2026-10-06 settings
+		 * redesign, `.rs-set-nav` in every one since, while our OTHER sheets
+		 * (per-guid rules for glyphs, bars, checkboxes) contain neither. */
 		try {
 			for (const el of document.querySelectorAll('style')) {
-				if (/\.rs-p-secbox\b/.test(el.textContent || '')) el.remove();
+				if (/\.rs-p-secbox\b|\.rs-set-nav\b/.test(el.textContent || '')) el.remove();
 			}
 		} catch (e) {}
 		this.style = document.createElement('style');
@@ -2312,6 +2135,20 @@ class Plugin extends AppPlugin {
 
 	/* Every hashtag currently loaded in the workspace, for the tag picker. */
 	knownHashtags() {
+		/* THE WORKSPACE'S OWN TAG INDEX first: the list Thymer's # menu and the
+		 * sidebar draw from. itemsByGuid only holds the lines loaded so far, so
+		 * scanning it found 1 tag of his 101 (2026-10-06). Not plugin API: the
+		 * app root reached through g_focusedComponent, names stored without
+		 * the #. The scan below stays as the fallback. */
+		try {
+			const root = window.g_focusedComponent && window.g_focusedComponent.root;
+			const ws = window.g_universe && window.g_universe.workspaceGuid;
+			const tags = root && ws && typeof root.getTagsInWorkspace === 'function' ? root.getTagsInWorkspace(ws) : null;
+			if (Array.isArray(tags) && tags.length) {
+				return tags.filter((x) => typeof x === 'string' && x).map((x) => '#' + x)
+					.sort((x, y) => x.localeCompare(y));
+			}
+		} catch (e) {}
 		const byGuid = (window.g_universe && window.g_universe.itemsByGuid) || {};
 		const out = new Set();
 		for (const g in byGuid) {
@@ -2339,7 +2176,9 @@ class Plugin extends AppPlugin {
 		const back = document.createElement('div');
 		back.className = 'rs-back';
 		const panel = document.createElement('div');
-		panel.className = 'rs-panel';
+		panel.className = 'rs-set';
+		panel.setAttribute('role', 'dialog');
+		panel.setAttribute('aria-label', 'Supertask settings');
 		back.appendChild(panel);
 		document.body.appendChild(back);
 		this.settingsEls = [back];
@@ -2366,362 +2205,329 @@ class Plugin extends AppPlugin {
 			draft.slots = this.tbSlots.slice(); /* read back sanitized */
 		};
 
-		/* both sections ALWAYS start collapsed (his call) — fold state lives
-		 * only for the life of the open modal, nothing persisted */
-		const fold = { progress: true, ordering: true, hashtags: true, pagechecks: true };
-		const sec = (id, label, extra) =>
-			'<div class="rs-p-sec rs-p-fold" data-sec="' + id + '">'
-			+ '<span class="rs-p-chev ti ' + (fold[id] ? 'ti-chevron-right' : 'ti-chevron-down') + '"></span>'
-			+ '<span class="rs-p-sec-label">' + label + '</span>' + (extra || '') + '</div>';
-
-		/* ---- Page Checkboxes, one collection per foldable row --------------
-		 * Only ONE row is open at a time (this.pcOpenRow): a body carries a
-		 * property and two value lists, so two open at once turns a 560px
-		 * panel into a scroll hunt. Edits land in this.pageCheckCfg LIVE —
-		 * the same contract the hashtag slots already have, where applySlots
-		 * applies immediately and only the config write waits for close. */
-		const pageChecksList = () => {
-			const cfg = this.pcCfg();
-			const guids = Object.keys(cfg);
-			if (!this.pcCat) return '<div class="rs-pcd-empty">Reading collections…</div>';
-			/* NO EARLY RETURN ON AN EMPTY LIST (his 2026-09-20 report: he
-			 * deleted his last two collections and the whole global rule went
-			 * with them, property and mappings and all). The global rule is not
-			 * a collection: it is matched by property NAME across the
-			 * workspace, so it has to render whether or not any collection is
-			 * configured. Its data was never touched, only this view bailed
-			 * before glRow below was built. The note moved into the list. */
-			/* one line per status: its own glyph, then the values that mean it.
-			 * `which` is a state key for the status rows and 'off' for the
-			 * reset row, so both share the chip plumbing and the pickers. */
-			const chips = (g, list, fld, which) =>
-				'<div class="rs-pcd-chips">'
-				+ (list || []).map((v) =>
-					'<span class="rs-pcd-chip is-val"><span class="lbl">' + esc(this.pcLabelFor(vc, fld.id, v)) + '</span>'
-					+ '<button type="button" class="x rs-pc-vx" data-col="' + esc(g) + '" data-w="' + which + '" data-v="' + esc(v) + '">✕</button></span>').join('')
-				+ '<button type="button" class="rs-pcd-chip rs-pcd-addval rs-pc-vadd" data-col="' + esc(g) + '" data-w="' + which + '">+ Add value</button>'
-				+ '</div>';
-			/* EVERY status is listed, always. The first pass only rendered the
-			 * ones already carrying values, behind an "+ Add status" button —
-			 * so the panel showed a lone "Done" row and no way to see that
-			 * nine others existed ("hur mappar man de olika statusarna?").
-			 * A status with no values costs one quiet line and is self-
-			 * explanatory; hiding them cost him the whole feature. */
-			/* HIS MOCKUP'S SHAPE (2026-08-15): one row per MAPPING, horizontal —
-			 * a status picker on the left, that status's values as chips, and a
-			 * "+" to add another value. Rows are added with "+ Add New Status".
-			 *
-			 * This is the third shape and the right one. Listing every status
-			 * always (my second pass) made the panel ten rows deep for a
-			 * collection using three; hiding them behind a button (my first)
-			 * meant nothing on screen said the other statuses existed. A row
-			 * that CARRIES its own picker does both jobs at once. */
-			/* The global rule's values: it has no collection of its own, so the
-			 * menu is drawn from the FIRST collection that carries a property
-			 * of that name. Those ids are what will match everywhere the
-			 * collections share one value collection, which is the case the
-			 * rule exists for. */
-			const globalCtx = (gl) => {
-				const want = String(gl.name || '').trim().toLowerCase();
-				for (const info of (this.pcCat || [])) {
-					const f = info.fields.find((x) => String(x.label || '').trim().toLowerCase() === want);
-					if (f) return { g: info.guid, fld: f };
-				}
-				return null;
-			};
-			const globalStatusRows = (gl) => {
-				const ctx = globalCtx(gl);
-				if (!ctx) return '<div class="rs-pcd-empty">No collection has a property with that name.</div>';
-				this.pcGCol = ctx.g; this.pcGFld = ctx.fld; /* handlers need them for '*' */
-				/* FETCH ONCE, NOT EVERY RENDER. This ran unconditionally and
-				 * repainted in its `.then`; once the values were cached the
-				 * promise resolved on the very next microtask, so render →
-				 * fetch → repaint → render span the main thread and froze the
-				 * app the moment a property was picked (his 2026-08-15 report:
-				 * could not even close the panel). Only the FIRST, genuinely
-				 * async, resolution may repaint. */
-				const vkey = ctx.g + '|' + ctx.fld.id;
-				if (!this.pcVals || !this.pcVals.has(vkey)) {
-					this.pcFieldValues(ctx.g, ctx.fld).then(() => this.pcRepaint && this.pcRepaint());
-				}
-				return statusRows('*', gl, ctx.fld, ctx.g);
-			};
-
-			const statusRows = (g, c, fld, valueColl) => {
-				const vc = valueColl || g; /* where the value NAMES live */
-				const map = this.pcMap(c);
-				const rows = PC_STATES.filter((st) => (map[st.key] || []).length);
-				/* the row being built: it has no values yet, so the filter above
-				 * cannot see it, and it must survive its own status pick */
-				const nr = this.pcNewRow && this.pcNewRow.col === g ? this.pcNewRow : null;
-				const pendSt = nr && nr.key ? PC_STATE(nr.key) : null;
-				const known = (this.pcVals && this.pcVals.get(vc + '|' + fld.id)) || [];
-				const inMap = new Set([].concat(...PC_STATES.map((st) => map[st.key] || [])).map(String));
-				const unmapped = known.filter((v) => !inMap.has(String(v.id)));
-				/* Done and Not Done are STATIC (his call): every configuration needs
-				 * both, so they are not a choice — no dropdown, a muted label, and
-				 * always the first two rows. Everything else is opt-in below them. */
-				const row = (st, fixed) =>
-					'<div class="rs-pcstat">'
-					+ (fixed
-						? '<span class="rs-pcstat-pick is-fixed">'
-							+ '<span class="rs-p-ic ti ' + st.icon + '"></span>'
-							+ '<span class="lbl">' + st.label + '</span></span>'
-						: '<button type="button" class="rs-pcstat-pick rs-pc-spick" data-col="' + esc(g) + '" data-k="' + (st ? st.key : '') + '">'
-							+ '<span class="rs-p-ic ti ' + (st ? st.icon : 'ti-plus') + '"></span>'
-							+ '<span class="lbl">' + (st ? st.label : 'Choose a Status') + '</span>'
-							+ '<span class="rs-pcstat-chev ti ti-chevron-down"></span>'
-							+ '</button>')
-					+ (st ? (map[st.key] || []).map((v) =>
-						'<span class="rs-pcd-chip is-val"><span class="lbl">' + esc(this.pcLabelFor(vc, fld.id, v)) + '</span>'
-						+ '<button type="button" class="x rs-pc-vx" data-col="' + esc(g) + '" data-w="' + st.key + '" data-v="' + esc(v) + '">✕</button></span>').join('') : '')
-					/* THE + ONLY WHILE THERE IS SOMETHING TO ADD (his 2026-08-15
-					 * screen recording). Values are exclusive across statuses, so
-					 * every row's picker offers the same remainder: once the last
-					 * value is mapped, every + in the group opens an empty menu.
-					 * `unmapped` is the same list the warning under the rows is
-					 * built from, so the two can never disagree — the + is gone
-					 * exactly when that warning is.
-					 * `!known.length` keeps it while we do not YET know the value
-					 * list: the fetch is async and repaints when it lands, and a
-					 * + that flashes away and back reads as a bug. */
-					+ (st && (!known.length || unmapped.length)
-						? '<button type="button" class="rs-pcd-chip rs-pc-vadd is-plus" data-col="' + esc(g) + '" data-w="' + st.key + '">+</button>'
-						: '')
-					+ '</div>';
-				return '<div class="rs-pcd-label rs-pcd-sec">Statuses</div>'
-					+ '<p class="rs-pcd-hint">Each status draws the page row exactly as a todo of that status. '
-					+ 'Map this property’s values onto the ones you use.</p>'
-					+ [PC_STATE('done'), PC_STATE('tasks')].map((st) => row(st, true)).join('')
-					+ rows.filter((st) => st.key !== 'done' && st.key !== 'tasks'
-						&& (!pendSt || st.key !== pendSt.key)).map((st) => row(st, false)).join('')
-					+ (nr ? row(pendSt, false) : '')
-					+ '<button type="button" class="rs-pc-link rs-pc-newstat" data-col="' + esc(g) + '">+ Add New Status</button>'
-					+ (unmapped.length
-						? '<p class="rs-pcd-hint rs-pcd-warn">No checkbox on: '
-							+ unmapped.map((v) => esc(v.label)).join(', ')
-							+ '. A page with the property empty never gets one either.</p>'
-						: '')
-					;
-			};
-
-			/* THE GLOBAL ROW, always first and always present (his ask). It is
-			 * the same row as a collection's, with a property NAME instead of a
-			 * collection: whatever every collection calls the same thing. Its
-			 * statuses reuse statusRows by handing it the pseudo-guid '*', so
-			 * there is exactly one editor to maintain, not two. */
-			const gl = this.pageCheckGlobal || null;
-			const on = !!this.pageCheckGlobalOn;
-			/* while the switch is on this group has nothing to fold away from —
-			 * it IS the configuration, so it stays open (his call) */
-			const glOpen = true;
-			const glRow = !on ? '' : '<div class="rs-pcrow' + (glOpen ? ' is-open' : '') + '">'
-				+ '<div class="rs-pcrow-head is-static">'
-				+ '<span class="rs-p-chev ti ti-chevron-down"></span>'
-				+ '<span class="rs-p-name">Global Page Checkboxes</span>'
-				+ '</div>'
-				+ (glOpen
-					? '<div class="rs-pcrow-body">'
-						+ '<div class="rs-pcd-label rs-pcd-sec">Property</div>'
-						+ '<p class="rs-pcd-hint">Matched by NAME, so every collection that has a property '
-						+ 'called this gets checkboxes from one rule.</p>'
-						+ '<div class="rs-pcd-chips"><button type="button" class="rs-pcd-chip rs-pc-gprop'
-						+ (gl && gl.name ? ' is-set' : '') + '">'
-						+ esc(gl && gl.name ? gl.name : 'Choose a Property…') + '</button></div>'
-						+ (gl && gl.name ? globalStatusRows(gl) : '<div class="rs-pcd-empty">Pick the property that drives the checkbox.</div>')
-						+ '</div>'
-					: '')
-				+ '</div>';
-
-			/* only when the switch is OFF: with it on there is no
-			 * "+ Add Collection" button to point at, and no collection is
-			 * missing — the global rule IS the configuration. */
-			const none = (!guids.length && !on)
-				? '<div class="rs-pcd-empty">No collections yet. “+ Collection” gives one’s pages a checkbox.</div>'
-				: '';
-			return '<div class="rs-pclist">' + glRow + none + guids.map((g) => {
-				const c = cfg[g];
-				const info = (this.pcCat || []).find((x) => x.guid === g);
-				const name = (info && info.name) || ('…' + g.slice(-6));
-				const fields = (info && info.fields) || [];
-				const fld = fields.find((f) => f.id === c.sp) || null;
-				const open = this.pcOpenRow === g;
-				return '<div class="rs-pcrow' + (open && !on ? ' is-open' : '') + (on ? ' is-locked' : '') + '">'
-					+ '<div class="rs-pcrow-head" data-col="' + esc(g) + '">'
-					+ '<span class="rs-p-chev ti ' + (open ? 'ti-chevron-down' : 'ti-chevron-right') + '"></span>'
-					+ '<span class="rs-p-name">' + esc(name) + '</span>'
-					+ '<span class="rs-p-acts"><button type="button" class="rs-p-btn is-danger rs-pc-del ti ti-trash" data-col="' + esc(g) + '"></button></span>'
-					+ '</div>'
-					+ (open && !on
-						? '<div class="rs-pcrow-body">'
-							+ '<div class="rs-pcd-label rs-pcd-sec">Property</div>'
-							+ '<div class="rs-pcd-chips"><button type="button" class="rs-pcd-chip rs-pc-prop'
-							+ (fld ? ' is-set' : '') + '" data-col="' + esc(g) + '">'
-							+ esc(fld ? fld.label : 'Choose a property…') + '</button></div>'
-							+ (fld
-								? statusRows(g, c, fld)
-								: '<div class="rs-pcd-empty">Pick the property that drives the checkbox.</div>')
-							+ '</div>'
-						: '')
-					+ '</div>';
-			}).join('') + '</div>';
-		};
-
+		/* THE 2026-10-06 REDESIGN (his OK on the Design canvas
+		 * https://claude.ai/artifact/KuoE6Bfrcgb7fQcrFcWwi3): the shell Google
+		 * Calendar's settings use, so the plugins read as one family. A rail of
+		 * four sections replaces the four foldable frames; the section lives on
+		 * the plugin so reopening lands where he left. */
+		let resetScroll = false;
+		const ico = (n) => '<span class="ti ' + n + '"></span>';
+		const kbd = (s) => '<span class="rs-set-kbd">' + s + '</span>';
+		const sw = (cls, on, label) => '<label class="rs-set-switch"><input type="checkbox" class="' + cls + '"'
+			+ (on ? ' checked' : '') + ' aria-label="' + esc(label) + '"><span></span></label>';
+		const swRow = (cls, on, title, sub) => '<div class="rs-set-row"><div class="rs-set-row-text">'
+			+ '<div class="rs-set-row-title">' + title + '</div>'
+			+ (sub ? '<div class="rs-set-row-sub">' + sub + '</div>' : '') + '</div>' + sw(cls, on, title) + '</div>';
+		const cap = (label, count, cls) => '<div class="rs-set-cap">' + label
+			+ (count !== undefined ? '<span class="' + (cls || '') + '">' + count + '</span>' : '') + '</div>';
+		const pane = (title, lead, inner) => '<div class="rs-set-pane"><div><h2>' + title + '</h2>'
+			+ '<p class="rs-set-lead">' + lead + '</p></div>' + inner + '</div>';
+		const note = (html, cls) => '<p class="rs-set-note' + (cls ? ' ' + cls : '') + '">' + html + '</p>';
+		const ib = (cls, icon, label, extra) => '<button type="button" class="rs-set-ib ' + cls + ' ti ' + icon + '"'
+			+ ' aria-label="' + esc(label) + '"' + (extra || '') + '></button>';
 		/* The reorder pair. The chord is the ROW's position, so moving a row is
 		 * how a user decides which status or hashtag each chord sets — the ends
 		 * simply have no arrow rather than a dead one. */
 		const arrows = (cls, i, n) =>
-			'<button type="button" class="rs-p-btn ' + cls + (i === 0 ? ' is-hidden' : '')
-				+ ' ti ti-arrow-up" data-i="' + i + '" data-d="-1"></button>'
-			+ '<button type="button" class="rs-p-btn ' + cls + (i >= n - 1 ? ' is-hidden' : '')
-				+ ' ti ti-arrow-down" data-i="' + i + '" data-d="1"></button>';
+			ib(cls + (i === 0 ? ' is-hidden' : ''), 'ti-arrow-up', 'Move up', ' data-i="' + i + '" data-d="-1"')
+			+ ib(cls + (i >= n - 1 ? ' is-hidden' : ''), 'ti-arrow-down', 'Move down', ' data-i="' + i + '" data-d="1"');
+		const groupCount = () => {
+			const n = this.statusChords().filter((k) => k && (this.globalBins || []).indexOf(k) >= 0).length;
+			return n + (n === 1 ? ' status grouped' : ' statuses grouped');
+		};
 
-		const render = () => {
-			/* a folded section is just its header inside the frame; unfolded
-			 * = header + description + rows. Each section wears its own frame
-			 * (.rs-p-secbox) so the boundaries read at a glance (his ask). */
-			const orderingBody = fold.ordering ? '' :
-				'<p class="rs-p-sub rs-p-secsub">Ticked statuses are grouped under every heading as tasks change; '
-				+ 'the Done group starts collapsed. Nothing ticked turns it off, and a section’s ⋯ menu always overrides it. '
-				+ 'The ' + KEY_STATUS(1) + ' to ' + KEY_STATUS(9) + ' shortcuts set a line’s status anywhere, ticked or not; the same chord again clears it. '
-				+ 'The arrows decide which chord sets which status.</p>'
+		/* ---- Page Checkboxes -------------------------------------------------
+		 * The global rule (a property NAME matched in every collection) or one
+		 * card per collection. Edits land in this.pageCheckCfg LIVE, the same
+		 * contract the hashtag slots have; only the config write waits for
+		 * close. Only ONE collection card is open at a time (this.pcOpenRow). */
+		const valIcon = (vc, fid, v) => {
+			const hit = ((this.pcVals && this.pcVals.get(vc + '|' + fid)) || []).find((x) => x.id === v);
+			return (hit && hit.icon) || 'ti-point';
+		};
+		/* HIS MOCKUP'S SHAPE (2026-08-15), kept: one row per MAPPING, a status
+		 * picker on the left and that status's values as chips. Done and Not
+		 * Done are STATIC (his call): every configuration needs both, so they
+		 * are a muted label and always the first two rows. */
+		const statusRows = (g, c, fld, valueColl) => {
+			const vc = valueColl || g; /* where the value NAMES live */
+			const map = this.pcMap(c);
+			const rows = PC_STATES.filter((st) => (map[st.key] || []).length);
+			/* the row being built: it has no values yet, so the filter above
+			 * cannot see it, and it must survive its own status pick */
+			const nr = this.pcNewRow && this.pcNewRow.col === g ? this.pcNewRow : null;
+			const pendSt = nr && nr.key ? PC_STATE(nr.key) : null;
+			const known = (this.pcVals && this.pcVals.get(vc + '|' + fld.id)) || [];
+			const inMap = new Set([].concat(...PC_STATES.map((st) => map[st.key] || [])).map(String));
+			const unmapped = known.filter((v) => !inMap.has(String(v.id)));
+			const row = (st, fixed, isNew) =>
+				'<div class="rs-set-maprow rs-pcstat">'
+				+ (fixed
+					? '<span class="rs-set-stat is-fixed">' + ico(st.icon) + '<span>' + st.label + '</span></span>'
+					: '<button type="button" class="rs-set-stat rs-pc-spick" data-col="' + esc(g) + '" data-k="' + (st ? st.key : '') + '">'
+						+ ico(st ? st.icon : 'ti-plus') + '<span>' + (st ? st.label : 'Choose a Status') + '</span>'
+						+ '<span class="rs-set-chev ti ti-chevron-down"></span></button>')
+				+ '<span class="rs-set-vals rs-pcd-chips">'
+				+ (st ? (map[st.key] || []).map((v) =>
+					'<span class="rs-set-chip">' + ico(valIcon(vc, fld.id, v)) + '<span>' + esc(this.pcLabelFor(vc, fld.id, v)) + '</span>'
+					+ '<button type="button" class="rs-set-chip-x rs-pc-vx ti ti-x" aria-label="Remove" data-col="' + esc(g)
+					+ '" data-w="' + st.key + '" data-v="' + esc(v) + '"></button></span>').join('') : '')
+				/* THE + ONLY WHILE THERE IS SOMETHING TO ADD (his 2026-08-15
+				 * screen recording). Values are exclusive across statuses, so
+				 * every row offers the same remainder; `unmapped` is the list the
+				 * warning below is built from, so the two can never disagree.
+				 * `!known.length` keeps it while the value list is still loading. */
+				+ (st && (!known.length || unmapped.length)
+					? '<button type="button" class="rs-set-chip is-add rs-pc-vadd ti ti-plus" aria-label="Add Value" data-col="' + esc(g) + '" data-w="' + st.key + '"></button>'
+					: '')
+				/* the row "+ Add Status" just made can be taken back (his
+				 * 2026-10-06 report: a stray click left one he could not remove) */
+				+ (isNew ? '<button type="button" class="rs-set-ib is-danger rs-pc-newx ti ti-x" aria-label="Remove This Row"></button>' : '')
+				+ '</span></div>';
+			return '<div class="rs-set-thead rs-set-maprow"><span>Draws As</span><span>' + esc(fld.label) + ' Values</span></div>'
+				+ [PC_STATE('done'), PC_STATE('tasks')].map((st) => row(st, true)).join('')
+				+ rows.filter((st) => st.key !== 'done' && st.key !== 'tasks'
+					&& (!pendSt || st.key !== pendSt.key)).map((st) => row(st, false)).join('')
+				+ (nr ? row(pendSt, false, true) : '')
+				+ '<div class="rs-set-addrow"><button type="button" class="rs-set-link rs-pc-newstat" data-col="' + esc(g) + '">'
+				+ ico('ti-plus') + 'Add Status</button></div>'
+				+ (unmapped.length
+					? '<div class="rs-set-addrow">' + note('No checkbox on: ' + unmapped.map((v) => esc(v.label)).join(', ') + '.', 'is-warn') + '</div>'
+					: '');
+		};
+		const propRow = (cls, label, title, sub, extra) => '<div class="rs-set-row has-pick"><div class="rs-set-row-text">'
+			+ '<div class="rs-set-row-title">' + title + '</div>'
+			+ (sub ? '<div class="rs-set-row-sub">' + sub + '</div>' : '') + '</div>'
+			+ '<button type="button" class="rs-set-pick ' + cls + '"' + (extra || '') + '>' + ico('ti-tag')
+			+ '<span class="rs-set-pick-label' + (label ? '' : ' is-empty') + '">' + esc(label || 'Choose a Property') + '</span>'
+			+ '<span class="rs-set-chev ti ti-chevron-down"></span></button></div>';
+		const statusesFoot = note('Done and Not Done are always there. A value no status lists, or a page with the property empty, gets no checkbox.');
+		/* The global rule's values: it has no collection of its own, so the
+		 * menu is drawn from the FIRST collection that carries a property of
+		 * that name. */
+		const globalCtx = (gl) => {
+			const want = String(gl.name || '').trim().toLowerCase();
+			for (const info of (this.pcCat || [])) {
+				const f = info.fields.find((x) => String(x.label || '').trim().toLowerCase() === want);
+				if (f) return { g: info.guid, fld: f };
+			}
+			return null;
+		};
+		const pagesPane = () => {
+			if (!this.pcCat) return pane('Page Checkboxes', 'Reading collections.', '');
+			const gl = this.pageCheckGlobal || null;
+			const on = !!this.pageCheckGlobalOn;
+			let below = '';
+			if (on) {
+				const ctx = gl && gl.name ? globalCtx(gl) : null;
+				if (ctx) {
+					this.pcGCol = ctx.g; this.pcGFld = ctx.fld; /* handlers need them for '*' */
+					/* FETCH ONCE, NOT EVERY RENDER: a cached promise resolves on
+					 * the next microtask, so render, fetch, repaint, render spun
+					 * the main thread and froze the app (his 2026-08-15 report). */
+					const vkey = ctx.g + '|' + ctx.fld.id;
+					if (!this.pcVals || !this.pcVals.has(vkey)) {
+						this.pcFieldValues(ctx.g, ctx.fld).then(() => this.pcRepaint && this.pcRepaint());
+					}
+				}
+				below = '<div class="rs-set-group">' + cap('Statuses')
+					+ (!gl || !gl.name
+						? '<div class="rs-set-box">' + note('Pick the property that drives the checkbox.', 'is-pad') + '</div>'
+						: !ctx
+							? '<div class="rs-set-box">' + note('No collection has a property with that name.', 'is-pad') + '</div>'
+							: '<div class="rs-set-box rs-set-table">' + statusRows('*', gl, ctx.fld, ctx.g) + '</div>' + statusesFoot)
+					+ '</div>';
+			} else {
+				/* NO EARLY RETURN ON AN EMPTY LIST (his 2026-09-20 report): the
+				 * global rule is not a collection, so it renders whether or not
+				 * any collection is configured. */
+				const cfg = this.pcCfg();
+				const guids = Object.keys(cfg);
+				const add = '<button type="button" class="rs-set-btn rs-set-soft rs-pc-add">' + ico('ti-plus') + 'Add Collection</button>';
+				below = '<div class="rs-set-group">' + cap('Collections')
+					+ (!guids.length
+						? '<div class="rs-set-empty"><div>No collections yet.</div>' + add + '</div>'
+						: guids.map((g) => {
+							const c = cfg[g];
+							const info = (this.pcCat || []).find((x) => x.guid === g);
+							const name = (info && info.name) || ('Collection ' + g.slice(-6));
+							const fld = ((info && info.fields) || []).find((f) => f.id === c.sp) || null;
+							const open = this.pcOpenRow === g;
+							return '<div class="rs-set-box rs-set-coll' + (open ? ' is-open' : '') + '">'
+								+ '<div class="rs-set-coll-head rs-pcrow-head" data-col="' + esc(g) + '">'
+								+ '<span class="rs-set-chev ti ' + (open ? 'ti-chevron-down' : 'ti-chevron-right') + '"></span>'
+								+ ico((info && info.icon) || 'ti-folder')
+								+ '<span class="rs-set-coll-name">' + esc(name) + '</span>'
+								+ '<span class="rs-set-acts">' + ib('is-danger rs-pc-del', 'ti-trash', 'Remove ' + name, ' data-col="' + esc(g) + '"') + '</span>'
+								+ '</div>'
+								+ (open
+									? propRow('rs-pc-prop', fld ? fld.label : '', 'Property', 'The one that drives the checkbox.', ' data-col="' + esc(g) + '"')
+										+ (fld
+											? '<div class="rs-set-table">' + statusRows(g, c, fld) + '</div>'
+											: '')
+									: '')
+								+ '</div>';
+						}).join('') + '<div>' + add + '</div>')
+					+ note(guids.length ? 'Each collection gets its own property and statuses.' : 'Each collection gets its own property and statuses, laid out like the rule for every page.')
+					+ '</div>';
+			}
+			return pane('Page Checkboxes', 'A checkbox on page rows: lone references, live search results and transclusions. Ticking it writes the page’s status property.',
+				'<div class="rs-set-box">'
+				+ swRow('rs-pcg-on', on, 'On Every Page', 'One rule for every collection with a property of the same name. Off, you set it up per collection.')
+				+ (on ? propRow('rs-pc-gprop', gl && gl.name, 'Property', 'Matched by name in every collection.') : '')
+				+ '</div>' + below);
+		};
+
+		const statusPane = () => {
+			const ord = this.statusChords();
+			const rows = Array.from({ length: TB_SLOTS }, (_, i) => ord[i] || null).map((key, i) => {
+				const b = key && ORDER_BINS.find((x) => x.key === key);
+				/* An empty slot stays visible because it owns its chord — a
+				 * status is moved into it with the arrows. "Unused" just states
+				 * what is true of the key. */
+				const on = !!b && (this.globalBins || []).indexOf(b.key) >= 0;
+				return '<div class="rs-set-trow rs-set-st' + (b ? '' : ' is-unused') + '">' + kbd(KEY_STATUS(i + 1))
+					+ '<span class="rs-set-name">' + ico(b ? b.icon : 'rs-set-blank') + '<span>' + (b ? b.label : 'Unused') + '</span></span>'
+					+ '<span class="rs-set-mid">' + (b ? '<input type="checkbox" class="rs-set-check rs-gb" data-k="' + b.key + '"'
+						+ (on ? ' checked' : '') + ' aria-label="Group ' + esc(b.label) + '">' : '') + '</span>'
+					+ '<span class="rs-set-acts">' + arrows('rs-so', i, TB_SLOTS) + '</span></div>';
+			}).join('');
+			return pane('Task Status',
+				KEY_STATUS(1) + ' to ' + KEY_STATUS(10) + ' set a line’s status anywhere, and the same chord again clears it. A ticked status gets its own group under every heading.',
+				'<div class="rs-set-group">' + cap('Groups') + '<div class="rs-set-box">'
 				/* Thymer draws a heading's children flush since 2026-10-02; this
 				 * gives grouped tasks the indent back, per user (his call) */
-				+ '<div class="rs-p-list">'
-				+ '<label class="rs-p-row rs-p-switch">'
-				+ '<input type="checkbox" class="rs-gi"' + (this.indentGroups !== false ? ' checked' : '') + '>'
-				+ '<span class="rs-p-name">Indent Grouped Tasks</span></label>'
-				+ '</div>'
-				+ '<div class="rs-p-list">'
-				+ (() => {
-					const ord = this.statusChords();
-					return ord.map((key, i) => {
-						const b = key && ORDER_BINS.find((x) => x.key === key);
-						if (!b) {
-							/* An empty slot stays visible because it owns its chord — a
-							 * status is moved into it with the arrows. NOT "Unassigned":
-							 * that promises an assignment gesture there is none of, since
-							 * all nine statuses are always placed and no tenth exists.
-							 * "Unused" just states what is true of the key. */
-							return '<div class="rs-p-line"><div class="rs-p-row is-empty">'
-								+ '<span class="rs-p-name">Unused</span></div>'
-								+ '<span class="rs-p-key">' + KEY_STATUS_TXT(i + 1) + '</span></div>';
-						}
-						const on = (this.globalBins || []).indexOf(b.key) >= 0;
-						/* the label is NOT part of the row: a <label> would make the
-						 * arrows toggle the checkbox as well as move the row */
-						return '<div class="rs-p-line"><div class="rs-p-row rs-p-switch">'
-							+ '<input type="checkbox" class="rs-gb" data-k="' + b.key + '"' + (on ? ' checked' : '') + '>'
-							+ '<span class="rs-p-ic ti ' + b.icon + '"></span>'
-							+ '<span class="rs-p-name">' + b.label + '</span>'
-							+ '<span class="rs-p-acts">' + arrows('rs-so', i, ord.length) + '</span>'
-							+ '</div><span class="rs-p-key">' + KEY_STATUS_TXT(i + 1) + '</span></div>';
-					}).join('');
-				})()
-				+ '</div>';
-			panel.innerHTML = '<button type="button" class="rs-p-close ti ti-x"></button>'
-				+ '<h1>Supertask Settings'
-				+ (this.pluginVersion ? '<span class="rs-ver">v' + this.pluginVersion + '</span>' : '')
-				+ '</h1>'
-				/* Its own FOLDABLE section, first (his ask) — two switches, one
-				 * for headings and one for parent todos, because those are
-				 * different appetites: a bar on every heading is calm, a bar
-				 * on every sub-checklist is not. Either switch is overridden
-				 * per section by the ⋯ menu or the palette command. */
-				+ '<div class="rs-p-secbox' + (fold.progress ? ' is-folded' : '') + '">' + sec('progress', 'Progress Bar')
-				+ (fold.progress ? '' :
-					'<p class="rs-p-sub rs-p-secsub">A bar counting the tasks below a line. '
-					+ 'A section’s ⋯ menu, or “Supertask: Progress Bar” on the caret’s line, always overrides these.</p>'
-					+ '<div class="rs-p-list">'
-					+ '<label class="rs-p-row rs-p-switch">'
-					+ '<input type="checkbox" class="rs-pg"' + (this.progressGlobal ? ' checked' : '') + '>'
-					+ '<span class="rs-p-name">On every heading</span></label>'
-					+ '<label class="rs-p-row rs-p-switch">'
-					+ '<input type="checkbox" class="rs-pgt"' + (this.progressTodos ? ' checked' : '') + '>'
-					+ '<span class="rs-p-name">On every todo with sub-tasks</span></label>'
-					+ '</div>')
-				+ '</div>'
-				/* Page Checkboxes (his 2026-08-13 feature), rebuilt 2026-08-15 into
-				 * this panel. Was: a global "On all pages" switch plus a button to
-				 * a second, differently sized dialog. Now: one list, one collection
-				 * per foldable row, everything that collection needs underneath it.
-				 * The global switch is gone — see applyPrefs for what happened to
-				 * the collections it used to cover. */
-				+ '<div class="rs-p-secbox' + (fold.pagechecks ? ' is-folded' : '') + '">' + sec('pagechecks', 'Page Checkboxes')
-				+ (fold.pagechecks ? '' :
-					'<p class="rs-p-sub rs-p-secsub">A checkbox on page rows — lone references, live search results and transclusions. '
-					+ 'Add a collection, pick the property that drives the box, then say which values mean checked '
-					+ 'and which one unchecking writes.</p>'
-					+ '<div class="rs-p-line"><label class="rs-p-row rs-p-switch">'
-					+ '<input type="checkbox" class="rs-pcg-on"' + (this.pageCheckGlobalOn ? ' checked' : '') + '>'
-					+ '<span class="rs-p-name">On every Page</span></label></div>'
-					+ (this.pageCheckGlobalOn ? ''
-						: '<button type="button" class="rs-pc-link rs-pc-add">+ Add Collection</button>')
-					+ pageChecksList())
-				+ '</div>'
-				+ '<div class="rs-p-secbox' + (fold.ordering ? ' is-folded' : '') + '">' + sec('ordering', 'Global Task Status') + orderingBody + '</div>'
-				+ '<div class="rs-p-secbox">'
-				+ sec('hashtags', 'Timeblocks')
-				+ (fold.hashtags ? '' :
-					'<p class="rs-p-sub rs-p-secsub">' + KEY_TAG(1) + ' to ' + KEY_TAG(9) + ' tag the current line and ' + KEY_TAG(10) + ' clears whichever one it has; the row is the key. '
-					+ 'Use anything your flow sorts by: timeblocks, priorities, statuses. '
-					+ 'The arrows decide which chord tags with which hashtag.</p>'
-					+ '<div class="rs-p-list">'
-				+ Array.from({ length: TB_TAG_SLOTS }, (_, i) => draft.slots[i]).map((slot, i) => {
-					const so = typeof slot === 'string' ? { tag: slot, title: '' } : (slot || { tag: '', title: '' });
-					return i === editIdx
-						/* edit mode is the SAME row, not a different shape: same
-						 * .rs-p-line shell, same chip outside, so the list does not
-						 * jump when one row opens (his 2026-08-15 report) */
-						? '<div class="rs-p-line"><div class="rs-p-row is-editing">'
-							+ '<span class="rs-p-ic ti ti-hash"></span>'
-							+ '<span class="rs-p-name rs-p-editcol">'
-							+ '<input class="rs-tb-title rs-pcd-inp" spellcheck="false" placeholder="Title (shown in the UI)" value="' + esc(so.title) + '">'
-							+ '<input class="rs-tb-tag rs-pcd-inp" data-i="' + i + '" spellcheck="false" placeholder="#hashtag" value="' + esc(so.tag) + '">'
-							+ '</span>'
-							+ '<span class="rs-p-acts"><button type="button" class="rs-p-btn rs-tb-ok ti ti-check"></button></span>'
-							+ '</div><span class="rs-p-key">' + KEY_TAG_TXT(i + 1) + '</span></div>'
-						: '<div class="rs-p-line"><div class="rs-p-row' + (slot ? '' : ' is-empty') + '" data-i="' + i + '">'
-							+ '<span class="rs-p-ic ti ti-hash"></span>'
-							+ (slot
-								? '<span class="rs-p-name">' + esc(so.title || so.tag) + '</span>'
-								/* an empty slot still owns its chord — it is the row you
-								 * click to claim that key, which is what lets him use
-								 * 1-4 and then 0 without filling the six between */
-								: '<button type="button" class="rs-p-name rs-tb-claim" data-i="' + i + '">Add a hashtag</button>')
-							+ '<span class="rs-p-acts">'
-							+ (slot ? arrows('rs-ho', i, TB_TAG_SLOTS) : '')
-							+ (slot ? '<button type="button" class="rs-p-btn rs-tb-edit ti ti-pencil" data-i="' + i + '"></button>' : '')
-							+ (slot ? '<button type="button" class="rs-p-btn is-danger rs-tb-x ti ti-trash" data-i="' + i + '"></button>' : '')
-							+ '</span></div><span class="rs-p-key">' + KEY_TAG_TXT(i + 1) + '</span></div>';
-				}).join('')
-				/* the fixed last row: not a slot, so no arrows, no edit, no trash,
-				 * muted like the fixed Done / Not Done rows in Page Checkboxes */
-				+ '<div class="rs-p-line"><div class="rs-p-row is-fixed">'
-					+ '<span class="rs-p-ic ti ti-eraser"></span>'
-					+ '<span class="rs-p-name">Clear Timeblock</span>'
-					+ '</div><span class="rs-p-key">' + KEY_TAG_TXT(10) + '</span></div>'
-				+ '</div>')
-				+ '</div>'
-				/* One button, and its LABEL is the honest state: Save while there
-				 * is something to write, Done when there is not. The old line
-				 * ("Saved when this window closes") asked him to trust a promise
-				 * instead of showing him where he stood. */
-				+ '<div class="rs-p-savebar"><button type="button" class="rs-p-done">'
-				+ (dirty || this.pcChanged ? 'Save' : 'Done') + '</button></div>';
-			const inp = panel.querySelector('.rs-tb-tag');
-			if (inp) { inp.focus({ preventScroll: true }); inp.select(); }
+				+ swRow('rs-gi', this.indentGroups !== false, 'Indent Grouped Tasks', 'Thymer draws a heading’s lines flush. On, tasks in a group sit one step in from its heading.')
+				+ '</div></div>'
+				+ '<div class="rs-set-group">' + cap('Shortcuts', groupCount(), 'rs-set-gcount')
+				+ '<div class="rs-set-box rs-set-table">'
+				+ '<div class="rs-set-thead rs-set-st"><span>Key</span><span>Status</span><span class="rs-set-mid">Grouped</span><span></span></div>'
+				+ rows + '</div>'
+				+ note('The arrows move a status to another key. The Done group starts folded, and a section’s ⋯ menu always overrides grouping.')
+				+ '</div>');
 		};
 
-		const suggest = (inp) => {
-			const q = inp.value.replace(/^#/, '').toLowerCase();
+		const timeblocksPane = () => {
+			const slots = Array.from({ length: TB_TAG_SLOTS }, (_, i) => draft.slots[i]);
+			const used = slots.filter(Boolean).length;
+			const rows = slots.map((slot, i) => {
+				const so = typeof slot === 'string' ? { tag: slot, title: '' } : (slot || { tag: '', title: '' });
+				if (i === editIdx) {
+					return '<div class="rs-set-trow rs-set-tb is-editing">' + kbd(KEY_TAG(i + 1))
+						+ '<input class="rs-set-input rs-tb-title" spellcheck="false" placeholder="Name" aria-label="Name" value="' + esc(so.title) + '">'
+						+ '<input class="rs-set-input rs-tb-tag" data-i="' + i + '" spellcheck="false" placeholder="#hashtag" aria-label="Hashtag" value="' + esc(so.tag) + '">'
+						+ '<span class="rs-set-acts"><button type="button" class="rs-set-btn rs-set-primary rs-tb-ok">Done</button></span></div>';
+				}
+				if (!slot) {
+					/* an empty slot still owns its chord — it is the row you click
+					 * to claim that key, which is what lets him use 1-4 and then 0
+					 * without filling the six between */
+					return '<div class="rs-set-trow rs-set-tb">' + kbd(KEY_TAG(i + 1))
+						+ '<button type="button" class="rs-set-claim rs-tb-claim" data-i="' + i + '">' + ico('ti-plus') + 'Add a Hashtag</button></div>';
+				}
+				return '<div class="rs-set-trow rs-set-tb">' + kbd(KEY_TAG(i + 1))
+					+ '<span class="rs-set-name"><span>' + esc(so.title || so.tag) + '</span></span>'
+					+ '<span class="rs-set-tag">' + esc(so.tag) + '</span>'
+					+ '<span class="rs-set-acts">' + arrows('rs-ho', i, TB_TAG_SLOTS)
+					+ ib('rs-tb-edit', 'ti-pencil', 'Edit', ' data-i="' + i + '"')
+					+ ib('is-danger rs-tb-x', 'ti-trash', 'Remove', ' data-i="' + i + '"') + '</span></div>';
+			}).join('');
+			return pane('Timeblocks',
+				KEY_TAG(1) + ' to ' + KEY_TAG(9) + ' tag the current line with a hashtag, and ' + KEY_TAG(10) + ' clears it. Use whatever your day sorts by: timeblocks, priorities, contexts.',
+				'<div class="rs-set-group">' + cap('Hashtags', used + ' of ' + TB_TAG_SLOTS + ' keys used')
+				+ '<div class="rs-set-box rs-set-table">'
+				+ '<div class="rs-set-thead rs-set-tb"><span>Key</span><span>Name</span><span>Hashtag</span><span></span></div>'
+				+ rows
+				/* the fixed last row: not a slot, so no arrows, no edit, no trash */
+				+ '<div class="rs-set-trow rs-set-tb is-fixed">' + kbd(KEY_TAG(10))
+				+ '<span class="rs-set-name">' + ico('ti-eraser') + '<span>Clear Timeblock</span></span></div>'
+				+ '</div>'
+				+ note('The arrows move a hashtag to another key. An empty key stays free, so you can use ' + KEY_TAG(1) + ' to ' + KEY_TAG(4) + ' and leave the rest.')
+				+ '</div>');
+		};
+
+		const progressPane = () => pane('Progress Bar', 'A bar counting the tasks below a line.',
+			/* two switches, one for headings and one for parent todos, because
+			 * those are different appetites: a bar on every heading is calm, a
+			 * bar on every sub-checklist is not */
+			'<div class="rs-set-group">' + cap('Show a Bar') + '<div class="rs-set-box">'
+			+ swRow('rs-pg', !!this.progressGlobal, 'On Every Heading', 'One bar per section, counting every task inside it.')
+			+ swRow('rs-pgt', !!this.progressTodos, 'On Every Todo With Sub-Tasks', 'A bar on each parent todo, counting its own sub-tasks.')
+			+ '</div>'
+			+ note('A section’s ⋯ menu, or Supertask: Progress Bar on the caret’s line, always overrides these.')
+			+ '</div>');
+
+		const NAV = [
+			['status', 'ti-checkbox', 'Task Status', 'Status'],
+			['timeblocks', 'ti-hash', 'Timeblocks', 'Timeblocks'],
+			['progress', 'ti-percentage', 'Progress Bar', 'Progress'],
+			['pages', 'ti-file-text', 'Page Checkboxes', 'Pages'],
+		];
+		const render = () => {
+			const section = this.settingsSection || 'status';
+			const old = panel.querySelector('.rs-set-content');
+			const top = old && !resetScroll ? old.scrollTop : 0;
+			resetScroll = false;
+			const body = section === 'timeblocks' ? timeblocksPane()
+				: section === 'progress' ? progressPane()
+				: section === 'pages' ? pagesPane()
+				: statusPane();
+			const live = dirty || this.pcChanged;
+			panel.innerHTML = '<div class="rs-set-head"><div class="rs-set-head-icon">' + ico('ti-square-check') + '</div>'
+				+ '<div class="rs-set-head-text"><h1>Supertask'
+				+ (this.pluginVersion ? '<span class="rs-set-ver">v' + esc(this.pluginVersion) + '</span>' : '') + '</h1>'
+				+ '<p>Status and timeblock shortcuts, groups under headings, progress bars and checkboxes on page rows.</p></div>'
+				+ '<button type="button" class="rs-set-ib rs-set-close rs-p-close ti ti-x" aria-label="Close"></button></div>'
+				+ '<div class="rs-set-body"><nav class="rs-set-nav" aria-label="Settings sections">'
+				+ NAV.map(([id, icon, label, short]) => '<button type="button" data-nav="' + id + '"'
+					+ (id === section ? ' class="is-on" aria-current="true"' : '') + '>' + ico(icon)
+					+ '<span class="rs-set-nav-long">' + label + '</span><span class="rs-set-nav-short">' + short + '</span></button>').join('')
+				+ '</nav><div class="rs-set-content">' + body + '</div></div>'
+				/* One button, and its LABEL is the honest state: Save while there
+				 * is something to write, Done when there is not. */
+				+ '<div class="rs-set-foot">'
+				+ '<button type="button" class="rs-set-btn rs-p-done' + (live ? ' rs-set-primary' : ' rs-set-soft') + '">'
+				+ (live ? 'Save' : 'Done') + '</button></div>';
+			const sc = panel.querySelector('.rs-set-content');
+			if (sc) sc.scrollTop = top;
+			const inp = panel.querySelector('.rs-tb-tag');
+			if (inp) { inp.focus({ preventScroll: true }); inp.select(); }
+			else if (this.repMenu) { this.repMenu.remove(); this.repMenu = null; }
+		};
+
+		const suggest = (inp, all) => {
+			/* on focus the field already holds its own tag, so the list opens
+			 * WHOLE (his ask: see every tag); typing then narrows it */
+			const q = all ? '' : inp.value.replace(/^#/, '').toLowerCase();
+			/* EVERY tag in the workspace, filtered by what is typed (his ask:
+			 * search for the right one), not the first ten; the menu scrolls */
 			const items = this.knownHashtags()
 				.filter((t) => !q || t.toLowerCase().indexOf(q) >= 0)
-				.slice(0, 10)
-				.map((t) => [t, t]);
+				.map((t) => [esc(t), esc(t)]);
 			if (!items.length) { document.querySelectorAll('.rs-repmenu').forEach((m) => m.remove()); this.repMenu = null; return; }
 			this.openSelMenu(inp, items, inp.value, (v) => { inp.value = v; commitEdit(); render(); });
+			/* openSelMenu places a menu by its full height and width, which for
+			 * 101 tags put it above the dialog and across the screen: cap it to
+			 * the field's width and 260px, then place it under the field (above
+			 * only when there is no room below) */
+			const m = this.repMenu;
+			if (m) {
+				const br = inp.getBoundingClientRect();
+				Object.assign(m.style, { maxHeight: '260px', overflowY: 'auto', overflowX: 'hidden',
+					width: Math.max(220, br.width) + 'px', boxSizing: 'border-box' });
+				for (const row of m.children) { row.style.overflow = 'hidden'; row.style.textOverflow = 'clip'; }
+				const mh = m.offsetHeight;
+				const below = br.bottom + 4 + mh <= window.innerHeight - 8;
+				m.style.top = Math.max(8, below ? br.bottom + 4 : br.top - mh - 4) + 'px';
+				m.style.left = Math.max(8, Math.min(br.left, window.innerWidth - m.offsetWidth - 8)) + 'px';
+				const cur = m.querySelector('.rs-on');
+				if (cur) m.scrollTop = Math.max(0, cur.offsetTop - 4);
+			}
 		};
+		/* the list opens as soon as the field has focus, before a key is typed */
+		panel.addEventListener('focusin', (e) => {
+			if (e.target.classList && e.target.classList.contains('rs-tb-tag')) suggest(e.target, true);
+		});
 
 		panel.addEventListener('input', (e) => {
 			if (e.target.classList && e.target.classList.contains('rs-tb-tag')) suggest(e.target);
@@ -2763,7 +2569,6 @@ class Plugin extends AppPlugin {
 				this.pcTouch(); dirty = true; render();
 				return;
 			}
-			syncFoot();
 			if (cl && cl.contains('rs-gb')) {
 				const key = e.target.getAttribute('data-k');
 				const cur = (this.globalBins || []).slice();
@@ -2771,11 +2576,20 @@ class Plugin extends AppPlugin {
 					? (cur.indexOf(key) >= 0 ? cur : cur.concat([key]))
 					: cur.filter((x) => x !== key);
 				dirty = true;
+				const gc = panel.querySelector('.rs-set-gcount');
+				if (gc) gc.textContent = groupCount();
 			}
+			syncFoot();
 		});
 		panel.addEventListener('click', (e) => {
 			const t = e.target.closest ? e.target.closest('button') : null;
 			if (t && t.classList.contains('rs-p-done')) { this.closeSettings(); return; }
+			if (t && t.hasAttribute('data-nav')) {
+				if (editIdx >= 0) commitEdit();
+				this.settingsSection = t.getAttribute('data-nav');
+				resetScroll = true;
+				render(); return;
+			}
 			/* the page-checkbox rows, before the generic button handling below:
 			 * each one carries the collection guid on the button itself, and the
 			 * pickers anchor on the very button that was clicked */
@@ -2796,6 +2610,7 @@ class Plugin extends AppPlugin {
 				this.pcOpenFieldPicker(t, g, (info && info.fields) || []);
 				return;
 			}
+			if (t && t.classList.contains('rs-pc-newx')) { this.pcNewRow = null; render(); return; }
 			if (t && t.classList.contains('rs-pc-newstat')) {
 				this.pcNewRow = { col: t.getAttribute('data-col'), key: null };
 				render(); return;
@@ -2820,14 +2635,6 @@ class Plugin extends AppPlugin {
 				this.pcTouch(); render(); return;
 			}
 			if (!t) {
-				const h = e.target.closest ? e.target.closest('.rs-p-fold') : null;
-				if (h) {
-					const id = h.getAttribute('data-sec');
-					fold[id] = !fold[id];
-					if (editIdx >= 0) commitEdit();
-					render();
-					return;
-				}
 				/* a collection row folds open; only one at a time */
 				const pr = e.target.closest ? e.target.closest('.rs-pcrow-head') : null;
 				if (pr) {
@@ -2901,7 +2708,11 @@ class Plugin extends AppPlugin {
 		 * in place rather than rebuilding the panel under the pointer */
 		const syncFoot = () => {
 			const b = panel.querySelector('.rs-p-done');
-			if (b) b.textContent = (dirty || this.pcChanged) ? 'Save' : 'Done';
+			if (!b) return;
+			const live = dirty || this.pcChanged;
+			b.textContent = live ? 'Save' : 'Done';
+			b.classList.toggle('rs-set-primary', live);
+			b.classList.toggle('rs-set-soft', !live);
 		};
 		this.pcSyncFoot = syncFoot;
 		this.pcTouch = () => {
