@@ -2403,7 +2403,10 @@ class Plugin extends AppPlugin {
 				+ '<div class="rs-set-box rs-set-table">'
 				+ '<div class="rs-set-thead rs-set-st"><span>Key</span><span>Status</span><span class="rs-set-mid">Grouped</span><span></span></div>'
 				+ rows + '</div>'
-				+ note('The arrows move a status to another key. The Done group starts folded, and a section’s ⋯ menu always overrides grouping.')
+				/* the Done sentence only while Done is grouped (his 2026-10-06 call:
+				 * it read as a rule for everyone); the change handler toggles it */
+				+ note('The arrows move a status to another key. A section’s ⋯ menu always overrides grouping.'
+					+ '<span class="rs-set-donenote"' + ((this.globalBins || []).indexOf('done') >= 0 ? '' : ' hidden') + '> The Done group starts folded.</span>')
 				+ '</div>');
 		};
 
@@ -2578,6 +2581,8 @@ class Plugin extends AppPlugin {
 				dirty = true;
 				const gc = panel.querySelector('.rs-set-gcount');
 				if (gc) gc.textContent = groupCount();
+				const dn = panel.querySelector('.rs-set-donenote');
+				if (dn) dn.hidden = (this.globalBins || []).indexOf('done') < 0;
 			}
 			syncFoot();
 		});
