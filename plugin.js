@@ -585,13 +585,13 @@ const CSS = `
  * themes and lightens it on dark ones — --color-primary-500 alone washed out
  * in light mode. The set chip keeps an accent-tinted background on hover too,
  * because the grey hover plate made the value harder to read. */
-.rs-repnow.rs-set {
+.rs-repnow.rs-settings {
 	color: color-mix(in srgb, var(--color-primary-500, #3aa37f) 60%, var(--text-color, currentColor));
 	border-color: color-mix(in srgb, var(--color-primary-500, #3aa37f) 60%, var(--text-color, currentColor));
 	background: color-mix(in srgb, var(--color-primary-500, #3aa37f) 12%, transparent);
 	font-weight: 600;
 }
-.rs-reprow:hover .rs-repnow.rs-set { background: color-mix(in srgb, var(--color-primary-500, #3aa37f) 20%, transparent); }
+.rs-reprow:hover .rs-repnow.rs-settings { background: color-mix(in srgb, var(--color-primary-500, #3aa37f) 20%, transparent); }
 /* fixed and parented to <body>: .rs-pop has overflow:hidden, so a menu inside
  * it gets guillotined at the edge (Parham hit exactly that) */
 .rs-repmenu {
@@ -785,7 +785,7 @@ html.is-dark {
 	display: flex; align-items: center; justify-content: center;
 	padding: 24px;
 }
-.rs-set {
+.rs-settings {
 	--rs-fg: var(--color-text-100, #ededed);
 	--rs-fg2: color-mix(in srgb, var(--color-text-100, #ededed) 62%, var(--cmdpal-bg-color, #212126));
 	--rs-fg3: var(--color-text-700, #8a8a8a);
@@ -807,8 +807,8 @@ html.is-dark {
 	box-shadow: 0 24px 64px rgba(0,0,0,.55);
 	font-size: 13.5px;
 }
-.rs-set * { box-sizing: border-box; }
-.rs-set .ti { font-size: 16px; line-height: 1; }
+.rs-settings * { box-sizing: border-box; }
+.rs-settings .ti { font-size: 16px; line-height: 1; }
 .rs-set-head { display: flex; align-items: flex-start; gap: 12px; padding: 18px 20px 14px; border-bottom: 1px solid var(--rs-line); flex: none; }
 .rs-set-head-icon { width: 32px; height: 32px; border-radius: var(--rs-r); flex: none; display: flex; align-items: center; justify-content: center; color: var(--rs-accent); background: color-mix(in srgb, var(--rs-accent) 12%, transparent); }
 .rs-set-head-icon .ti { font-size: 18px; }
@@ -817,11 +817,11 @@ html.is-dark {
 .rs-set-ver { margin-left: 8px; font-size: 12px; font-weight: 400; color: var(--rs-fg3); }
 .rs-set-head p { margin: 3px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--rs-fg2); }
 .rs-set-ib { width: 26px; height: 26px; flex: none; border: 0; padding: 0; border-radius: var(--rs-r); background: transparent; color: var(--rs-fg2); display: flex; align-items: center; justify-content: center; cursor: pointer; }
-.rs-set .rs-set-ib { font-size: 14px; }
+.rs-settings .rs-set-ib { font-size: 14px; }
 .rs-set-ib:hover { color: var(--rs-fg); background: var(--rs-hover); }
 .rs-set-ib.is-danger:hover { background: color-mix(in srgb, var(--enum-red-bg, #d64545) 40%, transparent); }
 .rs-set-ib.is-hidden { visibility: hidden; }
-.rs-set .rs-set-close { width: 30px; height: 30px; font-size: 16px; }
+.rs-settings .rs-set-close { width: 30px; height: 30px; font-size: 16px; }
 .rs-set-body { flex: 1; min-height: 0; display: flex; }
 .rs-set-nav { width: 196px; flex: none; padding: 12px 10px; border-right: 1px solid var(--rs-line); display: flex; flex-direction: column; gap: 2px; }
 .rs-set-nav-short { display: none; }
@@ -876,38 +876,38 @@ html.is-dark {
 .rs-set-input { width: 100%; min-width: 0; padding: 5px 8px; border: 1px solid var(--rs-edge); border-radius: var(--rs-r); background: var(--rs-field); color: var(--rs-fg); font-family: inherit; font-size: 13px; outline: none; }
 .rs-set-input:focus { border-color: color-mix(in srgb, var(--rs-accent) 60%, transparent); }
 .rs-set-claim { justify-self: start; grid-column: 2 / -1; display: inline-flex; align-items: center; gap: 6px; padding: 3px 0; border: 0; background: transparent; color: var(--rs-fg3); font: inherit; font-size: 13px; cursor: pointer; }
-.rs-set .rs-set-claim .ti { font-size: 13px; }
+.rs-settings .rs-set-claim .ti { font-size: 13px; }
 .rs-set-claim:hover { color: var(--rs-fg); }
 .rs-set-btn { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border: 1px solid var(--rs-edge); border-radius: var(--rs-r); background: transparent; color: var(--rs-fg2); font: inherit; font-size: 12.5px; cursor: pointer; white-space: nowrap; }
 .rs-set-btn:hover { color: var(--rs-fg); filter: brightness(1.15); }
-.rs-set .rs-set-btn .ti { font-size: 14px; }
+.rs-settings .rs-set-btn .ti { font-size: 14px; }
 .rs-set-btn.rs-set-soft { background: color-mix(in srgb, var(--rs-fg) 3%, transparent); color: var(--rs-fg); }
 .rs-set-btn.rs-set-primary { background: var(--rs-sel); border-color: var(--rs-sel); color: var(--rs-sel-fg); font-weight: 600; }
 .rs-set-link { display: inline-flex; align-items: center; gap: 6px; padding: 3px 0; border: 0; background: transparent; color: var(--rs-accent); font: inherit; font-size: 12.5px; cursor: pointer; }
-.rs-set .rs-set-link .ti { font-size: 13px; }
+.rs-settings .rs-set-link .ti { font-size: 13px; }
 .rs-set-link:hover { filter: brightness(1.2); }
 .rs-set-pick { display: flex; align-items: center; gap: 8px; width: 220px; flex: none; padding: 6px 10px; border: 1px solid var(--rs-edge); border-radius: var(--rs-r); background: var(--rs-field); color: var(--rs-fg); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
-.rs-set .rs-set-pick .ti { color: var(--rs-fg2); font-size: 15px; }
+.rs-settings .rs-set-pick .ti { color: var(--rs-fg2); font-size: 15px; }
 .rs-set-pick-label { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .rs-set-pick-label.is-empty { color: var(--rs-fg3); }
-.rs-set .rs-set-chev { color: var(--rs-fg3); font-size: 13px; }
+.rs-settings .rs-set-chev { color: var(--rs-fg3); font-size: 13px; }
 /* Page Checkboxes: one row per mapping, status on the left, values as chips */
 .rs-set-maprow { display: grid; grid-template-columns: 190px minmax(0, 1fr); align-items: center; column-gap: 12px; padding: 4px 14px; min-height: 34px; }
 .rs-set-thead.rs-set-maprow { min-height: 0; padding: 6px 14px; }
 .rs-set-stat { display: flex; align-items: center; gap: 8px; font: inherit; font-size: 13px; color: var(--rs-fg); text-align: left; }
-.rs-set .rs-set-stat .ti { font-size: 15px; opacity: .8; flex: none; }
+.rs-settings .rs-set-stat .ti { font-size: 15px; opacity: .8; flex: none; }
 .rs-set-stat > span:not(.ti) { flex: 1; min-width: 0; white-space: nowrap; }
 .rs-set-stat.is-fixed { color: var(--rs-fg2); padding: 5px 0; }
 button.rs-set-stat { padding: 5px 8px; margin-left: -8px; border: 1px solid var(--rs-edge); border-radius: var(--rs-r); background: var(--rs-field); cursor: pointer; }
 .rs-set-vals { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
 .rs-set-chip { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; padding: 3px 4px 3px 8px; border: 1px solid var(--rs-edge); border-radius: var(--rs-r); background: var(--rs-field); font-size: 12.5px; color: var(--rs-fg); }
-.rs-set .rs-set-chip .ti { font-size: 13px; color: var(--rs-fg2); }
+.rs-settings .rs-set-chip .ti { font-size: 13px; color: var(--rs-fg2); }
 .rs-set-chip-x { width: 18px; height: 18px; border: 0; padding: 0; border-radius: 2px; background: transparent; display: flex; align-items: center; justify-content: center; cursor: pointer; }
-.rs-set .rs-set-chip-x { font-size: 11px; color: var(--rs-fg3); }
-.rs-set .rs-set-chip-x:hover { color: var(--rs-fg); background: var(--rs-hover); }
+.rs-settings .rs-set-chip-x { font-size: 11px; color: var(--rs-fg3); }
+.rs-settings .rs-set-chip-x:hover { color: var(--rs-fg); background: var(--rs-hover); }
 .rs-set-chip.is-add { width: 26px; height: 26px; padding: 0; justify-content: center; cursor: pointer; border-style: dashed; background: transparent; }
-.rs-set .rs-set-chip.is-add { font-size: 13px; color: var(--rs-fg2); }
-.rs-set .rs-set-chip.is-add:hover { color: var(--rs-fg); }
+.rs-settings .rs-set-chip.is-add { font-size: 13px; color: var(--rs-fg2); }
+.rs-settings .rs-set-chip.is-add:hover { color: var(--rs-fg); }
 .rs-set-addrow { padding: 6px 14px 8px; }
 .rs-set-empty { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 22px 14px; border: 1px dashed color-mix(in srgb, var(--rs-fg) 12%, transparent); border-radius: var(--rs-r); font-size: 13px; color: var(--rs-fg2); text-align: center; }
 .rs-set-coll-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px 8px 14px; min-height: 42px; cursor: pointer; user-select: none; font-size: 13.5px; }
@@ -923,7 +923,7 @@ button.rs-set-stat { padding: 5px 8px; margin-left: -8px; border: 1px solid var(
    iOS does not zoom on focus */
 @media (max-width: 640px) {
 	.rs-back { padding: 0; }
-	.rs-set { width: 100%; height: 100%; max-height: none; border: 0; border-radius: 0; box-shadow: none; }
+	.rs-settings { width: 100%; height: 100%; max-height: none; border: 0; border-radius: 0; box-shadow: none; }
 	.rs-set-body { flex-direction: column; }
 	.rs-set-nav { width: auto; flex-direction: row; gap: 6px; padding: 10px 16px; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--rs-line); flex: none; }
 	.rs-set-nav button .ti, .rs-set-nav-long { display: none; }
@@ -2176,7 +2176,7 @@ class Plugin extends AppPlugin {
 		const back = document.createElement('div');
 		back.className = 'rs-back';
 		const panel = document.createElement('div');
-		panel.className = 'rs-set';
+		panel.className = 'rs-settings';
 		panel.setAttribute('role', 'dialog');
 		panel.setAttribute('aria-label', 'Supertask settings');
 		back.appendChild(panel);
