@@ -988,7 +988,15 @@ const RS_UNDO_TTL = 25000;
 function rsTouchUI() {
 	try {
 		if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) return true;
-		return window.innerWidth <= 700;
+		/* NOT WIDTH (his 2026-10-08 report): Quick Capture's ⌘⇧Y panel is a
+		 * narrow web window driven by a mouse, and the old `innerWidth <= 700`
+		 * fallback gave it the touch box. The phone fallback is Thymer's own
+		 * verdict now, and the capture panel never takes the touch shape. */
+		if (document.body && document.body.classList.contains('qc-panel-mode')) return false;
+		/* data-mobile-type alone is width (phone under 740 px, playbook), so it
+		 * also needs Thymer to call the DEVICE mobile */
+		const h = document.documentElement;
+		return h.getAttribute('data-device') === 'mobile' && h.getAttribute('data-mobile-type') === 'phone';
 	} catch (e) { return false; }
 }
 
