@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.12.1 - 2026-10-08
+
+- **The Repeat value in the date box is back to normal size.** Since v1.12.0, opening the date box on a page or task that repeats showed a huge empty green block where the rule should be. It now reads "Every year" (or whatever the rule is) on one line again.
+- **Quick Capture gets the normal date box.** Opened with `⌘⇧Y` outside Thymer, Quick Capture's narrow window made the date box switch to its phone layout although you were using a mouse. The phone layout now only appears on a touch screen or in Thymer's own phone mode.
+
 ## v1.12.0 - 2026-10-06
 
 - **Settings, redesigned.** One dialog with four pages in a side rail, **Task Status**, **Timeblocks**, **Progress Bar** and **Page Checkboxes**, in the same layout as the other plugins' settings. Shortcuts show as keys, the statuses and hashtags sit in tables with their chord on the left, and the button at the bottom reads *Save* when there is something to write and *Done* when there is not. On a narrow window it becomes a full-screen sheet with tabs.
