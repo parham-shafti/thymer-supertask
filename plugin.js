@@ -831,6 +831,9 @@ html.is-dark {
 .rs-set-content { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; padding: 20px 24px 24px; }
 .rs-set-pane { display: flex; flex-direction: column; gap: 22px; }
 .rs-set-pane h2 { margin: 0; font-size: 14px; font-weight: 600; }
+.rs-set-part { display: flex; flex-direction: column; gap: 22px; }
+.rs-set-part + .rs-set-part { border-top: 1px solid var(--rs-line); padding-top: 22px; }
+.rs-set-part h3 { margin: 0; font-size: 13.5px; font-weight: 600; }
 .rs-set-lead { margin: 4px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--rs-fg2); }
 .rs-set-group { display: flex; flex-direction: column; gap: 8px; }
 .rs-set-cap { display: flex; align-items: baseline; justify-content: space-between; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--rs-fg3); }
@@ -840,6 +843,8 @@ html.is-dark {
 .rs-set-row + .rs-set-row { border-top: 1px solid var(--rs-line); }
 .rs-set-row-text { flex: 1 1 auto; min-width: 0; }
 .rs-set-row-title { font-size: 13.5px; color: var(--rs-fg); }
+.rs-set-row-title.rs-due-coll { display: flex; align-items: center; gap: 8px; }
+.rs-settings .rs-due-coll .ti { font-size: 15px; opacity: .8; }
 .rs-set-row-sub { font-size: 12px; line-height: 1.45; color: var(--rs-fg2); margin-top: 2px; }
 .rs-set-note { margin: 0; font-size: 12px; line-height: 1.55; color: var(--rs-fg3); }
 .rs-set-note.is-warn { color: var(--rs-warn); }
@@ -1536,6 +1541,12 @@ class Plugin extends AppPlugin {
 		 * every heading and a bar on every sub-checklist are different appetites */
 		this.progressTodos = false;
 		this.indentGroups = true;
+		/* WHICH DATE A PAGE MOVES (his 2026-10-10 ask): one property NAME for
+		 * every collection, plus exceptions per collection ({guid: {f, l}},
+		 * field id and its label) for one that calls its date something else,
+		 * like his Calendar's When */
+		this.dueName = DUE_DATE_FIELD;
+		this.dueByColl = {};
 		/* filled from the plugin's own config on load; '' until then */
 		this.pluginVersion = '';
 		/* PAGE RECURRENCE rules, keyed by record guid — records have no meta-
@@ -2058,6 +2069,8 @@ class Plugin extends AppPlugin {
 		if (typeof p.progress === 'boolean') this.progressGlobal = p.progress;
 		if (typeof p.progressTodos === 'boolean') this.progressTodos = p.progressTodos;
 		if (typeof p.indentGroups === 'boolean') this.indentGroups = p.indentGroups;
+		if (typeof p.dueName === 'string' && p.dueName.trim()) this.dueName = p.dueName.trim();
+		if (p.dueByColl && typeof p.dueByColl === 'object') this.dueByColl = p.dueByColl;
 		if (p.pageCheckCfg && typeof p.pageCheckCfg === 'object') this.pageCheckCfg = p.pageCheckCfg;
 		if (p.pageCheckGlobal && typeof p.pageCheckGlobal === 'object') this.pageCheckGlobal = p.pageCheckGlobal;
 		if (Array.isArray(p.statusOrder)) this.statusOrder = rsStatusOrder(p.statusOrder);
@@ -2126,7 +2139,7 @@ class Plugin extends AppPlugin {
 	 * write-through to config for other devices. NOTE: saveConfiguration
 	 * reloads the plugin, so this is always the LAST thing an interaction does. */
 	async savePrefs() {
-		const p = { rev: Date.now(), slots: this.tbSlots, globalBins: (this.globalBins || []).slice(), progress: !!this.progressGlobal, progressTodos: !!this.progressTodos, indentGroups: this.indentGroups !== false, statusOrder: this.statusOrder || rsStatusOrder(STATUS_SHORTCUTS), pageCheckGlobalOn: !!this.pageCheckGlobalOn, pageCheckGlobal: this.pageCheckGlobal || null, pageCheckCfg: this.pageCheckCfg || {}, pageRules: this.pageRules || {}, pageDefaults: this.pageDefaults || {} };
+		const p = { rev: Date.now(), slots: this.tbSlots, globalBins: (this.globalBins || []).slice(), progress: !!this.progressGlobal, progressTodos: !!this.progressTodos, indentGroups: this.indentGroups !== false, dueName: this.dueName || DUE_DATE_FIELD, dueByColl: this.dueByColl || {}, statusOrder: this.statusOrder || rsStatusOrder(STATUS_SHORTCUTS), pageCheckGlobalOn: !!this.pageCheckGlobalOn, pageCheckGlobal: this.pageCheckGlobal || null, pageCheckCfg: this.pageCheckCfg || {}, pageRules: this.pageRules || {}, pageDefaults: this.pageDefaults || {} };
 		this.prefsRev = p.rev;
 		try { localStorage.setItem('rs_prefs', JSON.stringify(p)); } catch (e) {}
 		try {
@@ -2230,6 +2243,9 @@ class Plugin extends AppPlugin {
 			+ (count !== undefined ? '<span class="' + (cls || '') + '">' + count + '</span>' : '') + '</div>';
 		const pane = (title, lead, inner) => '<div class="rs-set-pane"><div><h2>' + title + '</h2>'
 			+ '<p class="rs-set-lead">' + lead + '</p></div>' + inner + '</div>';
+		/* a titled part inside a pane: Pages holds two (his 2026-10-10 call) */
+		const part = (title, lead, inner) => '<div class="rs-set-part"><div><h3>' + title + '</h3>'
+			+ '<p class="rs-set-lead">' + lead + '</p></div>' + inner + '</div>';
 		const note = (html, cls) => '<p class="rs-set-note' + (cls ? ' ' + cls : '') + '">' + html + '</p>';
 		const ib = (cls, icon, label, extra) => '<button type="button" class="rs-set-ib ' + cls + ' ti ' + icon + '"'
 			+ ' aria-label="' + esc(label) + '"' + (extra || '') + '></button>';
@@ -2322,7 +2338,7 @@ class Plugin extends AppPlugin {
 			return null;
 		};
 		const pagesPane = () => {
-			if (!this.pcCat) return pane('Page Checkboxes', 'Reading collections.', '');
+			if (!this.pcCat) return part('Checkboxes', 'Reading collections.', '');
 			const gl = this.pageCheckGlobal || null;
 			const on = !!this.pageCheckGlobalOn;
 			let below = '';
@@ -2379,7 +2395,7 @@ class Plugin extends AppPlugin {
 					+ note(guids.length ? 'Each collection gets its own property and statuses.' : 'Each collection gets its own property and statuses, laid out like the rule for every page.')
 					+ '</div>';
 			}
-			return pane('Page Checkboxes', 'A checkbox on page rows: lone references, live search results and transclusions. Ticking it writes the page’s status property.',
+			return part('Checkboxes', 'A checkbox on page rows: lone references, live search results and transclusions. Ticking it writes the page’s status property.',
 				'<div class="rs-set-box">'
 				+ swRow('rs-pcg-on', on, 'On Every Page', 'One rule for every collection with a property of the same name. Off, you set it up per collection.')
 				+ (on ? propRow('rs-pc-gprop', gl && gl.name, 'Property', 'Matched by name in every collection.') : '')
@@ -2457,6 +2473,40 @@ class Plugin extends AppPlugin {
 				+ '</div>');
 		};
 
+		/* DATES (his 2026-10-10 ask): which property a PAGE's date lives in.
+		 * One name for every collection, and exceptions per collection. */
+		const datesPane = () => {
+			const lead = 'The date box (' + KEY_BOX + ') and ' + KEY_NUDGE + ' move a page’s date in one date property. A line carries its own date, so this only matters for pages.';
+			if (!this.dueCat) return part('Date', lead, note('Reading collections.'));
+			const name = this.dueName || DUE_DATE_FIELD;
+			const own = this.dueByColl || {};
+			const guids = Object.keys(own).filter((g) => this.dueCat.some((c) => c.guid === g));
+			const add = '<button type="button" class="rs-set-btn rs-set-soft rs-due-add">' + ico('ti-plus') + 'Add Collection</button>';
+			const rows = guids.map((g) => {
+				const c = this.dueCat.find((x) => x.guid === g);
+				const f = c.fields.find((x) => x.id === own[g].f);
+				return '<div class="rs-set-row"><div class="rs-set-row-text"><div class="rs-set-row-title rs-due-coll">'
+					+ ico(c.icon || 'ti-folder') + '<span>' + esc(c.name) + '</span></div></div>'
+					+ '<button type="button" class="rs-set-pick rs-due-field" data-col="' + esc(g) + '">' + ico((f && f.icon) || 'ti-calendar')
+					+ '<span class="rs-set-pick-label' + (f ? '' : ' is-empty') + '">' + esc(f ? f.label : 'Choose a Property') + '</span>'
+					+ '<span class="rs-set-chev ti ti-chevron-down"></span></button>'
+					+ ib('is-danger rs-due-del', 'ti-trash', 'Remove ' + c.name, ' data-col="' + esc(g) + '"') + '</div>';
+			}).join('');
+			return part('Date', lead,
+				'<div class="rs-set-group">' + cap('Every Collection') + '<div class="rs-set-box">'
+				+ '<div class="rs-set-row has-pick"><div class="rs-set-row-text"><div class="rs-set-row-title">Date Property</div>'
+				+ '<div class="rs-set-row-sub">Used in every collection with a date property of this name.</div></div>'
+				+ '<button type="button" class="rs-set-pick rs-due-name">' + ico('ti-calendar')
+				+ '<span class="rs-set-pick-label">' + esc(name) + '</span><span class="rs-set-chev ti ti-chevron-down"></span></button></div>'
+				+ '</div></div>'
+				+ '<div class="rs-set-group">' + cap('Exceptions', guids.length ? guids.length + (guids.length === 1 ? ' collection' : ' collections') : undefined)
+				+ (guids.length
+					? '<div class="rs-set-box">' + rows + '</div><div>' + add + '</div>'
+					: '<div class="rs-set-empty"><div>No exceptions. Every collection uses ' + esc(name) + '.</div>' + add + '</div>')
+				+ note('A collection that calls its date something else gets its own property here. A page with neither has no date for the box to move.')
+				+ '</div>');
+		};
+
 		const progressPane = () => pane('Progress Bar', 'A bar counting the tasks below a line.',
 			/* two switches, one for headings and one for parent todos, because
 			 * those are different appetites: a bar on every heading is calm, a
@@ -2472,7 +2522,7 @@ class Plugin extends AppPlugin {
 			['status', 'ti-checkbox', 'Task Status', 'Status'],
 			['timeblocks', 'ti-hash', 'Timeblocks', 'Timeblocks'],
 			['progress', 'ti-percentage', 'Progress Bar', 'Progress'],
-			['pages', 'ti-file-text', 'Page Checkboxes', 'Pages'],
+			['pages', 'ti-file-text', 'Pages', 'Pages'],
 		];
 		const render = () => {
 			const section = this.settingsSection || 'status';
@@ -2481,7 +2531,7 @@ class Plugin extends AppPlugin {
 			resetScroll = false;
 			const body = section === 'timeblocks' ? timeblocksPane()
 				: section === 'progress' ? progressPane()
-				: section === 'pages' ? pagesPane()
+				: section === 'pages' ? pane('Pages', 'What Supertask does with pages, as opposed to lines: the date it moves, and a checkbox on page rows.', datesPane() + pagesPane())
 				: statusPane();
 			const live = dirty || this.pcChanged;
 			panel.innerHTML = '<div class="rs-set-head"><div class="rs-set-head-icon">' + ico('ti-square-check') + '</div>'
@@ -2607,6 +2657,46 @@ class Plugin extends AppPlugin {
 			 * each one carries the collection guid on the button itself, and the
 			 * pickers anchor on the very button that was clicked */
 			if (t && t.classList.contains('rs-pc-add')) { this.pcOpenCollPicker(t); return; }
+			/* Dates: the global name, then the per-collection exceptions */
+			if (t && t.classList.contains('rs-due-name')) {
+				const byName = new Map();
+				for (const c of (this.dueCat || [])) for (const f of c.fields) byName.set(f.label, (byName.get(f.label) || 0) + 1);
+				const items = [...byName.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+					.map(([n, k]) => ({ v: n, label: n, icon: 'ti-calendar', hint: k + (k === 1 ? ' collection' : ' collections') }));
+				this.pcMenu(t, items, this.dueName || DUE_DATE_FIELD, (n) => { this.dueName = n; dirty = true; render(); },
+					{ search: items.length > 8, searchPlaceholder: 'Search properties ...' });
+				return;
+			}
+			if (t && t.classList.contains('rs-due-add')) {
+				const own = this.dueByColl || (this.dueByColl = {});
+				const items = (this.dueCat || []).filter((c) => !own[c.guid])
+					.map((c) => ({ v: c.guid, label: c.name, icon: c.icon || 'ti-folder' }));
+				this.pcMenu(t, items, null, (g) => {
+					const c = this.dueCat.find((x) => x.guid === g);
+					if (!c || !c.fields.length) return;
+					own[g] = { f: c.fields[0].id, l: c.fields[0].label };
+					dirty = true; render();
+					/* straight on to the property, the one choice left to make */
+					const b = panel.querySelector('.rs-due-field[data-col="' + g + '"]');
+					if (b) b.click();
+				}, { search: items.length > 8, searchPlaceholder: 'Search collections ...' });
+				return;
+			}
+			if (t && t.classList.contains('rs-due-field')) {
+				const g = t.getAttribute('data-col');
+				const c = (this.dueCat || []).find((x) => x.guid === g);
+				if (!c) return;
+				const items = c.fields.map((f) => ({ v: f.id, label: f.label, icon: f.icon || 'ti-calendar' }));
+				this.pcMenu(t, items, (this.dueByColl[g] || {}).f || null, (id) => {
+					const f = c.fields.find((x) => x.id === id);
+					if (f) { this.dueByColl[g] = { f: f.id, l: f.label }; dirty = true; render(); }
+				});
+				return;
+			}
+			if (t && t.classList.contains('rs-due-del')) {
+				delete this.dueByColl[t.getAttribute('data-col')];
+				dirty = true; render(); return;
+			}
 			if (t && t.classList.contains('rs-pc-del')) {
 				const g = t.getAttribute('data-col');
 				if (g === '*') this.pageCheckGlobal = null; else delete this.pcCfg()[g];
@@ -2798,6 +2888,7 @@ class Plugin extends AppPlugin {
 		/* the catalog is async and the section renders "Reading collections…"
 		 * until it lands; the value names behind the configured chips are a
 		 * second round, so each resolves and repaints on its own */
+		this.dueCatalog().then(() => { if (this.settingsEls) render(); });
 		this.pcCatalog().then(() => {
 			if (!this.settingsEls) return;
 			/* PURGE COLLECTIONS THAT NO LONGER EXIST. His pageDefaults carried a
@@ -3028,11 +3119,24 @@ class Plugin extends AppPlugin {
 		return { kind: 'line', line };
 	}
 
+	/* The date property a PAGE's date lives in: its collection's exception
+	 * when it has one (and that field still exists), else the global name.
+	 * Returns what rec.prop() takes (a field id or a name) plus a label. */
+	dueFieldFor(rec) {
+		const name = this.dueName || DUE_DATE_FIELD;
+		try {
+			const coll = rec && rec._getRow ? (rec._getRow() || {}).pguid : null;
+			const own = coll && this.dueByColl && this.dueByColl[coll];
+			if (own && own.f && rec.prop(own.f)) return { key: own.f, label: own.l || name };
+		} catch (e) {}
+		return { key: name, label: name };
+	}
+
 	targetLabel(t) {
 		if (!t || t.err) return '';
 		if (t.kind === 'record') {
 			const rec = this.data.getRecord(t.guid);
-			return DUE_DATE_FIELD + ' · ' + ((rec && rec.getName()) || 'page');
+			return (rec ? this.dueFieldFor(rec).label : (this.dueName || DUE_DATE_FIELD)) + ' · ' + ((rec && rec.getName()) || 'page');
 		}
 		return 'Date on this line';
 	}
@@ -3165,7 +3269,7 @@ class Plugin extends AppPlugin {
 	currentDate(t) {
 		if (t.kind === 'record') {
 			const rec = this.data.getRecord(t.guid);
-			const prop = rec && rec.prop(DUE_DATE_FIELD);
+			const prop = rec && rec.prop(this.dueFieldFor(rec).key);
 			return prop ? prop.datetime() : null;
 		}
 		const seg = (t.line.segments || []).find((s) => s.type === 'datetime');
@@ -3191,7 +3295,7 @@ class Plugin extends AppPlugin {
 			const ctx = t.pageCtx || (prev
 				? { dp: prev.dp, sp: prev.sp, dv: prev.dv, dvl: prev.dvl, rv: prev.rv, rvl: prev.rvl }
 				: {});
-			const dpId = ctx.dp || DUE_DATE_FIELD;
+			const dpId = ctx.dp || this.dueFieldFor(rec).key;
 			const prop = rec.prop(dpId);
 			if (!prop) { this.toast('“' + (rec.getName() || 'That page') + '” has no ' + (ctx.dpl || dpId) + ' field.'); return false; }
 			/* UNDO covers the DATE write alone (his ask 2026-08-28). A commit
@@ -3637,9 +3741,15 @@ class Plugin extends AppPlugin {
 		const statusFields = fields.filter((f) => (f.type === 'record' || f.type === 'choice') && f.active !== false && f.id !== 'parent_page');
 		const prevPr = this.pageRuleFor(t.guid);
 		const prev = (prevPr && prevPr.rule) || null; /* a series copy seeds from the ORIGINAL's rule */
+		/* an existing rule keeps its field; otherwise the Dates setting (the
+		 * collection's exception, else the global name) comes before the
+		 * last-used choice */
+		const own = (this.dueByColl || {})[collGuid];
+		const want = String(this.dueName || DUE_DATE_FIELD).trim().toLowerCase();
 		const defDate = (prev && dateFields.find((f) => f.id === prev.dp))
+			|| (own && dateFields.find((f) => f.id === own.f))
+			|| dateFields.find((f) => String(f.label || '').trim().toLowerCase() === want)
 			|| (remembered && dateFields.find((f) => f.id === remembered.dp))
-			|| dateFields.find((f) => (f.label || '') === DUE_DATE_FIELD)
 			|| dateFields[0] || null;
 		const seed = prev || remembered || {};
 		t.pageCtx = {
@@ -5150,6 +5260,27 @@ class Plugin extends AppPlugin {
 	}
 
 	/* Collections + their fields, cheap (schema only, no records). */
+	/* Every collection with a date property of its own (not Created/Modified),
+	 * for the Dates settings. Fields keep their icon for the pickers. */
+	async dueCatalog() {
+		if (this.dueCat) return this.dueCat;
+		const out = [];
+		try {
+			for (const c of (await this.data.getAllCollections()) || []) {
+				let g = null; let conf = null;
+				try { g = c.guid || (c.getGuid && c.getGuid()); conf = c.getConfiguration && c.getConfiguration(); } catch (e) {}
+				if (!g || !conf) continue;
+				const fields = (conf.fields || []).filter((f) => f && f.active !== false && (f.type === 'datetime' || f.type === 'date')
+					&& f.id !== 'created_at' && f.id !== 'updated_at')
+					.map((f) => ({ id: f.id, label: f.label || f.name || f.id, icon: f.icon || '' }));
+				if (fields.length) out.push({ guid: g, name: conf.name || ('Collection ' + g.slice(-6)), icon: conf.icon || '', fields });
+			}
+		} catch (e) {}
+		out.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+		this.dueCat = out;
+		return out;
+	}
+
 	async pcCatalog() {
 		if (this.pcCat) return this.pcCat;
 		const out = [];
@@ -7643,12 +7774,13 @@ class Plugin extends AppPlugin {
 	async clearDate(t) {
 		if (t.kind === 'record') {
 			const rec = this.data.getRecord(t.guid);
-			const prop = rec && rec.prop(DUE_DATE_FIELD);
-			if (!prop) { this.toast('No ' + DUE_DATE_FIELD + ' field to clear.'); return; }
+			const due = rec ? this.dueFieldFor(rec) : { key: this.dueName || DUE_DATE_FIELD, label: this.dueName || DUE_DATE_FIELD };
+			const prop = rec && rec.prop(due.key);
+			if (!prop) { this.toast('No ' + due.label + ' field to clear.'); return; }
 			/* Verified live: set([]) clears. set(null) is a NO-OP that silently
 			 * leaves the old date, and setFromDate(null) sets it to NOW. */
 			prop.set([]);
-			this.toast(DUE_DATE_FIELD + ' cleared');
+			this.toast(due.label + ' cleared');
 			return;
 		}
 		const li = await this.lineItem(t.line);
