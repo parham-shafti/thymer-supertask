@@ -2416,7 +2416,7 @@ class Plugin extends AppPlugin {
 						+ (on ? ' checked' : '') + ' aria-label="Group ' + esc(b.label) + '">' : '') + '</span>'
 					+ '<span class="rs-set-acts">' + arrows('rs-so', i, TB_SLOTS) + '</span></div>';
 			}).join('');
-			return pane('Task Status',
+			return pane('Tasks',
 				KEY_STATUS(1) + ' to ' + KEY_STATUS(10) + ' set a line’s status anywhere, and the same chord again clears it. A ticked status gets its own group under every heading.',
 				'<div class="rs-set-group">' + cap('Groups') + '<div class="rs-set-box">'
 				/* Thymer draws a heading's children flush since 2026-10-02; this
@@ -2519,10 +2519,10 @@ class Plugin extends AppPlugin {
 			+ '</div>');
 
 		const NAV = [
-			['status', 'ti-checkbox', 'Task Status', 'Status'],
+			['status', 'ti-checkbox', 'Tasks', 'Tasks'],
+			['pages', 'ti-file-text', 'Pages', 'Pages'],
 			['timeblocks', 'ti-hash', 'Timeblocks', 'Timeblocks'],
 			['progress', 'ti-percentage', 'Progress Bar', 'Progress'],
-			['pages', 'ti-file-text', 'Pages', 'Pages'],
 		];
 		const render = () => {
 			const section = this.settingsSection || 'status';
