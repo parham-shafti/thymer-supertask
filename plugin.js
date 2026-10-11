@@ -1417,7 +1417,20 @@ class Plugin extends AppPlugin {
 		 * bridge first; openPicker() then finds it through dateTarget() exactly
 		 * like ⌘⇧S — so with both plugins installed there is exactly ONE
 		 * picker and ONE repeat engine on the page. */
-		try { window.__rsDateBox = { contract: 1, owner: 'supertask', open: () => { this.openPicker(); return true; } }; } catch (e) {}
+		/* pick(anchorEl, ymd, onPick): the bare calendar (End Repeat's own), for a plugin's date FIELD
+		 * (Reading's Finish By, 2026-10-11). It writes nothing: onPick gets the YMD integer, the host keeps it.
+		 * Returns a close function. */
+		try {
+			window.__rsDateBox = {
+				contract: 1, owner: 'supertask',
+				open: () => { this.openPicker(); return true; },
+				pick: (anchorEl, ymd, onPick) => {
+					const p = ymd ? { year: Math.floor(ymd / 10000), month: Math.floor(ymd / 100) % 100 - 1, day: ymd % 100 } : null;
+					this.openMiniCal(anchorEl, p, (y, m, d) => onPick(y * 10000 + (m + 1) * 100 + d));
+					return () => document.querySelectorAll('.rs-minical').forEach((m) => m.remove());
+				},
+			};
+		} catch (e) {}
 		/* The repeat ENGINE for other plugins (Habits, 2026-10-04): which days a PAGE's
 		 * rule schedules, asked of this engine instead of a fork of it. Same
 		 * shared-runtime contract as the date box: data plus the owner's callbacks,
