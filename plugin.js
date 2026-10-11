@@ -1427,7 +1427,7 @@ class Plugin extends AppPlugin {
 			const ruleOf = (guid) => { const pr = this.pageRuleFor(guid); return pr && pr.rule && pr.rule.f ? pr.rule : null; };
 			window.__rsRecur = {
 				contract: 1, owner: 'supertask',
-				rule: (guid) => { const r = ruleOf(guid); return r ? { label: recurLabel(r), f: r.f, n: r.n || 1, wd: r.wd || null, a: r.a || null, from: r.from || 'a', dp: r.dp || null, sp: r.sp || null, dv: r.dv || null, rv: r.rv || null } : null; },
+				rule: (guid) => { const r = ruleOf(guid); return r ? { label: recurLabel(r), f: r.f, n: r.n || 1, wd: r.wd || null, a: r.a || null, u: r.u || null, from: r.from || 'a', dp: r.dp || null, sp: r.sp || null, dv: r.dv || null, rv: r.rv || null } : null; },
 				next: (guid, fromYmd) => { const r = ruleOf(guid); if (!r || r.from === 'c') return null; return recurNext(r, +fromYmd) || null; },
 				matches: (guid, ymd) => { const r = ruleOf(guid); if (!r || r.from === 'c') return null; return recurMatches(r, +ymd); },
 				/* Habits switches a habit off and on (2026-10-04, stage 3). clear() removes a page's rule
@@ -1458,6 +1458,18 @@ class Plugin extends AppPlugin {
 						if (rec && rsIsTrail(r)) { try { await this.reconcilePageSeries(rec, r); } catch (e) {} }
 						await this.savePrefs(); /* LAST: it reloads the plugin */
 					})();
+					return true;
+				},
+				/* Reading (2026-10-11): create OR replace a page's rule in one step, one savePrefs. The
+				 * caller hands the whole rule, status wiring included (dp, sp, dv, rv). A forward trail is
+				 * refused: replacing one would leave its laid-out copies behind. */
+				put: (guid, rule) => {
+					if (!guid || !rule || typeof rule !== 'object' || !rule.f || rsIsTrail(rule)) return false;
+					const prev = this.pageRuleFor(guid);
+					if (prev && rsIsTrail(prev.rule)) return false;
+					if (rule.rv && rule.rv === rule.dv) return false; /* would re-advance on every edit */
+					this.pageRules[guid] = { ...JSON.parse(JSON.stringify(rule)), copies: {} };
+					(async () => { await this.savePrefs(); })(); /* LAST: it reloads the plugin */
 					return true;
 				},
 			};
