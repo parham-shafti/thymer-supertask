@@ -585,13 +585,13 @@ const CSS = `
  * themes and lightens it on dark ones — --color-primary-500 alone washed out
  * in light mode. The set chip keeps an accent-tinted background on hover too,
  * because the grey hover plate made the value harder to read. */
-.rs-repnow.rs-settings {
+.rs-repnow.rs-set {
 	color: color-mix(in srgb, var(--color-primary-500, #3aa37f) 60%, var(--text-color, currentColor));
 	border-color: color-mix(in srgb, var(--color-primary-500, #3aa37f) 60%, var(--text-color, currentColor));
 	background: color-mix(in srgb, var(--color-primary-500, #3aa37f) 12%, transparent);
 	font-weight: 600;
 }
-.rs-reprow:hover .rs-repnow.rs-settings { background: color-mix(in srgb, var(--color-primary-500, #3aa37f) 20%, transparent); }
+.rs-reprow:hover .rs-repnow.rs-set { background: color-mix(in srgb, var(--color-primary-500, #3aa37f) 20%, transparent); }
 /* fixed and parented to <body>: .rs-pop has overflow:hidden, so a menu inside
  * it gets guillotined at the edge (Parham hit exactly that) */
 .rs-repmenu {
@@ -1428,6 +1428,31 @@ class Plugin extends AppPlugin {
 					const p = ymd ? { year: Math.floor(ymd / 10000), month: Math.floor(ymd / 100) % 100 - 1, day: ymd % 100 } : null;
 					this.openMiniCal(anchorEl, p, (y, m, d) => onPick(y * 10000 + (m + 1) * 100 + d));
 					return () => document.querySelectorAll('.rs-minical').forEach((m) => m.remove());
+				},
+				/* pickField(anchorEl, value, onPick, opts): THE date box (typed natural
+				 * language, calendar, Set time) for another plugin's date FIELD (Saved
+				 * Searches' query builder, 2026-10-11, his OK on the condition that the
+				 * box itself does not change). openPicker() is untouched: the field comes
+				 * in through dateTarget(), goes out through writeDate()/clearDate(), and
+				 * only Repeat and + End date are hidden afterwards, from outside. value
+				 * and onPick's argument are {ymd, time: "HH:MM" | null}; onPick(null) is
+				 * Clear. Writes nothing. Returns a close function. */
+				pickField: (anchorEl, value, onPick, opts) => {
+					let v = null;
+					if (value && value.ymd) {
+						const y = Math.floor(value.ymd / 10000), m = Math.floor(value.ymd / 100) % 100 - 1, d = value.ymd % 100;
+						const tm = /^(\d{1,2}):(\d{2})$/.exec(value.time || '');
+						v = tm ? DateTime.dateAndTime(y, m, d, +tm[1], +tm[2], 0) : DateTime.dateOnly(y, m, d);
+					}
+					const t = { kind: 'field', anchorEl, field: { value: v, label: (opts && opts.label) || 'Date', onPick } };
+					this.fieldTarget = t;
+					try { this.openPicker(); } finally { this.fieldTarget = null; }
+					const pop = this.pop;
+					if (!pop) return () => {};
+					pop.__rsField = true;
+					for (const sel of ['.rs-repbtn', '.rs-addend']) { const el = pop.querySelector(sel); if (el) el.style.display = 'none'; }
+					this.place(pop, t);
+					return () => { if (this.pop === pop) this.closePicker(); };
 				},
 			};
 		} catch (e) {}
@@ -3109,6 +3134,7 @@ class Plugin extends AppPlugin {
 
 	/* Which date a command should act on. See the header for the order. */
 	dateTarget() {
+		if (this.fieldTarget) return this.fieldTarget;   /* pickField: another plugin's date field */
 		const ext = this.externalTarget();
 		if (ext) return ext;
 		const view = this.focusedViewRecord(this.activePanelEl());
@@ -3159,6 +3185,7 @@ class Plugin extends AppPlugin {
 
 	targetLabel(t) {
 		if (!t || t.err) return '';
+		if (t.kind === 'field') return t.field.label;
 		if (t.kind === 'record') {
 			const rec = this.data.getRecord(t.guid);
 			return (rec ? this.dueFieldFor(rec).label : (this.dueName || DUE_DATE_FIELD)) + ' · ' + ((rec && rec.getName()) || 'page');
@@ -3291,7 +3318,15 @@ class Plugin extends AppPlugin {
 
 	// ---- reading and writing a target ---------------------------------------
 
+	/* a DateTime as pickField's {ymd, time} */
+	fieldValue(dt) {
+		const p = dt.getParts();
+		return { ymd: p.year * 10000 + (p.month + 1) * 100 + p.day,
+			time: p.hours !== undefined ? String(p.hours).padStart(2, '0') + ':' + String(p.minutes || 0).padStart(2, '0') : null };
+	}
+
 	currentDate(t) {
+		if (t.kind === 'field') return t.field.value;
 		if (t.kind === 'record') {
 			const rec = this.data.getRecord(t.guid);
 			const prop = rec && rec.prop(this.dueFieldFor(rec).key);
@@ -3302,6 +3337,7 @@ class Plugin extends AppPlugin {
 	}
 
 	async writeDate(t, dt) {
+		if (t.kind === 'field') { t.field.onPick(dt ? this.fieldValue(dt) : null); return true; }   /* pickField: hand it back */
 		if (t.kind === 'record') {
 			const rec = this.data.getRecord(t.guid);
 			if (!rec) { this.toast('Could not read that page.'); return false; }
@@ -7797,6 +7833,7 @@ class Plugin extends AppPlugin {
 
 	/* Remove the date entirely, the way native's Clear does. */
 	async clearDate(t) {
+		if (t.kind === 'field') { t.field.onPick(null); return true; }   /* pickField: Clear */
 		if (t.kind === 'record') {
 			const rec = this.data.getRecord(t.guid);
 			const due = rec ? this.dueFieldFor(rec) : { key: this.dueName || DUE_DATE_FIELD, label: this.dueName || DUE_DATE_FIELD };
@@ -8203,6 +8240,14 @@ class Plugin extends AppPlugin {
 		};
 		this.showPicker = show;
 
+		/* The time switch remembers whether TYPING turned it on. Every keystroke is
+		 * parsed, and a half-typed year reads as a time: "25 aug 2" is 14:00,
+		 * "25 aug 202" is 14:02, and the finished "25 aug 2026" has no time at all,
+		 * yet the switch stayed on at 14:02 (his recording, 2026-10-11). When the
+		 * text no longer holds a time, the switch and clock go back to what they
+		 * were before the text took over (off, or the time already set); one he
+		 * set himself (switch or clock) is his and stays. */
+		let typedTime = false, beforeTyped = null;
 		input.addEventListener('input', () => {
 			const raw = input.value.trim();
 			const parsed = raw ? DateTime.parseDateTimeString(raw)
@@ -8212,9 +8257,16 @@ class Plugin extends AppPlugin {
 				if (p.year !== undefined) this.view = { y: p.year, m: p.month };
 				/* typing "monday 3pm" should flip the time switch on by itself */
 				if (p.hours !== undefined) {
+					if (raw && !typedTime) beforeTyped = { on: sw.checked, v: timeInput.value };
 					sw.checked = true;
 					timeInput.style.display = '';
 					timeInput.value = String(p.hours).padStart(2, '0') + ':' + String(p.minutes || 0).padStart(2, '0');
+					typedTime = !!raw;
+				} else if (typedTime) {
+					sw.checked = !!(beforeTyped && beforeTyped.on);
+					timeInput.style.display = sw.checked ? '' : 'none';
+					timeInput.value = (beforeTyped && beforeTyped.v) || '';
+					typedTime = false;
 				}
 			}
 			/* Always mirror what is typed. Latching the range end here is what made
@@ -8338,6 +8390,7 @@ class Plugin extends AppPlugin {
 		});
 
 		sw.addEventListener('change', () => {
+			typedTime = false;
 			timeInput.style.display = sw.checked ? '' : 'none';
 			if (sw.checked && !timeInput.value) timeInput.value = '09:00';
 			show();
@@ -8346,7 +8399,7 @@ class Plugin extends AppPlugin {
 			sw.checked = !sw.checked;
 			sw.dispatchEvent(new Event('change'));
 		});
-		timeInput.addEventListener('input', show);
+		timeInput.addEventListener('input', () => { typedTime = false; show(); });
 		/* + End date arms the mode (and shows it); clicking again disarms; once an
 		 * end is set the same control reads "− End date" and removes it — there
 		 * was previously no way to undo an end date short of retyping. */
