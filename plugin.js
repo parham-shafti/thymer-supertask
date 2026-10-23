@@ -3421,10 +3421,12 @@ class Plugin extends AppPlugin {
 					 * must not ripple into the series) */
 					if (rule.nt) rule.nb = (prev && prev.nb) || originRec.getName() || '';
 					this.pageRules[originGuid] = rule;
-					if (t.collGuid) {
+					/* an EMPTY wiring is never remembered: it became the next rule's
+					 * start for the whole collection (Important Days, 2026-10-23) */
+					if (t.collGuid && rule.sp && rule.dv) {
 						this.pageDefaults[t.collGuid] = { dp: dpId, sp: rule.sp, dv: rule.dv, dvl: rule.dvl, rv: rule.rv, rvl: rule.rvl };
 					}
-					if (!rule.sp) this.toast('No “Done when” field picked — nothing can advance this repeat; it only lays out copies.');
+					if (!rule.sp && !this.pcGlobal()) this.toast('No “Done when” field picked — nothing can advance this repeat; it only lays out copies.');
 					try { await this.reconcilePageSeries(originRec, rule); } catch (e) {}
 					this.toast(recurLabel(rule) + ' on ' + (originRec.getName() || 'page'));
 					await this.savePrefs();
@@ -3818,6 +3820,23 @@ class Plugin extends AppPlugin {
 			sp: seed.sp, spl: null, dv: seed.dv, dvl: seed.dvl,
 			rv: seed.rv, rvl: seed.rvl,
 		};
+		/* NO "DONE WHEN" OF ITS OWN: start from the Checkboxes rule for every
+		 * page (his call 2026-10-23, "Done when borde starta med det förvalda
+		 * värdet ifyllt"), the same wiring the advance falls back to. */
+		if (!t.pageCtx.sp || !t.pageCtx.dv) {
+			const gw = await this.pcGlobalRepeatWire(rec);
+			const gf = gw && statusFields.find((f) => f.id === gw.sp);
+			if (gf) {
+				const nameOf = (v) => {
+					if (!v) return null;
+					if (gf.type === 'choice') { const c = (gf.choices || []).find((x) => String(x.id) === String(v)); return c ? c.label : null; }
+					try { const r2 = this.data.getRecord(v); return r2 ? r2.getName() : null; } catch (e) { return null; }
+				};
+				t.pageCtx.sp = gw.sp;
+				t.pageCtx.dv = gw.dv; t.pageCtx.dvl = nameOf(gw.dv);
+				t.pageCtx.rv = gw.rv; t.pageCtx.rvl = nameOf(gw.rv);
+			}
+		}
 		const prevSf = t.pageCtx.sp && statusFields.find((f) => f.id === t.pageCtx.sp);
 		if (prevSf) t.pageCtx.spl = prevSf.label;
 
