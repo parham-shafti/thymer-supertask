@@ -3993,14 +3993,22 @@ class Plugin extends AppPlugin {
 		if (this.recurBusy.has(guid)) return;
 		const rec = this.data.getRecord(guid);
 		if (!rec) return;
-		const spId = rule.sp;
-		const dvVal = rule.dv;
+		let spId = rule.sp;
+		let dvVal = rule.dv;
 		const dpId = rule.dp;
 		/* legacy rules could store reset == done-when; honouring that would
 		 * re-advance on EVERY later record edit (the status never leaves the
 		 * done state) — treat it as clear */
-		const rvVal = rule.rv && rule.rv !== dvVal ? rule.rv : null;
-		if (!spId || !dvVal) return; /* advancing is ALWAYS status-driven */
+		let rvVal = rule.rv && rule.rv !== dvVal ? rule.rv : null;
+		/* A RULE WITHOUT "DONE WHEN" FOLLOWS THE CHECKBOX RULE FOR EVERY PAGE
+		 * (his call 2026-10-23: "Det borde ha varit så från dag ett"). His
+		 * "Marc Roque fyller år" was saved without the field and never moved
+		 * while Settings said every page goes by Action Status. */
+		if (!spId || !dvVal) {
+			const gw = await this.pcGlobalRepeatWire(rec);
+			if (!gw) return; /* advancing is ALWAYS status-driven */
+			spId = gw.sp; dvVal = gw.dv; rvVal = gw.rv;
+		}
 		/* LIVE read, never the event payload: a replayed event against an
 		 * already-reset record bails right here */
 		const sprop = rec.prop(spId);
@@ -4062,6 +4070,26 @@ class Plugin extends AppPlugin {
 		} finally {
 			setTimeout(() => this.recurBusy.delete(guid), 1500);
 		}
+	}
+
+	/* The Checkboxes rule for every page, read as a repeat's wiring: its
+	 * property, its first Done value, and the reset. The reset is the rule's
+	 * first In Progress value (every one of his 71 working page repeats
+	 * resets to In Progress), else Not Done; Not Done alone is In Backlog
+	 * for him, which would hide the next occurrence. Null when the switch is
+	 * off or the page's collection has no property of that name. */
+	async pcGlobalRepeatWire(rec) {
+		if (!this.pcGlobal()) return null;
+		try { await this.pcCatalog(); } catch (e) {}
+		let collGuid = null;
+		try { collGuid = rec._getRow ? (rec._getRow() || {}).pguid : null; } catch (e) {}
+		const cfg = collGuid ? this.pcGlobalFor(collGuid) : null;
+		if (!cfg || !cfg.sp) return null;
+		const map = this.pcMap(cfg);
+		const dv = (map.done || [])[0];
+		if (dv == null) return null;
+		const rv = (map.started || [])[0] != null ? map.started[0] : (map.tasks || [])[0];
+		return { sp: cfg.sp, dv: String(dv), rv: rv != null && String(rv) !== String(dv) ? String(rv) : null };
 	}
 
 	/* Duplicate a record with its property values — Reshape's proven recipe
