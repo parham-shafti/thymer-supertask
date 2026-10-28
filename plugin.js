@@ -980,6 +980,22 @@ const DOW = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
  * so without a trail nothing is created and nothing is trashed, and the commit
  * writes exactly two reversible things — the rule and the date. The boundary
  * belongs there, not around every rule. */
+/* WHAT THE REPEAT CONTROLS DECIDE, as one comparable string (his 2026-10-28 ask:
+ * moving a date moves THAT occurrence, the series stays). The anchor a, the page
+ * wiring, the copies map and a computed until (u from aftN) are left out: they are
+ * not choices in the Repeat part of the box. Keys sorted, defaults folded, so a
+ * rule rebuilt from the controls equals the stored one when nothing changed. */
+function rsRuleKey(r) {
+	if (!r || !r.f) return '';
+	const k = { f: r.f, n: r.n || 1 };
+	if (r.from === 'c') k.from = 'c';
+	for (const x of ['wd', 'md', 'mo']) if (Array.isArray(r[x]) && r[x].length) k[x] = r[x].slice().sort((a, b) => a - b);
+	if (r.ord) { k.ord = r.ord; k.od = r.od; }
+	if (r.aftN) k.aftN = r.aftN; else if (r.u) k.u = r.u;
+	if (r.tr) k.tr = r.tr;
+	if (r.nt) k.nt = r.nt;
+	return JSON.stringify(k, Object.keys(k).sort());
+}
 function rsParseRule(j) { try { return j ? JSON.parse(j) : null; } catch (e) { return null; } }
 function rsIsTrail(r) { return !!(r && r.tr === 'f'); }
 /* the raw rs_recur string on a line handle, the same read reconcile does */
@@ -989,6 +1005,170 @@ function rsRawRule(x) { try { const r = x && x._getItem ? x._getItem() : null; r
  * on the next load. Short TTL — an undo offered minutes later is a trap. */
 const RS_UNDO_KEY = 'rs_undo_v1';
 const RS_UNDO_TTL = 25000;
+
+/* PAGE RULES LIVE IN A HIDDEN STORE (his ask 2026-10-28: every repeat change
+ * blinked the titles in every panel). savePrefs reloads the plugin on every
+ * device, so the page rules and the per-collection defaults moved out of
+ * rs_prefs into a data collection of our own: one page per rule, named
+ * 'rule:<record guid>', one 'defaults' page and a 'meta' page written last by
+ * the move. Writing a page reloads nothing. The functions below are copied
+ * VERBATIM from shared/sidebar.js (TSB 9, 14, 16, 22), the store rules every
+ * plugin's data follows: hidden everywhere, text and names packed, created
+ * only on a user's action. */
+const RS_STORE = { name: 'Supertask Data', icon: 'ti-skull', field: 'Data', fieldId: 'fRSSTOREDATA01', memKey: 'rs:store' };
+const RS_STORE_META = 'meta';
+const RS_STORE_DEFAULTS = 'defaults';
+function rsStoreKey(guid) { return 'rule:' + guid; }
+// <<<COPY shared/sidebar.js (store)
+/* ── a plugin-owned hidden collection, found or (on a write only) made ────
+ * The Annotations store and Storyroom's own store both go through here. The rules (2026-10-01,
+ * after four empty "Untitled Collection"s, the hole Whiteboard 1.0.3 closed): a client lists its
+ * collections over its first seconds, so a miss at load is not absence. The guid this device
+ * remembers is tried first, then the name; a READ never creates; a WRITE that finds nothing waits
+ * the list out (5 x 1 s) before it creates, remembers the new guid at once, and saves the config
+ * on a fresh handle until the name reads back: createCollection() hands back a handle whose first
+ * save the default config lands over (Reshape's lesson). A write also gives it TSB_DATA_CODE (14). Null = not found (yet). */
+function tsbSleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+/* (16) DATA NO SEARCH CAN FIND (his rule 2026-10-14: "Allt som är data ska vara gömt"). Thymer's full-text search reads the
+ * text of every property, hidden collections included, and matches parts of words; no collection setting keeps it out.
+ * So a store's text is written as one Braille character per UTF-8 byte (U+2800 + byte: no letter or digit any query can
+ * match) behind a mark. Synchronous, because stores are read while drawing. Plain JSON still reads. The format is
+ * Recast's rcPack raw form (`\u28FF\u28FD`); Recast's own stores add deflate (`\u28FF\u28FE`), which only Recast reads. */
+const TSB_PACK = '\u28FF\u28FD';
+function tsbPacked(s) { return typeof s === 'string' && s.charCodeAt(0) === 0x28FF; }
+function tsbPack(str) {
+	const b = new TextEncoder().encode(String(str == null ? '' : str));
+	const parts = [TSB_PACK];
+	for (let i = 0; i < b.length; i += 8192) parts.push(String.fromCharCode.apply(null, Array.from(b.subarray(i, i + 8192), (x) => 0x2800 + x)));
+	return parts.join('');
+}
+/* A store page's NAME is searched too ("113JF...:plan" came up for "plan"), so it is packed the same way. tsbKeyOf reads a
+ * name either way: a page named before packing is still found, and renamed packed when it is. */
+function tsbKeyOf(name) { return tsbPacked(name) ? tsbUnpack(name) : name; }
+function tsbUnpack(s) {
+	if (!tsbPacked(s)) return s;
+	if (!s.startsWith(TSB_PACK)) return '';
+	const b = new Uint8Array(s.length - 2);
+	for (let i = 2; i < s.length; i++) b[i - 2] = s.charCodeAt(i) - 0x2800;
+	return new TextDecoder().decode(b);
+}
+/* (14) A store is hidden from searches (his rule 2026-10-08: "All data collections we create must be hidden from
+ * searches"). show_cmdpal_items:false keeps its PAGES out of the command palette, but the collection itself was still
+ * listed there (its name, Open Collection, New Page, Collection Settings, "Create 'x' in"), and with no default
+ * collection set Thymer offers the NEWEST collection that can take a page as the palette's first "Create in". Only
+ * the collection's own code drops those: getJumpToPaletteOptions() empty, supportsCreateItem() true only inside a
+ * createNewRecord() call, so the owner's createRecord() still works. Written only over Thymer's default stub, never
+ * over code someone wrote. Nothing keeps a page out of the Search panel or of Recents (playbook, 2026-10-08). */
+const TSB_DATA_CODE = '// Plugin-owned data. Kept out of the command palette, and never offered as a place to create a page.\n' +
+	'// The owning plugin\'s own createRecord still works: supportsCreateItem is true only inside that call.\n' +
+	'class Plugin extends CollectionPlugin {\n' +
+	'\tgetJumpToPaletteOptions() { return []; }\n' +
+	'\tsupportsCreateItem() { return this._dataCreate === true; }\n' +
+	'\tcreateNewRecord(...args) { this._dataCreate = true; try { return super.createNewRecord(...args); } finally { this._dataCreate = false; } }\n' +
+	'}\n';
+async function tsbDataCode(data, guid) {
+	try {
+		const api = guid ? data.getPluginByGuid(guid) : null;
+		if (!api || typeof api.saveCode !== 'function' || typeof api.getExistingCodeAndConfig !== 'function') return false;
+		const cur = String(((await Promise.resolve(api.getExistingCodeAndConfig())) || {}).code || '').trim();
+		if (cur === TSB_DATA_CODE.trim()) return true;
+		if (cur && !/^class Plugin extends CollectionPlugin \{\s*onLoad\(\) \{\s*\/\/ Put your custom code here\.\.\.\s*\}\s*\}$/.test(cur)) return false;
+		await Promise.resolve(api.saveCode(TSB_DATA_CODE));
+		return true;
+	} catch (e) { return false; }
+}
+/* ── (22) data pages stay out of every picker ──────────────────────────────
+ * Thymer's record-property picker (and group-by, kanban columns) lists EVERY page of the workspace
+ * through `getRecordsInWorkspace()` on the plugin base class, and reads no hiding flag at all
+ * (bundle 2026-10-15: `qa()` filters only deleted rows). So the host wraps that one method, once per
+ * window: rows whose collection carries `custom.tsbData` are dropped, except for the collection
+ * asking about its own rows (sidebars, descendants, move-to of a data collection keep working).
+ * The data API's `getAllRecords()` goes through `getRecordsInWorkspaceMap()`, which is left alone, so
+ * every store still reads and writes. The set of marked collections is refreshed from the config
+ * every minute and whenever a store shapes itself. */
+function tsbHideDataPages(plugin) {
+	const st = window.__tsbDataPatch || (window.__tsbDataPatch = { guids: new Set(), timer: 0, plugin: null, proto: null, orig: null });
+	st.plugin = plugin;
+	const refresh = async () => {
+		const p = st.plugin; if (!p || !p.data) return;
+		try {
+			const all = (await Promise.resolve(p.data.getAllCollections())) || [];
+			const next = new Set();
+			for (const c of all) { try { const cfg = c.getConfiguration() || {}; if (cfg.custom && cfg.custom.tsbData === true) next.add(c.getGuid()); } catch (e) {} }
+			st.guids = next;
+		} catch (e) {}
+	};
+	window.__tsbDataCollsRefresh = refresh;
+	clearInterval(st.timer); st.timer = setInterval(refresh, 60000);
+	refresh();
+	if (st.proto) return;
+	let proto = Object.getPrototypeOf(plugin);
+	while (proto && proto !== Object.prototype && !Object.prototype.hasOwnProperty.call(proto, 'getRecordsInWorkspace')) proto = Object.getPrototypeOf(proto);
+	if (!proto || proto === Object.prototype) return;
+	const orig = proto.getRecordsInWorkspace;
+	proto.getRecordsInWorkspace = function (e) {
+		const rows = orig.call(this, e);
+		try {
+			const g = window.__tsbDataPatch && window.__tsbDataPatch.guids;
+			if (!g || !g.size || !Array.isArray(rows)) return rows;
+			let own = null; try { own = this.collectionRoot && this.collectionRoot.guid; } catch (x) {}
+			return rows.filter((r) => !r || !r.pguid || r.pguid === own || !g.has(r.pguid));
+		} catch (x) { return rows; }
+	};
+	st.proto = proto; st.orig = orig;
+}
+async function tsbStoreCollection(data, spec, create) {
+	const list = async () => (await Promise.resolve(data.getAllCollections())) || [];
+	const remembered = () => { try { return localStorage.getItem(spec.memKey) || null; } catch (e) { return null; } };
+	const remember = (g) => { try { if (g) localStorage.setItem(spec.memKey, g); } catch (e) {} };
+	const guidOf = (c) => { try { return c.getGuid(); } catch (e) { return null; } };
+	const byGuid = (all, g) => (g && all.find((x) => guidOf(x) === g)) || null;
+	/* several of the name (a device running an older copy made duplicates, 2026-10-04): the one holding
+	 * the most records is the real one; first in the list only when none has any */
+	const byName = async (all) => {
+		const named = all.filter((x) => { try { return x.getName() === spec.name && !(x.isJournalPlugin && x.isJournalPlugin()); } catch (e) { return false; } });
+		if (named.length <= 1) return named[0] || null;
+		let best = named[0], bestN = -1;
+		for (const x of named) { let n = 0; try { n = ((await Promise.resolve(x.getAllRecords())) || []).length; } catch (e) {} if (n > bestN) { best = x; bestN = n; } }
+		return best;
+	};
+	const find = async () => { const all = await list(); return byGuid(all, remembered()) || (await byName(all)); };
+	/* the shape every store has: hidden everywhere, ti-skull, one text field; true when it had to change */
+	const shape = (cfg) => {
+		let dirty = false;
+		if (cfg.name !== spec.name) { cfg.name = spec.name; dirty = true; }
+		if (cfg.icon !== spec.icon) { cfg.icon = spec.icon; dirty = true; }
+		if (cfg.show_sidebar_items !== false) { cfg.show_sidebar_items = false; dirty = true; }
+		if (cfg.show_cmdpal_items !== false) { cfg.show_cmdpal_items = false; dirty = true; }
+		if (!cfg.sidebar_display_mode || cfg.sidebar_display_mode.mode !== 'hidden_completely') { cfg.sidebar_display_mode = { mode: 'hidden_completely' }; dirty = true; }
+		/* (22) the mark the picker patch reads: this collection is a plugin's data, never a page to link */
+		if (!cfg.custom || cfg.custom.tsbData !== true) { cfg.custom = Object.assign({}, cfg.custom || {}, { tsbData: true }); dirty = true; }
+		const fields = cfg.fields || [];
+		if (!fields.some((f) => f && f.label === spec.field)) {
+			fields.push({ id: spec.fieldId, label: spec.field, type: 'text', icon: 'ti-code', active: true, many: false, read_only: false });
+			cfg.fields = fields; dirty = true;
+		}
+		return dirty;
+	};
+	let c = await find();
+	for (let i = 0; i < 5 && !c && create; i++) { await tsbSleep(1000); c = await find(); }
+	if (!c && create) {
+		c = await Promise.resolve(data.createCollection());
+		if (!c) return null;
+		remember(guidOf(c));   /* found by guid from now on, even while it is still nameless */
+	}
+	if (!c) return null;
+	const guid = guidOf(c);
+	for (let i = 0; i < 25; i++) {
+		const cfg = c.getConfiguration() || {};
+		if (!shape(cfg)) { remember(guid); try { if (window.__tsbDataPatch) window.__tsbDataPatch.guids.add(guid); } catch (e) {} if (create) await tsbDataCode(data, guid); return c; }
+		await Promise.resolve(c.saveConfiguration(cfg));
+		await tsbSleep(200);
+		c = byGuid(await list(), guid) || c;
+	}
+	return null;
+}
+// >>>COPY
 
 function rsTouchUI() {
 	try {
@@ -1465,6 +1645,11 @@ class Plugin extends AppPlugin {
 			const ruleOf = (guid) => { const pr = this.pageRuleFor(guid); return pr && pr.rule && pr.rule.f ? pr.rule : null; };
 			window.__rsRecur = {
 				contract: 1, owner: 'supertask',
+				/* every page rule as stored, keyed by record guid (copies inside their
+				 * original's `copies`). Read it again on window 'rs-rules-changed'.
+				 * Since 2026-10-28 the rules live in a hidden store, and rs_prefs.pageRules
+				 * is a copy that is only refreshed when settings are saved. */
+				rules: () => JSON.parse(JSON.stringify(this.pageRules || {})),
 				rule: (guid) => { const r = ruleOf(guid); return r ? { label: recurLabel(r), f: r.f, n: r.n || 1, wd: r.wd || null, a: r.a || null, u: r.u || null, from: r.from || 'a', dp: r.dp || null, sp: r.sp || null, dv: r.dv || null, rv: r.rv || null } : null; },
 				next: (guid, fromYmd) => { const r = ruleOf(guid); if (!r || r.from === 'c') return null; return recurNext(r, +fromYmd) || null; },
 				matches: (guid, ymd) => { const r = ruleOf(guid); if (!r || r.from === 'c') return null; return recurMatches(r, +ymd); },
@@ -1473,7 +1658,7 @@ class Plugin extends AppPlugin {
 				 * saved, which drops the glyph everywhere) and hands back a copy of the stored rule; the
 				 * delete is synchronous, so a status write right after it is no longer a tick. restore()
 				 * stores such a rule again on its own anchor, and refuses when the page already has a rule
-				 * (one set in the meantime wins). Both save prefs, which reloads this plugin. */
+				 * (one set in the meantime wins). Both write the rule store, which reloads nothing. */
 				clear: (guid) => {
 					const pr = this.pageRuleFor(guid);
 					if (!pr || !pr.rule) return null;
@@ -1482,7 +1667,7 @@ class Plugin extends AppPlugin {
 					delete this.pageRules[pr.origin];
 					(async () => {
 						if (originRec) { try { await this.reconcilePageSeries(originRec, { ...JSON.parse(JSON.stringify(snap)), tr: null }); } catch (e) {} }
-						await this.savePrefs(); /* LAST: it reloads the plugin */
+						await this.saveRules([rsStoreKey(pr.origin)]);
 					})();
 					return snap;
 				},
@@ -1494,11 +1679,11 @@ class Plugin extends AppPlugin {
 					const rec = this.data.getRecord(guid);
 					(async () => {
 						if (rec && rsIsTrail(r)) { try { await this.reconcilePageSeries(rec, r); } catch (e) {} }
-						await this.savePrefs(); /* LAST: it reloads the plugin */
+						await this.saveRules([rsStoreKey(guid)]);
 					})();
 					return true;
 				},
-				/* Reading (2026-10-11): create OR replace a page's rule in one step, one savePrefs. The
+				/* Reading (2026-10-11): create OR replace a page's rule in one step, one store write. The
 				 * caller hands the whole rule, status wiring included (dp, sp, dv, rv). A forward trail is
 				 * refused: replacing one would leave its laid-out copies behind. */
 				put: (guid, rule) => {
@@ -1507,13 +1692,13 @@ class Plugin extends AppPlugin {
 					if (prev && rsIsTrail(prev.rule)) return false;
 					if (rule.rv && rule.rv === rule.dv) return false; /* would re-advance on every edit */
 					this.pageRules[guid] = { ...JSON.parse(JSON.stringify(rule)), copies: {} };
-					(async () => { await this.savePrefs(); })(); /* LAST: it reloads the plugin */
+					this.saveRules([rsStoreKey(guid)]);
 					return true;
 				},
 			};
 		} catch (e) {}
-		/* a page-rule commit reloads us through savePrefs; re-make the offer it
-		 * took with it, once the UI is there to show it */
+		/* the move to the rule store reloads us through savePrefs; re-make the
+		 * offer it took with it, once the UI is there to show it */
 		setTimeout(() => { try { this.reofferPageUndo(); } catch (e) {} }, 600);
 		/* Session cache guid → rule (or null): the desktop client's in-memory
 		 * state can DROP props.rs_recur right after our own writes to a line
@@ -1601,9 +1786,8 @@ class Plugin extends AppPlugin {
 		this.pluginVersion = '';
 		/* PAGE RECURRENCE rules, keyed by record guid — records have no meta-
 		 * property API in the sandbox (bundle-verified), so the rules live in
-		 * the plugin's synced config (custom.rs_prefs.pageRules) with the
-		 * localStorage mirror. Config writes happen ONLY on rule edits (they
-		 * reload the plugin — the documented saveConfiguration behaviour),
+		 * a hidden store of our own (RS_STORE; before its move, in
+		 * custom.rs_prefs.pageRules). Writes happen ONLY on rule edits,
 		 * never on an advance: the advance derives everything from the
 		 * record's live property values. Rule shape = the engine fields plus
 		 * dp (date field id), sp (status field id, optional), dv (the value
@@ -1613,12 +1797,19 @@ class Plugin extends AppPlugin {
 		/* last-used field choices per collection — DEFAULTS for the pickers,
 		 * never a forced wiring (his 1.2.2 verdict) */
 		this.pageDefaults = {};
+		/* the rule store (see RS_STORE): moved = rs_prefs says so; ready = read */
+		this.rulesInStore = false;
+		this.rulesReady = false;
+		this.rulesPending = new Set();
+		this.ruleRecs = new Map();
+		this.ruleBlank = [];
 		this.applySlots(this.tbSlots);
 		try {
 			const ls = JSON.parse(localStorage.getItem('rs_prefs') || 'null');
 			if (ls) this.applyPrefs(ls);
 		} catch (e) {}
 		this.loadPrefsFromConfig();
+		this.loadRuleStore();
 		this.sweepPending = new Set();
 		this.sweepArrival = new Map();
 		/* arrival sweeps skipped because the caret sat on the line — re-tried
@@ -2128,8 +2319,10 @@ class Plugin extends AppPlugin {
 		if (Array.isArray(p.globalBins)) {
 			this.globalBins = p.globalBins.filter((k) => ORDER_BINS.some((b) => b.key === k));
 		}
-		if (p.pageRules && typeof p.pageRules === 'object') this.pageRules = p.pageRules;
-		if (p.pageDefaults && typeof p.pageDefaults === 'object') this.pageDefaults = p.pageDefaults;
+		/* once the store has been read, rs_prefs' copy of the rules is Timer's, never ours */
+		if (p.rulesInStore === true) this.rulesInStore = true;
+		if (!this.rulesReady && p.pageRules && typeof p.pageRules === 'object') this.pageRules = p.pageRules;
+		if (!this.rulesReady && p.pageDefaults && typeof p.pageDefaults === 'object') this.pageDefaults = p.pageDefaults;
 		/* THE RETIRED "ON ALL PAGES" SWITCH (2026-08-15). His verdict was "den
 		 * gör ju inget" — it did, but invisibly: it put a checkbox on every
 		 * collection whose repeat wiring happened to be known, and nothing on
@@ -2189,7 +2382,7 @@ class Plugin extends AppPlugin {
 	 * write-through to config for other devices. NOTE: saveConfiguration
 	 * reloads the plugin, so this is always the LAST thing an interaction does. */
 	async savePrefs() {
-		const p = { rev: Date.now(), slots: this.tbSlots, globalBins: (this.globalBins || []).slice(), progress: !!this.progressGlobal, progressTodos: !!this.progressTodos, indentGroups: this.indentGroups !== false, dueName: this.dueName || DUE_DATE_FIELD, dueByColl: this.dueByColl || {}, statusOrder: this.statusOrder || rsStatusOrder(STATUS_SHORTCUTS), pageCheckGlobalOn: !!this.pageCheckGlobalOn, pageCheckGlobal: this.pageCheckGlobal || null, pageCheckCfg: this.pageCheckCfg || {}, pageRules: this.pageRules || {}, pageDefaults: this.pageDefaults || {} };
+		const p = { rev: Date.now(), slots: this.tbSlots, globalBins: (this.globalBins || []).slice(), progress: !!this.progressGlobal, progressTodos: !!this.progressTodos, indentGroups: this.indentGroups !== false, dueName: this.dueName || DUE_DATE_FIELD, dueByColl: this.dueByColl || {}, statusOrder: this.statusOrder || rsStatusOrder(STATUS_SHORTCUTS), pageCheckGlobalOn: !!this.pageCheckGlobalOn, pageCheckGlobal: this.pageCheckGlobal || null, pageCheckCfg: this.pageCheckCfg || {}, pageRules: this.pageRules || {}, pageDefaults: this.pageDefaults || {}, rulesInStore: !!this.rulesInStore };
 		this.prefsRev = p.rev;
 		try { localStorage.setItem('rs_prefs', JSON.stringify(p)); } catch (e) {}
 		try {
@@ -2202,6 +2395,204 @@ class Plugin extends AppPlugin {
 				await me.saveConfiguration(conf);
 			}
 		} catch (e) {}
+	}
+
+	/* ── THE RULE STORE (see RS_STORE) ───────────────────────────────────
+	 * Before the move a device reads the rules from rs_prefs exactly as it
+	 * always did, and the first rule saved from the date box makes the move:
+	 * every rule and the defaults into the store, 'meta' last, then ONE
+	 * savePrefs that sets rulesInStore (the last reload a rule costs). After
+	 * it, rs_prefs.pageRules is only a copy for Timer, which still reads it
+	 * there; savePrefs keeps it current whenever settings save anyway. A
+	 * device that knows the move happened waits for the store: until it has
+	 * been read, nothing is written to it and what waited is kept in
+	 * rulesPending (golden rule 9: not found yet is not empty). */
+	ruleStoreColl(create) {
+		if (this.ruleColl && !create) return Promise.resolve(this.ruleColl);
+		/* a write asking while a read is looking waits for that read, then makes it */
+		if (this.ruleCollBusy) return create && !this.ruleCollBusyCreate ? this.ruleCollBusy.then((c) => c || this.ruleStoreColl(true)) : this.ruleCollBusy;
+		this.ruleCollBusyCreate = !!create;
+		this.ruleCollBusy = tsbStoreCollection(this.data, RS_STORE, !!create).then((c) => {
+			this.ruleCollBusy = null;
+			if (c) { this.ruleColl = c; try { this.ruleStoreGuid = c.getGuid(); } catch (e) {} }
+			return c || null;
+		}).catch(() => { this.ruleCollBusy = null; return null; });
+		return this.ruleCollBusy;
+	}
+
+	/* the store's text field, unpacked; '' for a blank page */
+	ruleStoreText(rec) {
+		try { const p = rec.prop(RS_STORE.field); return tsbUnpack((p && p.text && p.text()) || '') || ''; } catch (e) { return ''; }
+	}
+
+	/* Looks for the store at load and keeps looking while this device knows
+	 * the rules are there (a client lists its collections over its first
+	 * seconds); before the move a few looks are enough. A read never creates. */
+	async loadRuleStore() {
+		for (let i = 0; !this.dead && !this.rulesReady; i++) {
+			const c = await this.ruleStoreColl(false);
+			if (c) { try { tsbHideDataPages(this); } catch (e) {} await this.readRuleStore(c); return; }
+			if (!this.rulesInStore && i >= 4) return;
+			await tsbSleep(i < 10 ? 2000 : 30000);
+		}
+	}
+
+	/* Reads every store page. True when the move is complete ('meta' there):
+	 * the rules and defaults are taken from the store, and anything changed
+	 * here while it was unread is kept and written. False leaves the rules
+	 * alone (the store is empty, or a move was cut short). */
+	async readRuleStore(c) {
+		let recs = [];
+		try { recs = (await Promise.resolve(c.getAllRecords())) || []; } catch (e) { return false; }
+		const rules = {}, map = new Map(), blank = [];
+		let defaults = null, meta = false;
+		for (const r of recs) {
+			let key = '';
+			try { key = tsbKeyOf(r.getName() || ''); } catch (e) {}
+			const raw = this.ruleStoreText(r);
+			if (!key) continue;
+			if (key === RS_STORE_META) { meta = true; map.set(key, r.guid); continue; }
+			if (!raw) { blank.push(r.guid); continue; }
+			if (map.has(key)) continue; /* two devices made the same page: the first one counts */
+			let v = null;
+			try { v = JSON.parse(raw); } catch (e) {}
+			if (!v || typeof v !== 'object') continue;
+			map.set(key, r.guid);
+			if (key === RS_STORE_DEFAULTS) defaults = v;
+			else if (key.startsWith('rule:')) rules[key.slice(5)] = v;
+		}
+		this.ruleRecs = map;
+		this.ruleBlank = blank;
+		if (!meta) return false;
+		for (const k of this.rulesPending) {
+			if (k === RS_STORE_DEFAULTS) continue;
+			const g = k.slice(5);
+			if (this.pageRules && this.pageRules[g]) rules[g] = this.pageRules[g]; else delete rules[g];
+		}
+		this.pageRules = rules;
+		if (!this.rulesPending.has(RS_STORE_DEFAULTS)) this.pageDefaults = defaults || {};
+		this.rulesInStore = true;
+		this.rulesReady = true;
+		this.rulesChanged();
+		if (this.rulesPending.size) this.flushRules();
+		return true;
+	}
+
+	/* Every place that changes a rule ends here with the keys it touched
+	 * (rsStoreKey(guid), RS_STORE_DEFAULTS). fromUser: only the date box may
+	 * make the move; a background change before it saves prefs as before. */
+	saveRules(keys, fromUser) {
+		for (const k of keys) if (k) this.rulesPending.add(k);
+		this.rulesChanged();
+		return this.flushRules(fromUser);
+	}
+
+	async flushRules(fromUser) {
+		if (!this.rulesReady) {
+			if (this.rulesInStore) return; /* readRuleStore writes what waited */
+			if (fromUser) return this.migrateRules();
+			this.rulesPending.clear();
+			return this.savePrefs(); /* LAST: it reloads the plugin */
+		}
+		if (this.rulesFlushing) { this.rulesFlushAgain = true; return this.rulesFlushing; }
+		this.rulesFlushing = (async () => {
+			do {
+				this.rulesFlushAgain = false;
+				const keys = Array.from(this.rulesPending);
+				this.rulesPending.clear();
+				for (const k of keys) {
+					const v = k === RS_STORE_DEFAULTS ? this.pageDefaults : (this.pageRules || {})[k.slice(5)];
+					const raw = v && (k !== RS_STORE_DEFAULTS || Object.keys(v).length) ? JSON.stringify(v) : '';
+					try { await this.writeRulePage(k, raw); } catch (e) { this.rulesPending.add(k); }
+				}
+			} while (this.rulesFlushAgain);
+		})().finally(() => { this.rulesFlushing = null; });
+		return this.rulesFlushing;
+	}
+
+	/* One store page written. A rule that is gone blanks its page, and the
+	 * next new rule takes a blank page over (renamed) before a page is made:
+	 * nothing is ever trashed, and the store does not grow with every
+	 * backwards-trail tick. Pages are looked up by guid at the moment of
+	 * writing, never held (a held record reads back what it was written with). */
+	async writeRulePage(key, raw) {
+		const had = this.ruleRecs.get(key);
+		let rec = had ? this.data.getRecord(had) : null;
+		if (!rec && !raw) return;
+		if (!rec) {
+			while (!rec && this.ruleBlank.length) rec = this.data.getRecord(this.ruleBlank.shift());
+			if (rec) {
+				rec.prop('Title').set([tsbPack(key)]);
+			} else {
+				const c = await this.ruleStoreColl(false);
+				let g = null;
+				try { g = c && c.createRecord(tsbPack(key)); } catch (e) {}
+				/* a new record is not writable the same tick */
+				for (let i = 0; i < 20 && g && !rec; i++) {
+					rec = this.data.getRecord(g);
+					if (!rec) await tsbSleep(120);
+				}
+				if (!rec) throw new Error('store page not made');
+				if (rec.getName() !== tsbPack(key)) rec.prop('Title').set([tsbPack(key)]);
+			}
+			this.ruleRecs.set(key, rec.guid);
+		}
+		rec.prop(RS_STORE.field).set(raw ? tsbPack(raw) : '');
+		if (!raw) { this.ruleRecs.delete(key); this.ruleBlank.push(rec.guid); }
+	}
+
+	/* THE MOVE, made by the first rule saved in the date box. The store is
+	 * found or made (a user's action, golden rule 11). A store another device
+	 * already filled wins: its rules are read and only this commit's change
+	 * goes on top. Otherwise every rule and the defaults are written, 'meta'
+	 * last, so a move cut short is simply made again. */
+	migrateRules() {
+		if (this.rulesMigrating) return this.rulesMigrating;
+		this.rulesMigrating = (async () => {
+			const c = await this.ruleStoreColl(true);
+			if (!c) { this.rulesPending.clear(); return this.savePrefs(); }
+			if (!(await this.readRuleStore(c))) {
+				for (const g of Object.keys(this.pageRules || {})) this.rulesPending.add(rsStoreKey(g));
+				this.rulesPending.add(RS_STORE_DEFAULTS);
+				this.rulesReady = true;
+				await this.flushRules();
+				if (this.rulesPending.size) { this.rulesReady = false; return; } /* a page failed: no meta, made again next time */
+				await this.writeRulePage(RS_STORE_META, JSON.stringify({ v: 1, at: Date.now() }));
+				this.rulesInStore = true;
+			} else if (this.rulesFlushing) await this.rulesFlushing;
+			await this.savePrefs(); /* LAST: rulesInStore out to every device, the last reload */
+		})().finally(() => { this.rulesMigrating = null; });
+		return this.rulesMigrating;
+	}
+
+	/* A store page changed. Our own writes are local and already in memory;
+	 * another device's change is read into it. True when the event was ours. */
+	onRuleStoreEvent(ev) {
+		if (!this.rulesReady || !this.ruleStoreGuid || !ev || !ev.recordGuid) return false;
+		let rec = null, pg = null;
+		try { rec = this.data.getRecord(ev.recordGuid); pg = rec && rec._getRow ? (rec._getRow() || {}).pguid : null; } catch (e) {}
+		if (!pg || pg !== this.ruleStoreGuid) return false;
+		if (ev.source && ev.source.isLocal) return true;
+		let key = '';
+		try { key = tsbKeyOf(rec.getName() || ''); } catch (e) {}
+		/* a page taken over for another rule: forget what it held before */
+		for (const [k, g] of this.ruleRecs) if (g === rec.guid && k !== key) this.ruleRecs.delete(k);
+		const raw = this.ruleStoreText(rec);
+		let v = null;
+		try { v = raw ? JSON.parse(raw) : null; } catch (e) { return true; }
+		if (v) { this.ruleRecs.set(key, rec.guid); this.ruleBlank = this.ruleBlank.filter((g) => g !== rec.guid); }
+		else { this.ruleRecs.delete(key); if (this.ruleBlank.indexOf(rec.guid) < 0) this.ruleBlank.push(rec.guid); }
+		if (key === RS_STORE_DEFAULTS) this.pageDefaults = v || {};
+		else if (key.startsWith('rule:')) { if (v) this.pageRules[key.slice(5)] = v; else delete this.pageRules[key.slice(5)]; }
+		this.rulesChanged();
+		return true;
+	}
+
+	/* what a reload used to do for a rule change: the line and checkbox
+	 * glyphs are redrawn, and other plugins hear it (__rsRecur.rules()) */
+	rulesChanged() {
+		try { this.scheduleRepeatRefresh(); } catch (e) {}
+		try { window.dispatchEvent(new CustomEvent('rs-rules-changed')); } catch (e) {}
 	}
 
 	/* Every hashtag currently loaded in the workspace, for the tag picker. */
@@ -3376,11 +3767,13 @@ class Plugin extends AppPlugin {
                                 collGuid: t.collGuid || null, prevRule: prevRuleSnap, prevDefaults,
 			};
 			prop.set(dt.value());
-			const undoRec = fanOut ? null : () => { this.applyPageUndo(undoState, !!t.ruleTouched); };
-			/* When a rule is touched the toast below dies with the plugin —
-			 * savePrefs() reloads it — so the offer is parked and re-made on
-			 * the next load instead. */
-			if (!fanOut && t.ruleTouched) {
+			/* read NOW: the flag is cleared below, before the toast can be clicked */
+			const undoRule = !!t.ruleTouched;
+			const undoRec = fanOut ? null : () => { this.applyPageUndo(undoState, undoRule); };
+			/* When a rule is touched before the move to the store, the toast
+			 * below dies with the plugin (the move's savePrefs() reloads it), so
+			 * the offer is parked and re-made on the next load instead. */
+			if (!fanOut && t.ruleTouched && !this.rulesInStore) {
 				try {
 					localStorage.setItem(RS_UNDO_KEY, JSON.stringify({
 						ts: Date.now(), msg: (rec.getName() || 'Page') + ' → ' + this.label(dt), state: undoState,
@@ -3388,8 +3781,8 @@ class Plugin extends AppPlugin {
 				} catch (e) {}
 			}
 			this.toast((rec.getName() || 'Page') + ' → ' + this.label(dt), undoRec);
-			/* the RULE rides in pageRules (synced config). savePrefs is the
-			 * LAST act — saveConfiguration reloads the plugin. */
+			/* the RULE rides in pageRules, written to the rule store (RS_STORE);
+			 * only the move into it saves prefs, LAST, since that reloads. */
 			if (t.ruleTouched) {
 				t.ruleTouched = false;
 				const rp = dt.getParts();
@@ -3410,8 +3803,10 @@ class Plugin extends AppPlugin {
 					 * every later record edit (the status never leaves the done
 					 * state) — refuse the combination, fall back to clearing */
 					const rvSafe = ctx.rv && ctx.rv !== (ctx.dv || null) ? ctx.rv : null;
+					/* only the wiring changed: the series keeps its anchor and end */
+					const ruleChanged = t.ruleChanged !== false || !prev;
 					const rule = {
-						...this.finalizeRule(t.pendingRule, ymd), dp: dpId,
+						...(ruleChanged ? this.finalizeRule(t.pendingRule, ymd) : { ...prev }), dp: dpId,
 						sp: ctx.sp || null, dv: ctx.dv || null, dvl: ctx.dvl || null,
 						rv: rvSafe, rvl: rvSafe ? ctx.rvl || null : null,
 						copies: (prev && prev.copies) || {},
@@ -3423,18 +3818,21 @@ class Plugin extends AppPlugin {
 					this.pageRules[originGuid] = rule;
 					/* an EMPTY wiring is never remembered: it became the next rule's
 					 * start for the whole collection (Important Days, 2026-10-23) */
+					const keys = [rsStoreKey(originGuid)];
 					if (t.collGuid && rule.sp && rule.dv) {
-						this.pageDefaults[t.collGuid] = { dp: dpId, sp: rule.sp, dv: rule.dv, dvl: rule.dvl, rv: rule.rv, rvl: rule.rvl };
+						const def = { dp: dpId, sp: rule.sp, dv: rule.dv, dvl: rule.dvl, rv: rule.rv, rvl: rule.rvl };
+						if (JSON.stringify(def) !== JSON.stringify(this.pageDefaults[t.collGuid] || null)) keys.push(RS_STORE_DEFAULTS);
+						this.pageDefaults[t.collGuid] = def;
 					}
 					if (!rule.sp && !this.pcGlobal()) this.toast('No “Done when” field picked — nothing can advance this repeat; it only lays out copies.');
-					try { await this.reconcilePageSeries(originRec, rule); } catch (e) {}
+					if (ruleChanged) { try { await this.reconcilePageSeries(originRec, rule); } catch (e) {} }
 					this.toast(recurLabel(rule) + ' on ' + (originRec.getName() || 'page'));
-					await this.savePrefs();
+					await this.saveRules(keys, true);
 				} else if (prev) {
 					try { await this.reconcilePageSeries(originRec, { ...prev, tr: null }); } catch (e) {}
 					delete this.pageRules[originGuid];
 					this.toast('Repeat removed');
-					await this.savePrefs();
+					await this.saveRules([rsStoreKey(originGuid)], true);
 				}
 			}
 			return true;
@@ -3894,6 +4292,7 @@ class Plugin extends AppPlugin {
 			this.openSelMenu(dSel, dateFields.map((f) => [f.id, f.label || f.id]), t.pageCtx.dp, (v) => {
 				const f = dateFields.find((x) => x.id === v);
 				t.pageCtx.dp = v; t.pageCtx.dpl = f && f.label;
+				t.wireTouched = true;
 				paint();
 			});
 		});
@@ -3902,6 +4301,7 @@ class Plugin extends AppPlugin {
 			this.openSelMenu(sSel, items, t.pageCtx.sp || '', (v) => {
 				const f = statusFields.find((x) => x.id === v);
 				t.pageCtx.sp = v || null; t.pageCtx.spl = f && f.label;
+				t.wireTouched = true;
 				paint();
 			});
 		});
@@ -3912,6 +4312,7 @@ class Plugin extends AppPlugin {
 			this.openSelMenu(vSel, items, t.pageCtx.dv || '', (v) => {
 				const it = items.find((x) => x[0] === v);
 				t.pageCtx.dv = v; t.pageCtx.dvl = it && it[1];
+				t.wireTouched = true;
 				/* reset-to must never equal done-when (self-retrigger) */
 				if (t.pageCtx.rv === v) { t.pageCtx.rv = null; t.pageCtx.rvl = null; }
 				paint();
@@ -3925,6 +4326,7 @@ class Plugin extends AppPlugin {
 			this.openSelMenu(rSel, items, t.pageCtx.rv || '', (v) => {
 				const it = items.find((x) => x[0] === v);
 				t.pageCtx.rv = v || null; t.pageCtx.rvl = v ? (it && it[1]) : null;
+				t.wireTouched = true;
 				paint();
 			});
 		});
@@ -3993,6 +4395,7 @@ class Plugin extends AppPlugin {
 		/* any record change can flip a checkbox somewhere on screen — the
 		 * cycle is debounced, so this is cheap */
 		this.scheduleRepeatRefresh();
+		if (this.onRuleStoreEvent(ev)) return;
 		const guid = ev && ev.recordGuid;
 		const rule = guid && this.pageRules && this.pageRules[guid];
 		if (!rule) return;
@@ -4004,9 +4407,10 @@ class Plugin extends AppPlugin {
 		 * simply had not opened. Series copies are retired with the origin. */
 		if (ev.trashed === true) {
 			const copies = rule.copies || {};
-			for (const y in copies) { if (copies[y]) delete this.pageRules[copies[y]]; }
+			const keys = [rsStoreKey(guid)];
+			for (const y in copies) { if (copies[y]) { delete this.pageRules[copies[y]]; keys.push(rsStoreKey(copies[y])); } }
 			delete this.pageRules[guid];
-			await this.savePrefs(); /* LAST — reloads the plugin */
+			await this.saveRules(keys);
 			return;
 		}
 		if (this.recurBusy.has(guid)) return;
@@ -4052,7 +4456,7 @@ class Plugin extends AppPlugin {
 				if (rule.tr !== 'f' && rule.u) {
 					delete this.pageRules[guid];
 					this.toast('Repeat finished for ' + (rec.getName() || 'page'));
-					await this.savePrefs(); /* LAST — reloads the plugin */
+					await this.saveRules([rsStoreKey(guid)]);
 				}
 				return;
 			}
@@ -4079,7 +4483,7 @@ class Plugin extends AppPlugin {
 				delete this.pageRules[guid];
 				if (dst.guid) this.pageRules[dst.guid] = { ...rule };
 				this.toast('Done stays · next: ' + this.label(dt) + '  ·  ' + recurLabel(rule));
-				await this.savePrefs(); /* LAST — reloads the plugin */
+				await this.saveRules([rsStoreKey(guid), rsStoreKey(dst.guid)]);
 				return;
 			}
 			dprop.set(dt.value());
@@ -4163,7 +4567,7 @@ class Plugin extends AppPlugin {
 					if (st.prevDefaults) this.pageDefaults[st.collGuid] = st.prevDefaults;
 					else delete this.pageDefaults[st.collGuid];
 				}
-				await this.savePrefs();
+				await this.saveRules([rsStoreKey(st.originGuid), st.collGuid ? RS_STORE_DEFAULTS : null], true);
 			}
 			this.toast('Undone.');
 		} catch (e) {}
@@ -8185,7 +8589,11 @@ class Plugin extends AppPlugin {
 			committed = true;
 			/* capture the repeat rule BEFORE closePicker clears the picker state */
 			t.pendingRule = this.rule ? { ...this.rule } : null;
-			t.ruleTouched = true;
+			/* ONLY when something in the Repeat part changed (his 2026-10-28
+			 * ask, Apple's "this event only"): picking a day writes the date and
+			 * leaves the rule, its anchor and a forward trail's copies alone */
+			t.ruleChanged = rsRuleKey(this.rule) !== this.ruleSnap;
+			t.ruleTouched = t.ruleChanged || !!t.wireTouched;
 			this.closePicker();
 			this.writeDate(t, dt).catch((e) => this.toast('Failed: ' + ((e && e.message) || e)));
 		};
@@ -8503,6 +8911,9 @@ class Plugin extends AppPlugin {
 		const pageSeries = t.kind === 'record' ? this.pageRuleFor(t.guid) : null;
 		this.rule = t.kind === 'line' ? this.readRule(t.line)
 			: (pageSeries ? { ...pageSeries.rule } : null);
+		/* what the rule was when the box opened: commit compares against it */
+		this.ruleSnap = rsRuleKey(this.rule);
+		t.wireTouched = false;
 		/* Name Copies: the template survives syncCustom's from-controls rebuild
 		 * as picker state, not as a control value. nameBase feeds the popover's
 		 * live preview (the {title} stand-in). */

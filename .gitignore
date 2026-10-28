@@ -4,3 +4,4 @@ CHANGELOG-DEV.md
 assets/*.mp4
 server-config.json
 tools/
+backups/
