@@ -247,10 +247,27 @@ function recurAddInterval(ymd, f, n) {
 function recurAdvance(rule, dueYmd, todayYmd) {
 	if (!rule || !rule.f) return 0;
 	const n = Math.max(1, rule.n || 1);
+	/* a moved occurrence counts from the series date it stands for (rsMoveRule) */
+	const base = rule.mv && rule.mv.t === dueYmd ? rule.mv.f : dueYmd;
 	const next = rule.from === 'c'
 		? recurAddInterval(todayYmd, rule.f, n)
-		: recurNext(rule, Math.max(dueYmd || 0, todayYmd || 0));
+		: recurNext(rule, Math.max(base || 0, todayYmd || 0));
 	return rule.u && next > rule.u ? 0 : next;
+}
+
+/* A MOVED OCCURRENCE remembers the series date it stands for (his ruling
+ * 2026-10-28): a yearly 2 Nov moved to 30 Oct and ticked comes back 2 Nov NEXT
+ * year, not three days later. mv = {f: the series date, t: the date it was
+ * moved to}; a second move keeps f, a move back home drops it, and it only
+ * counts while the date still reads t. Null when nothing is to be stored:
+ * no move, "from completion" (it counts from the tick anyway), a forward
+ * trail (it never advances). */
+function rsMoveRule(rule, oldYmd, newYmd) {
+	if (!rule || !rule.f || rule.from === 'c' || rule.tr === 'f' || !oldYmd || !newYmd || oldYmd === newYmd) return null;
+	const from = rule.mv && rule.mv.t === oldYmd ? rule.mv.f : oldYmd;
+	const r = { ...rule };
+	if (from === newYmd) delete r.mv; else r.mv = { f: from, t: newYmd };
+	return r;
 }
 
 /* Every occurrence STRICTLY AFTER fromYmd up to and including the rule's
@@ -3766,6 +3783,10 @@ class Plugin extends AppPlugin {
 				guid: t.guid, dpId, prevDT, originGuid,
                                 collGuid: t.collGuid || null, prevRule: prevRuleSnap, prevDefaults,
 			};
+			/* the move itself, for rsMoveRule: the day it was on and the day it goes to */
+			const ymdOf = (x) => { const q = x && x.getParts(); return q && q.year !== undefined ? q.year * 10000 + (q.month + 1) * 100 + q.day : 0; };
+			const wasYmd = (() => { try { return ymdOf(prop.datetime()); } catch (e) { return 0; } })();
+			const moved = originGuid === t.guid && !t.ruleChanged ? rsMoveRule(prev, wasYmd, ymdOf(dt)) : null;
 			prop.set(dt.value());
 			/* read NOW: the flag is cleared below, before the toast can be clicked */
 			const undoRule = !!t.ruleTouched;
@@ -3806,7 +3827,7 @@ class Plugin extends AppPlugin {
 					/* only the wiring changed: the series keeps its anchor and end */
 					const ruleChanged = t.ruleChanged !== false || !prev;
 					const rule = {
-						...(ruleChanged ? this.finalizeRule(t.pendingRule, ymd) : { ...prev }), dp: dpId,
+						...(ruleChanged ? this.finalizeRule(t.pendingRule, ymd) : (moved || { ...prev })), dp: dpId,
 						sp: ctx.sp || null, dv: ctx.dv || null, dvl: ctx.dvl || null,
 						rv: rvSafe, rvl: rvSafe ? ctx.rvl || null : null,
 						copies: (prev && prev.copies) || {},
@@ -3834,6 +3855,9 @@ class Plugin extends AppPlugin {
 					this.toast('Repeat removed');
 					await this.saveRules([rsStoreKey(originGuid)], true);
 				}
+			} else if (moved) {
+				this.pageRules[originGuid] = moved;
+				await this.saveRules([rsStoreKey(originGuid)], true);
 			}
 			return true;
 		}
@@ -3859,6 +3883,9 @@ class Plugin extends AppPlugin {
 		 * fresh insert, and then only if the date ends up last; when a hashtag
 		 * follows, go to the end of the line so typing carries on naturally. */
 		let move = null;
+		/* the day the line was on, for rsMoveRule */
+		let wasYmd = 0;
+		if (i >= 0) { try { const q = new DateTime(segs[i].text).getParts(); if (q.year !== undefined) wasYmd = q.year * 10000 + (q.month + 1) * 100 + q.day; } catch (e) {} }
 		if (i >= 0) {
 			/* CHANGING a date must not grow a blank either — this is the
 			 * "byter datum" half of his report. The caret is restored to where
@@ -3905,6 +3932,10 @@ class Plugin extends AppPlugin {
 				seriesRule = rule; /* null included — that reconciles the series away */
 			}
 			t.ruleTouched = false;
+		} else if (!(t.line.props && t.line.props.rs_series)) {
+			const q = dt.getParts();
+			const moved = rsMoveRule(rsParseRule(rsRawRule(li)), wasYmd, q.year * 10000 + (q.month + 1) * 100 + q.day);
+			if (moved) await this.writeRule(li, moved);
 		}
 		await li.setSegments(segs);
 		if (seriesOrigin) {
@@ -4481,7 +4512,7 @@ class Plugin extends AppPlugin {
 				const sp2 = dst.prop(spId);
 				if (sp2) { try { await this.setPagePropValue(sp2, sdef.type, rvVal); } catch (e2) {} }
 				delete this.pageRules[guid];
-				if (dst.guid) this.pageRules[dst.guid] = { ...rule };
+				if (dst.guid) { const { mv, ...carry } = rule; this.pageRules[dst.guid] = carry; }
 				this.toast('Done stays · next: ' + this.label(dt) + '  ·  ' + recurLabel(rule));
 				await this.saveRules([rsStoreKey(guid), rsStoreKey(dst.guid)]);
 				return;
@@ -9541,6 +9572,7 @@ class Plugin extends AppPlugin {
 	finalizeRule(pending, anchorYmd) {
 		if (!pending) return null;
 		const rule = { ...pending, a: anchorYmd };
+		delete rule.mv; /* a new anchor: nothing was moved off it */
 		if (rule.aftN) {
 			const nth = recurNthOccurrence(rule, anchorYmd, rule.aftN);
 			if (nth) rule.u = nth;

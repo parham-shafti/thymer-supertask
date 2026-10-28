@@ -9,8 +9,8 @@ if (start < 0 || end < 0) { console.error('engine markers not found in plugin.js
 const engine = src.slice(start, end);
 
 const scope = {};
-new Function('S', engine + '\nObject.assign(S,{recurNext,recurMatches,recurLabel,recurOrdinalDay,recurAdvance,recurAddInterval,recurOccurrences,recurNthOccurrence,recurCopyName,recurIsoWeek});')(scope);
-const { recurNext, recurLabel, recurAdvance, recurOccurrences, recurNthOccurrence, recurCopyName, recurIsoWeek } = scope;
+new Function('S', engine + '\nObject.assign(S,{recurNext,recurMatches,recurLabel,recurOrdinalDay,recurAdvance,recurAddInterval,recurOccurrences,recurNthOccurrence,recurCopyName,recurIsoWeek,rsMoveRule});')(scope);
+const { recurNext, recurLabel, recurAdvance, recurOccurrences, recurNthOccurrence, recurCopyName, recurIsoWeek, rsMoveRule } = scope;
 
 let fails = 0;
 const check = (name, got, want) => {
@@ -117,6 +117,25 @@ check('iso week: Jan 1 2026 is week 1', recurIsoWeek(20260101), '1');
 check('iso week: Sun Jan 4 2026 closes week 1', recurIsoWeek(20260104), '1');
 check('iso week: Mon Jan 5 2026 opens week 2', recurIsoWeek(20260105), '2');
 check('iso week: Jan 1 2027 belongs to week 53 of 2026', recurIsoWeek(20270101), '53');
+
+console.log('\na moved occurrence counts from the series date it stands for (his ruling 2026-10-28)');
+const bday = { f: 'y', n: 1, a: 20261102 };
+const mvB = rsMoveRule(bday, 20261102, 20261030);
+check('yearly 2 Nov moved to 30 Oct remembers 2 Nov', JSON.stringify(mvB.mv), '{"f":20261102,"t":20261030}');
+check('... ticked on 30 Oct comes back NEXT year', recurAdvance(mvB, 20261030, 20261030), '20271102');
+check('without the memory it came back 3 days later', recurAdvance(bday, 20261030, 20261030), '20261102');
+const mvB2 = rsMoveRule(mvB, 20261030, 20261028);
+check('moved again keeps the series date', JSON.stringify(mvB2.mv), '{"f":20261102,"t":20261028}');
+check('moved back home forgets the move', rsMoveRule(mvB, 20261030, 20261102).mv, 'undefined');
+check('a date changed elsewhere ignores the memory', recurAdvance(mvB, 20261101, 20261101), '20261102');
+const bill = { f: 'm', n: 1, a: 20261102 };
+check('monthly moved forward, ticked: next month as before', recurAdvance(rsMoveRule(bill, 20261102, 20261110), 20261110, 20261110), '20261202');
+const mon = { f: 'w', n: 1, a: 20261102 };
+check('weekly Mon moved to Fri, ticked: the next Monday', recurAdvance(rsMoveRule(mon, 20261102, 20261106), 20261106, 20261106), '20261109');
+check('weekly Mon moved to Fri, ticked late: never in the past', recurAdvance(rsMoveRule(mon, 20261102, 20261106), 20261106, 20261111), '20261116');
+check('from completion stores nothing', rsMoveRule({ f: 'd', n: 2, from: 'c', a: 20261102 }, 20261102, 20261105), 'null');
+check('a forward trail stores nothing', rsMoveRule({ f: 'm', n: 1, tr: 'f', u: 20270101, a: 20261102 }, 20261102, 20261105), 'null');
+check('no move stores nothing', rsMoveRule(bill, 20261102, 20261102), 'null');
 
 console.log(fails ? '\n' + fails + ' FAILED\n' : '\nall passed\n');
 process.exit(fails ? 1 : 0);
