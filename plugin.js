@@ -8633,6 +8633,7 @@ class Plugin extends AppPlugin {
 		}
 		this.view = { y: sp.year, m: sp.month };
 		this.sel = cur || DateTime.dateOnly(sp.year, sp.month, sp.day);
+		this.dayBase = this.sel; /* the day a typed bare time lands on (compose) */
 		this.endMode = false;
 		this.rangeEnd = cur ? cur.getRangeEnd() : null;
 		/* a time-only line still SHOWS its time (his report 2026-08-28: the
@@ -8675,8 +8676,17 @@ class Plugin extends AppPlugin {
 		 * re-applied on top, so switching one never silently drops the others. */
 		const compose = () => {
 			if (!this.sel) return null;
-			const p = this.sel.getParts();
-			if (p.year === undefined) return this.sel;
+			let p = this.sel.getParts();
+			/* A TYPED TIME KEEPS THE DAY (his ruling 2026-10-31). "07:00" parses as
+			 * a time with no day, and it was written as is: a page with no day
+			 * has no place in any day, so Timer lost the row. The day is the one
+			 * the box had picked before the typing (the row's own date, or today
+			 * when it had none); the clock below was already set by the typing. */
+			if (p.year === undefined) {
+				const b = this.dayBase ? this.dayBase.getParts() : null;
+				const nd = new Date();
+				p = b && b.year !== undefined ? { year: b.year, month: b.month, day: b.day } : { year: nd.getFullYear(), month: nd.getMonth(), day: nd.getDate() };
+			}
 			let dt = DateTime.dateOnly(p.year, p.month, p.day);
 			if (sw.checked && timeInput.value) {
 				const [hh, mm] = timeInput.value.split(':').map(Number);
@@ -8684,7 +8694,12 @@ class Plugin extends AppPlugin {
 			}
 			if (this.rangeEnd) {
 				let re = this.rangeEnd;
+				/* a typed time range ("07:00-08:00") ends on the same day, never on none */
 				try {
+					const q = re.getParts();
+					if (q.year === undefined) re = q.hours !== undefined ? DateTime.dateAndTime(p.year, p.month, p.day, q.hours, q.minutes || 0, 0) : null;
+				} catch (e) { re = null; }
+				if (re) try {
 					/* A SAME-DAY end is a DURATION, not a second date: when the
 					 * picked day moves, it moves along (his broken chip
 					 * 2026-08-28, "Fri Aug 28 - Thu Aug 27 22:30": the old end
@@ -8790,6 +8805,8 @@ class Plugin extends AppPlugin {
 			 * the finished single date. "5 aug" never passes through a range,
 			 * which is why that spelling looked fine. */
 			this.rangeEnd = parsed ? parsed.getRangeEnd() : null;
+			/* the last day picked or typed stays the base for a bare time */
+			try { if (this.sel && this.sel.getParts().year !== undefined) this.dayBase = this.sel; } catch (e) {}
 			this.sel = parsed;
 			show();
 		});
@@ -9833,7 +9850,7 @@ class Plugin extends AppPlugin {
 		this.refreshMenuColors();
 		document.querySelectorAll('.rs-repmenu').forEach((m) => m.remove());
 		this.repMenu = null;
-		this.sel = this.view = this.rangeEnd = this.endHover = this.showPicker = this.cancelPicker = null;
+		this.sel = this.dayBase = this.view = this.rangeEnd = this.endHover = this.showPicker = this.cancelPicker = null;
 		this.nameTpl = this.nameBase = null;
 		this.endMode = false;
 	}
