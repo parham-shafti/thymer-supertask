@@ -3515,11 +3515,11 @@ class Plugin extends AppPlugin {
 				const anchorR = typeof sel.anchorR === 'number' && isFinite(sel.anchorR) ? sel.anchorR : null;
 				if (sel.kind === 'record' && sel.guid) {
 					return this.data.getRecord(sel.guid)
-						? { kind: 'record', guid: sel.guid, domGuid: sel.domGuid || sel.guid, anchorEl, anchorX, anchorR }
+						? { kind: 'record', guid: sel.guid, domGuid: sel.domGuid || sel.guid, anchorEl, anchorX, anchorR, owner: p.owner || null }
 						: null;
 				}
 				if (sel.kind === 'line' && sel.lineGuid && sel.pageGuid) {
-					return { kind: 'line', line: {
+					return { kind: 'line', owner: p.owner || null, line: {
 						lineGuid: sel.lineGuid,
 						pageGuid: sel.pageGuid,
 						domGuid: sel.domGuid || sel.lineGuid,
@@ -6093,7 +6093,28 @@ class Plugin extends AppPlugin {
 	 * forgiving: case, spaces, dashes and the # are all ignored, and both
 	 * the slot's tag and its title are tried. Same chord again clears, the
 	 * same contract as on lines. */
-	async setPageTimeblock(recGuid, tb) {
+	/* HIS RULING 2026-10-30: a row that has a time keeps it and gets no
+	 * timeblock, everywhere, the editor included. The clock decides where a
+	 * timed row sits, so a block beside it could only contradict it, and his
+	 * Google Calendar events are never touched either. ⌘1-9 then writes nothing
+	 * and says why, in Timer's words; the same slot again and ⌘0 still clear a
+	 * block the row already has. When the row is Timer's selection, Timer has
+	 * already said it (its own half of the chord), so this stays quiet. */
+	keepsTime(name, t) {
+		if (t && t.owner === 'thymer-timeline') return;
+		this.toast(name + ' has a time and keeps it. Remove the time to give it a timeblock.');
+	}
+
+	/* a page's time lives on the property its date is moved on (dueFieldFor) */
+	pageHasTime(rec) {
+		try {
+			const prop = rec.prop(this.dueFieldFor(rec).key);
+			const d = prop && prop.datetime();
+			return !!(d && d.getParts().hours !== undefined);
+		} catch (e) { return false; }
+	}
+
+	async setPageTimeblock(recGuid, tb, t) {
 		const rec = this.data.getRecord(recGuid);
 		if (!rec) { this.toast('Could not read that page.'); return; }
 		const { fields } = await this.pageFields(rec);
@@ -6105,6 +6126,7 @@ class Plugin extends AppPlugin {
 		const val = await this.tbPageValue(rec, f, prop, tb);
 		if (!val) { this.toast('Timeblock has no “' + (tb.label || tb.tag) + '” value.'); return; }
 		const cur = this.pagePropValues(prop).map(String);
+		if (cur.indexOf(String(val)) < 0 && this.pageHasTime(rec)) { this.keepsTime(rec.getName() || 'Page', t); return; }
 		if (cur.indexOf(String(val)) >= 0) {
 			await this.setPagePropValue(prop, f.type, null);
 			this.toast((rec.getName() || 'Page') + ' · Timeblock cleared');
@@ -8381,15 +8403,22 @@ class Plugin extends AppPlugin {
 		 * the two families can never disagree about what a chord acts on. */
 		const t = this.dateTarget();
 		if (t && t.err) { this.toast(t.err); return; }
-		if (t && t.kind === 'record') { await this.setPageTimeblock(t.guid, tb); return; }
+		if (t && t.kind === 'record') { await this.setPageTimeblock(t.guid, tb, t); return; }
 		const line = t && t.kind === 'line' ? t.line : this.lineSelection();
-		if (line && line.recordGuid) { await this.setPageTimeblock(line.recordGuid, tb); return; }
+		if (line && line.recordGuid) { await this.setPageTimeblock(line.recordGuid, tb, t); return; }
 		if (!line || !line.lineGuid || !line.pageGuid) { this.toast('Put the caret on a line first.'); return; }
 		const li = await this.lineItem(line);
 		if (!li) { this.toast('Could not read that line.'); return; }
 
 		const segs = li.segments.map((s) => ({ type: s.type, text: s.text }));
 		const i = segs.findIndex((s) => s.type === 'hashtag' && this.timeblockTags.has(s.text));
+		/* the same slot again still clears; anything else on a timed line is refused */
+		const timed = segs.some((s) => { if (s.type !== 'datetime') return false; try { return new DateTime(s.text).getParts().hours !== undefined; } catch (e) { return false; } });
+		if (timed && !(i >= 0 && segs[i].text === tb.tag)) {
+			const name = segs.filter((s) => s.type === 'text').map((s) => s.text).join('').replace(/\s+/g, ' ').trim();
+			this.keepsTime(name || 'This line', t);
+			return;
+		}
 
 		let cleared = false;
 		const created = i < 0;
