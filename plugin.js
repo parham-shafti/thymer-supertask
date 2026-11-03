@@ -6673,8 +6673,7 @@ class Plugin extends AppPlugin {
 		const afterLi = after ? pl.byG.get(after.guid) : null;
 		/* line.move() resets the indent: keep the section's (see moveOut) */
 		const o = after ? this.oindOf(after.guid) : (sibs.length ? this.oindOf(sibs[0].guid) : 0);
-		try { await li.move(headLi, afterLi || null); } catch (e) { return; }
-		if (o > 0) this.setOind(li.guid, headSt.guid, afterLi ? afterLi.guid : null, o);
+		await this.moveIndented(li, headSt.guid, afterLi ? afterLi.guid : null, o, () => li.move(headLi, afterLi || null));
 	}
 
 	/* Create-or-find the collector, INSERTED AT ITS RANK among the existing
@@ -6757,12 +6756,18 @@ class Plugin extends AppPlugin {
 				if (it && !it.dlt && it.pguid === binEntry.guid && x.guid !== li.guid) afterKid = x;
 			}
 		}
-		try { await li.move(binLi, afterKid); } catch (e) {}
-		/* line.move() hardcodes oind 0, so with Indent Grouped Tasks on the
-		 * indent is set right after, at the same position */
-		if (this.indentGroups !== false && binLi.guid) {
-			this.setOind(li.guid, binLi.guid, afterKid ? afterKid.guid : null, 1);
-		}
+		/* ONE WRITE: line.move() hardcodes oind 0, and an indent set after it
+		 * drew the line flush first and indented a moment later (his recording
+		 * 2026-11-03). The move_tree mutation moves AND indents at once. */
+		await this.moveIndented(li, binLi.guid, afterKid ? afterKid.guid : null, this.indentGroups !== false ? 1 : 0, () => li.move(binLi, afterKid));
+	}
+
+	/* Move a line under pguid after aguid at indent `oind` in one mutation;
+	 * line.move() (indent 0) when there is no indent to keep or the editor's
+	 * queue is not there. */
+	async moveIndented(li, pguid, aguid, oind, plainMove) {
+		if (oind > 0 && pguid && await this.setOind(li.guid, pguid, aguid, oind)) return;
+		try { await plainMove(); } catch (e) {}
 	}
 
 	/* WHAT SUPERTASK MAY MOVE OR INDENT: a task with something on it. One rule
@@ -6851,8 +6856,7 @@ class Plugin extends AppPlugin {
 		/* the section's indent, as the collector above follows it: the line it
 		 * lands after, else the first collector it lands before */
 		const o = before ? this.oindOf(before.guid) : (firstBinAt >= 0 ? this.oindOf(sibs[firstBinAt].guid) : 0);
-		try { await li.move(headLi, before || null); } catch (e) { return; }
-		if (o > 0) this.setOind(li.guid, headSt.guid, before ? before.guid : null, o);
+		await this.moveIndented(li, headSt.guid, before ? before.guid : null, o, () => li.move(headLi, before || null));
 		this.scheduleBinGC();
 	}
 
