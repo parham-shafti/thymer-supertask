@@ -1015,6 +1015,10 @@ function rsRuleKey(r) {
 }
 function rsParseRule(j) { try { return j ? JSON.parse(j) : null; } catch (e) { return null; } }
 function rsIsTrail(r) { return !!(r && r.tr === 'f'); }
+/* A RAW LINE ROW'S `dlt` IS A BIT FIELD (Thymer's bundle 2026-11-03: 2|4 deleted,
+ * 8 trashed, 1 RESURRECTED). Reading any non-zero as deleted made a resurrected
+ * Done group invisible to the sweep, which then made a second one (his report). */
+function rsGone(raw) { return !!(raw && (raw.dlt & 14)); }
 /* a property value as an event carries it, emptied: nothing, [], or a typed
  * array with no value after its type (["datetime"]) */
 function rsEmptyValue(v) {
@@ -4708,7 +4712,7 @@ class Plugin extends AppPlugin {
 		for (const x of all) {
 			let raw = null;
 			try { raw = x._getItem ? x._getItem() : null; } catch (e) {}
-			if (!raw || raw.dlt) continue;
+			if (!raw || rsGone(raw)) continue;
 			if (x.guid === li.guid) template = { li: x, raw };
 			if (raw.mp && raw.mp.rs_series === li.guid) mine.push({ li: x, occ: +raw.mp.rs_occ || 0 });
 		}
@@ -4742,7 +4746,7 @@ class Plugin extends AppPlugin {
 		for (const x of a2) {
 			let raw = null;
 			try { raw = x._getItem ? x._getItem() : null; } catch (e) {}
-			if (raw && !raw.dlt && raw.mp && raw.mp.rs_series === li.guid) kept.push({ li: x, occ: +raw.mp.rs_occ || 0 });
+			if (raw && !rsGone(raw) && raw.mp && raw.mp.rs_series === li.guid) kept.push({ li: x, occ: +raw.mp.rs_occ || 0 });
 		}
 		if (kept.length) anchorLi = kept[kept.length - 1].li; /* chain after the last existing copy */
 		/* Name Copies on a LINE: the copy already IS the title (a clone), so
@@ -4957,7 +4961,7 @@ class Plugin extends AppPlugin {
 					for (const x of all) {
 						let r2 = null;
 						try { r2 = x._getItem ? x._getItem() : null; } catch (e2) {}
-						if (!r2 || r2.dlt || r2.pguid !== meRaw.pguid) continue;
+						if (!r2 || rsGone(r2) || r2.pguid !== meRaw.pguid) continue;
 						if (x.guid === guid) { beforeLi = prevGuid ? all.find((y) => y.guid === prevGuid) : null; break; }
 						prevGuid = x.guid;
 					}
@@ -6693,7 +6697,7 @@ class Plugin extends AppPlugin {
 		for (const x of all) {
 			let it = null;
 			try { it = x._getItem ? x._getItem() : null; } catch (e) {}
-			if (!it || it.dlt || it.pguid !== headSt.guid) continue;
+			if (!it || rsGone(it) || it.pguid !== headSt.guid) continue;
 			const mp = it.mp || {};
 			let key = mp.rs_sweep_bin || (mp.rs_done_bin ? 'done' : null)
 				|| (this.binKnown && this.binKnown.get(x.guid)) || null;
@@ -6753,7 +6757,7 @@ class Plugin extends AppPlugin {
 			for (const x of all) {
 				let it = null;
 				try { it = x._getItem ? x._getItem() : null; } catch (e) {}
-				if (it && !it.dlt && it.pguid === binEntry.guid && x.guid !== li.guid) afterKid = x;
+				if (it && !rsGone(it) && it.pguid === binEntry.guid && x.guid !== li.guid) afterKid = x;
 			}
 		}
 		/* ONE WRITE: line.move() hardcodes oind 0, and an indent set after it
@@ -6987,7 +6991,7 @@ class Plugin extends AppPlugin {
 		for (const x of all) {
 			let it = null;
 			try { it = x._getItem ? x._getItem() : null; } catch (e) {}
-			if (it && !it.dlt && it.pguid === binGuid) kids.push(x);
+			if (it && !rsGone(it) && it.pguid === binGuid) kids.push(x);
 		}
 		const statuses = [];
 		for (const k of kids) {
@@ -7009,7 +7013,7 @@ class Plugin extends AppPlugin {
 			for (const x of a2) {
 				let it = null;
 				try { it = x._getItem ? x._getItem() : null; } catch (e) {}
-				if (it && !it.dlt && it.pguid === binGuid && x.guid !== g) lastKid = x;
+				if (it && !rsGone(it) && it.pguid === binGuid && x.guid !== g) lastKid = x;
 			}
 			if (me && binLi) await this.moveIndented(me, binGuid, lastKid ? lastKid.guid : null, this.oindOf(g), () => me.move(binLi, lastKid));
 		}
@@ -7397,7 +7401,7 @@ class Plugin extends AppPlugin {
 		const kidsOf = new Map();
 		for (const x of pl.all) {
 			const raw = rawOf(x);
-			if (!raw || raw.dlt) continue;
+			if (!raw || rsGone(raw)) continue;
 			const p = raw.pguid;
 			if (!p) continue;
 			if (!kidsOf.has(p)) kidsOf.set(p, []);
