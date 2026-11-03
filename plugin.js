@@ -6671,7 +6671,10 @@ class Plugin extends AppPlugin {
 			if (inPlace) return;
 		}
 		const afterLi = after ? pl.byG.get(after.guid) : null;
-		try { await li.move(headLi, afterLi || null); } catch (e) {}
+		/* line.move() resets the indent: keep the section's (see moveOut) */
+		const o = after ? this.oindOf(after.guid) : (sibs.length ? this.oindOf(sibs[0].guid) : 0);
+		try { await li.move(headLi, afterLi || null); } catch (e) { return; }
+		if (o > 0) this.setOind(li.guid, headSt.guid, afterLi ? afterLi.guid : null, o);
 	}
 
 	/* Create-or-find the collector, INSERTED AT ITS RANK among the existing
@@ -6709,11 +6712,21 @@ class Plugin extends AppPlugin {
 				const at = fresh.indexOf(hi);
 				afterLi = at > 0 ? fresh[at - 1].li : null; /* null = prepend = before it */
 			}
+			/* THE COLLECTOR FOLLOWS THE SECTION'S INDENT (his ruling 2026-11-03:
+			 * "om något redan är indragen ska indenteringen följa det"): a task
+			 * indented one step under its heading gets a Done one step in, and
+			 * the group's tasks one step further. Never deeper than the line it
+			 * lands after once the task has left: Thymer folds a line indented
+			 * past its flush sibling into that sibling. */
+			let prevG = afterLi ? afterLi.guid : null;
+			if (prevG === li.guid) { const at = fresh.findIndex((x) => x.guid === li.guid); prevG = at > 0 ? fresh[at - 1].guid : null; }
+			const binO = prevG ? Math.min(this.oindOf(li.guid), this.oindOf(prevG)) : this.oindOf(li.guid);
 			try {
 				/* an H5 HEADING since v0.16.0 (his ask): folds natively, reads
 				 * as structure. setHeadingSize only works on 'heading' lines
 				 * (bundle: it guards on type, then writes mp.hsize). */
 				binLi = await pl.rec.createLineItem(headLiF, afterLi || null, 'heading');
+				if (binO > 0 && binLi.guid) await this.setOind(binLi.guid, headSt.guid, afterLi ? afterLi.guid : null, binO);
 				/* meta first, segments LAST (doctrine); "<flag icon> <name>" so
 				 * the row reads like the status it gathers ("✓ Done") */
 				await binLi.setMetaProperty('rs_sweep_bin', bin.key);
@@ -6774,6 +6787,12 @@ class Plugin extends AppPlugin {
 	 * a mutation for a line the editor has not loaded, hence getOrLoadItem
 	 * first. Best effort: a dropped write leaves the line flush, which is
 	 * Thymer's own default and never wrong. */
+	/* A LINE'S OWN INDENT under a heading (its overindent; 0 when unknown) */
+	oindOf(guid) {
+		const st = guid ? ((window.g_universe && window.g_universe.itemsByGuid) || {})[guid] : null;
+		return (st && st.overindent) || 0;
+	}
+
 	async setOind(guid, pguid, aguid, oind) {
 		const ops = window.g_universe && window.g_universe.operations;
 		if (!ops || typeof ops.enqueueMutation !== 'function') return false;
@@ -6829,7 +6848,11 @@ class Plugin extends AppPlugin {
 		const sibs = (headSt.children || []).filter((k) => k && !k.is_trashed && !k.is_deleted);
 		const firstBinAt = sibs.findIndex((k) => this.binKeyOf(k));
 		const before = firstBinAt > 0 ? pl.byG.get(sibs[firstBinAt - 1].guid) : null;
+		/* the section's indent, as the collector above follows it: the line it
+		 * lands after, else the first collector it lands before */
+		const o = before ? this.oindOf(before.guid) : (firstBinAt >= 0 ? this.oindOf(sibs[firstBinAt].guid) : 0);
 		try { await li.move(headLi, before || null); } catch (e) { return; }
+		if (o > 0) this.setOind(li.guid, headSt.guid, before ? before.guid : null, o);
 		this.scheduleBinGC();
 	}
 
