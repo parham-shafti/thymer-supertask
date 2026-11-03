@@ -1015,6 +1015,13 @@ function rsRuleKey(r) {
 }
 function rsParseRule(j) { try { return j ? JSON.parse(j) : null; } catch (e) { return null; } }
 function rsIsTrail(r) { return !!(r && r.tr === 'f'); }
+/* a property value as an event carries it, emptied: nothing, [], or a typed
+ * array with no value after its type (["datetime"]) */
+function rsEmptyValue(v) {
+	if (v == null || v === '') return true;
+	if (Array.isArray(v)) return v.length === 0 || (v.length === 1 && typeof v[0] === 'string') || v.slice(1).every((x) => x == null || x === '');
+	return false;
+}
 /* the raw rs_recur string on a line handle, the same read reconcile does */
 function rsRawRule(x) { try { const r = x && x._getItem ? x._getItem() : null; return (r && r.mp && r.mp.rs_recur) || null; } catch (e) { return null; } }
 /* A page-rule undo has to survive savePrefs(): saveConfiguration RELOADS the
@@ -4447,6 +4454,21 @@ class Plugin extends AppPlugin {
 		if (this.recurBusy.has(guid)) return;
 		const rec = this.data.getRecord(guid);
 		if (!rec) return;
+		/* A PAGE WHOSE DATE IS EMPTIED HAS NO REPEAT either (his ruling
+		 * 2026-11-03, the line rule above). Decided from the write itself in
+		 * ev.properties, on the client that made it, never from a read: a date
+		 * written a breath ago can read back empty. */
+		if (ev.properties && ev.source && ev.source.isLocal) {
+			const { fields } = await this.pageFields(rec);
+			const df = (fields || []).find((x) => x && (x.id === rule.dp || x.label === rule.dp));
+			const k = df ? df.id : rule.dp;
+			if (Object.prototype.hasOwnProperty.call(ev.properties, k) && rsEmptyValue(ev.properties[k])) {
+				delete this.pageRules[guid];
+				this.toast('Repeat removed with the date');
+				await this.saveRules([rsStoreKey(guid)]);
+				return;
+			}
+		}
 		let spId = rule.sp;
 		let dvVal = rule.dv;
 		const dpId = rule.dp;
@@ -4769,6 +4791,22 @@ class Plugin extends AppPlugin {
 		}
 	}
 
+	/* the rule of a line that has just lost its date (see onLineUpdated). The
+	 * line is read again: only a line that still has no date and still carries
+	 * a rule loses it. Copies a forward trail laid out are left alone; they are
+	 * dated lines of their own. */
+	async dropDatelessLineRule(ev) {
+		const guid = ev.lineItemGuid;
+		if (!guid || this.recurBusy.has(guid)) return;
+		const li = await ev.getLineItem();
+		if (!li || !rsRawRule(li)) return;
+		if ((li.segments || []).some((x) => x.type === 'datetime')) return;
+		await this.writeRule(li, null);
+		this.refreshRepeatStyle();
+		this.scheduleSweep(guid);
+		this.toast('Repeat removed with the date');
+	}
+
 	async writeRule(li, rule) {
 		try {
 			await li.setMetaProperty('rs_recur', rule ? JSON.stringify(rule) : null);
@@ -4794,6 +4832,19 @@ class Plugin extends AppPlugin {
 		 * typing guard keeps a line being written untouched */
 		else if (ev.segments) this.scheduleSweep(ev.lineItemGuid, true);
 		this.scheduleBinGC();
+		/* A LINE WHOSE DATE IS GONE HAS NO REPEAT (his ruling 2026-11-03: "om man
+		 * tar bort datumet på en rad så är det inte meningen att den ska ha kvar
+		 * varken datum eller upprepning"). Clear in the box always did this; a
+		 * date deleted in the text, or by another plugin, left the rule behind,
+		 * invisible, and a repeating task is never filed, so a cancelled one
+		 * stayed out of Done. Read from the event's own segments (the write
+		 * itself), on the client that made it. */
+		try {
+			const evSegs = typeof ev.getSegments === 'function' ? ev.getSegments() : null;
+			if (evSegs && ev.source && ev.source.isLocal && !evSegs.some((x) => x && x.type === 'datetime')) {
+				this.dropDatelessLineRule(ev).catch(() => {});
+			}
+		} catch (e) {}
 		if (ev.status !== 'done') return;
 		const guid = ev.lineItemGuid;
 		if (!guid || this.recurBusy.has(guid)) return;
@@ -8345,6 +8396,14 @@ class Plugin extends AppPlugin {
 			if (!prop) { this.toast('No ' + due.label + ' field to clear.'); return; }
 			/* Verified live: set([]) clears. set(null) is a NO-OP that silently
 			 * leaves the old date, and setFromDate(null) sets it to NOW. */
+			/* no date left, nothing to repeat (his ruling 2026-11-03), the same as
+			 * Clear on a line: the rule goes, and a forward trail's open copies with it */
+			const pr = this.pageRuleFor(t.guid);
+			if (pr && pr.origin === t.guid) {
+				try { await this.reconcilePageSeries(rec, { ...pr.rule, tr: null }); } catch (e) {}
+				delete this.pageRules[t.guid];
+				this.saveRules([rsStoreKey(t.guid)], true);
+			}
 			prop.set([]);
 			this.toast(due.label + ' cleared');
 			return;
