@@ -4830,7 +4830,7 @@ class Plugin extends AppPlugin {
 		/* segment edits can change the line's SLOT TAG (⌘1-9, or typing one)
 		 * — an arrival-class sweep reroutes it in hashtag sections; the
 		 * typing guard keeps a line being written untouched */
-		else if (ev.segments) this.scheduleSweep(ev.lineItemGuid, true);
+		else if (typeof ev.hasSegments === 'function' ? ev.hasSegments() : ev.segments) this.scheduleSweep(ev.lineItemGuid, true); /* `ev.segments` never arrives at runtime (types.d.ts is stale); hasSegments() does. Without it a task typed into a grouped section was never filed (his report 2026-11-03) */
 		this.scheduleBinGC();
 		/* A LINE WHOSE DATE IS GONE HAS NO REPEAT (his ruling 2026-11-03: "om man
 		 * tar bort datumet på en rad så är det inte meningen att den ska ha kvar
@@ -6948,7 +6948,9 @@ class Plugin extends AppPlugin {
 				const li = all.find((x) => x.guid === d.g);
 				const headLi = all.find((x) => x.guid === hg);
 				const anchor = prevGuid ? all.find((x) => x.guid === prevGuid) : null;
-				if (li && headLi) { try { await li.move(headLi, anchor || null); } catch (e) {} }
+				/* the collector keeps its indent (line.move() would reset it to 0, his
+				 * report 2026-11-03: Not Done and Done went flush) */
+				if (li && headLi) await this.moveIndented(li, hg, prevGuid, this.oindOf(d.g), () => li.move(headLi, anchor || null));
 				prevGuid = d.g;
 			}
 		}
@@ -7009,7 +7011,7 @@ class Plugin extends AppPlugin {
 				try { it = x._getItem ? x._getItem() : null; } catch (e) {}
 				if (it && !it.dlt && it.pguid === binGuid && x.guid !== g) lastKid = x;
 			}
-			if (me && binLi) { try { await me.move(binLi, lastKid); } catch (e) {} }
+			if (me && binLi) await this.moveIndented(me, binGuid, lastKid ? lastKid.guid : null, this.oindOf(g), () => me.move(binLi, lastKid));
 		}
 	}
 
@@ -7068,7 +7070,10 @@ class Plugin extends AppPlugin {
 			 * signature entry so retagging fires the sweep (his report: a
 			 * tagged task never moved; ev.segments proved to be another
 			 * stale-types field that never arrives at runtime) */
-			const ent = (k) => k.guid + (conf.m === 'h' ? ':' + (this.slotTagOf(k) || '') : '');
+			/* an EMPTY task is not filed (fileable), and typing its text changes no
+			 * child list: mark it, so the scan fires once it has text (his report
+			 * 2026-11-03: "Test" stayed outside Not Done) */
+			const ent = (k) => k.guid + (this.fileable(k) ? '' : ':e') + (conf.m === 'h' ? ':' + (this.slotTagOf(k) || '') : '');
 			for (const k of kids) {
 				sig += ent(k) + ',';
 				if (this.binKeyOf(k)) {
@@ -7829,7 +7834,7 @@ class Plugin extends AppPlugin {
 				if (!a2) break;
 				const kli = a2.find((x) => x.guid === kids[i].guid);
 				const nli = a2.find((x) => x.guid === nu.guid);
-				if (kli && nli) { try { await kli.move(nli, null); } catch (e) {} }
+				if (kli && nli) await this.moveIndented(kli, nu.guid, null, this.indentGroups !== false ? 1 : 0, () => kli.move(nli, null));
 			}
 			const a3 = await pl.rec.getLineItems(false).catch(() => null);
 			const ol = a3 && a3.find((x) => x.guid === tg.guid);
@@ -7966,7 +7971,7 @@ class Plugin extends AppPlugin {
 					if (!all) break;
 					const li = all.find((x) => x.guid === ranked[i].k.guid);
 					const headLi = all.find((x) => x.guid === t.headSt.guid);
-					if (li && headLi) { try { await li.move(headLi, null); } catch (e) {} }
+					if (li && headLi) await this.moveIndented(li, t.headSt.guid, null, this.oindOf(ranked[i].k.guid), () => li.move(headLi, null));
 				}
 			}
 		}
@@ -8032,7 +8037,8 @@ class Plugin extends AppPlugin {
 				const kli = all.find((x) => x.guid === binKids[i].guid);
 				const headLi = all.find((x) => x.guid === headSt.guid);
 				const anchor = anchorGuid ? all.find((x) => x.guid === anchorGuid) : null;
-				if (kli && headLi) { try { await kli.move(headLi, anchor || null); } catch (e) {} }
+				/* back into the section at the section's indent, which is the collector's own */
+				if (kli && headLi) await this.moveIndented(kli, headSt.guid, anchorGuid, this.oindOf(binSt.guid), () => kli.move(headLi, anchor || null));
 			}
 			const binLi = await this.freshLine(pl.rec, binSt.guid);
 			if (binLi) { try { await binLi.delete(); } catch (e) {} }
