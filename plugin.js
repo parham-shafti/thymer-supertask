@@ -1032,6 +1032,11 @@ function rsRawRule(x) { try { const r = x && x._getItem ? x._getItem() : null; r
  * plugin and takes the toast and its closure with it. Park the facts, re-offer
  * on the next load. Short TTL — an undo offered minutes later is a trap. */
 const RS_UNDO_KEY = 'rs_undo_v1';
+/* the settings mirror's key, one per workspace (see onLoad) */
+const rsPrefsKey = (ws) => (ws ? 'rs_prefs:' + ws : null);
+/* a mirror stamped with another workspace is never applied; an unstamped one
+ * predates the stamp (2026-11-04) */
+const rsPrefsMine = (p, ws) => !p.ws || !ws || p.ws === ws;
 const RS_UNDO_TTL = 25000;
 
 /* PAGE RULES LIVE IN A HIDDEN STORE (his ask 2026-10-28: every repeat change
@@ -1832,11 +1837,22 @@ class Plugin extends AppPlugin {
 		this.ruleRecs = new Map();
 		this.ruleBlank = [];
 		this.applySlots(this.tbSlots);
+		/* THE MIRROR IS PER WORKSPACE (his 2026-11-04 loss). localStorage is
+		 * per ORIGIN and every workspace on a device shares one, so the old
+		 * single key 'rs_prefs' carried one workspace's settings into the
+		 * next: a save in Experiments (newer rev) beat his own synced config,
+		 * Settings then dropped Experiments' collections as dead, and the
+		 * close-time save wrote that copy over his workspace, his Checkboxes
+		 * rule for every page with it. Each workspace has its own key now;
+		 * the old shared one is a last resort (see loadPrefsFromConfig). */
+		this.prefsKey = rsPrefsKey(this.rsWorkspace());
 		try {
-			const ls = JSON.parse(localStorage.getItem('rs_prefs') || 'null');
-			if (ls) this.applyPrefs(ls);
+			const ls = this.prefsKey ? JSON.parse(localStorage.getItem(this.prefsKey) || 'null') : null;
+			if (ls && rsPrefsMine(ls, this.rsWorkspace())) this.applyPrefs(ls);
 		} catch (e) {}
-		this.loadPrefsFromConfig();
+		/* savePrefs waits for this: nothing is written before the workspace's
+		 * own settings are in */
+		this.prefsLoad = this.loadPrefsFromConfig();
 		this.loadRuleStore();
 		this.sweepPending = new Set();
 		this.sweepArrival = new Map();
@@ -2403,16 +2419,30 @@ class Plugin extends AppPlugin {
 			 * ties. (A LOWER rev still loses, so localStorage still rescues a
 			 * clobbered config.) */
 			if (p && (p.rev || 0) >= (this.prefsRev || 0)) this.applyPrefs(p);
+			/* The old shared mirror, only when this workspace has nothing of its
+			 * own (no mirror of its own, no readable config: the web client,
+			 * where custom never reads back) and it is not stamped with another
+			 * workspace. Before 2026-11-04 it was the first thing read. */
+			else if (!p && !this.prefsRev) {
+				const old = JSON.parse(localStorage.getItem('rs_prefs') || 'null');
+				if (old && rsPrefsMine(old, this.rsWorkspace())) this.applyPrefs(old);
+			}
 		} catch (e) {}
+	}
+
+	rsWorkspace() {
+		try { const w = this.getWorkspaceGuid(); if (w) return w; } catch (e) {}
+		try { return (window.g_universe && window.g_universe.workspaceGuid) || null; } catch (e) { return null; }
 	}
 
 	/* localStorage first (survives config clobbers and the web read gap), then
 	 * write-through to config for other devices. NOTE: saveConfiguration
 	 * reloads the plugin, so this is always the LAST thing an interaction does. */
 	async savePrefs() {
-		const p = { rev: Date.now(), slots: this.tbSlots, globalBins: (this.globalBins || []).slice(), progress: !!this.progressGlobal, progressTodos: !!this.progressTodos, indentGroups: this.indentGroups !== false, dueName: this.dueName || DUE_DATE_FIELD, dueByColl: this.dueByColl || {}, statusOrder: this.statusOrder || rsStatusOrder(STATUS_SHORTCUTS), pageCheckGlobalOn: !!this.pageCheckGlobalOn, pageCheckGlobal: this.pageCheckGlobal || null, pageCheckCfg: this.pageCheckCfg || {}, pageRules: this.pageRules || {}, pageDefaults: this.pageDefaults || {}, rulesInStore: !!this.rulesInStore };
+		try { await this.prefsLoad; } catch (e) {}
+		const p = { ws: this.rsWorkspace(), rev: Date.now(), slots: this.tbSlots, globalBins: (this.globalBins || []).slice(), progress: !!this.progressGlobal, progressTodos: !!this.progressTodos, indentGroups: this.indentGroups !== false, dueName: this.dueName || DUE_DATE_FIELD, dueByColl: this.dueByColl || {}, statusOrder: this.statusOrder || rsStatusOrder(STATUS_SHORTCUTS), pageCheckGlobalOn: !!this.pageCheckGlobalOn, pageCheckGlobal: this.pageCheckGlobal || null, pageCheckCfg: this.pageCheckCfg || {}, pageRules: this.pageRules || {}, pageDefaults: this.pageDefaults || {}, rulesInStore: !!this.rulesInStore };
 		this.prefsRev = p.rev;
-		try { localStorage.setItem('rs_prefs', JSON.stringify(p)); } catch (e) {}
+		try { if (this.prefsKey) localStorage.setItem(this.prefsKey, JSON.stringify(p)); } catch (e) {}
 		try {
 			if (!this.selfPluginApi) await this.loadPrefsFromConfig();
 			const me = this.selfPluginApi;
@@ -2835,7 +2865,9 @@ class Plugin extends AppPlugin {
 				 * global rule is not a collection, so it renders whether or not
 				 * any collection is configured. */
 				const cfg = this.pcCfg();
-				const guids = Object.keys(cfg);
+				/* only collections in this workspace's catalog (see the catalog
+				 * callback in openSettings) */
+				const guids = Object.keys(cfg).filter((g) => (this.pcCat || []).some((c) => c.guid === g));
 				const add = '<button type="button" class="rs-set-btn rs-set-soft rs-pc-add">' + ico('ti-plus') + 'Add Collection</button>';
 				below = '<div class="rs-set-group">' + cap('Collections')
 					+ (!guids.length
@@ -3360,19 +3392,13 @@ class Plugin extends AppPlugin {
 		this.dueCatalog().then(() => { if (this.settingsEls) render(); });
 		this.pcCatalog().then(() => {
 			if (!this.settingsEls) return;
-			/* PURGE COLLECTIONS THAT NO LONGER EXIST. His pageDefaults carried a
-			 * wiring entry for a collection he had since deleted (…FQQM04), and
-			 * adopting the retired switch turned that into a nameless row with
-			 * nothing behind it. It can only be recognised once the catalog is
-			 * in, which is here — this is the first moment the workspace is
-			 * known. Silent: there is nothing for him to decide about a row
-			 * whose collection is gone. Marked changed so the save writes the
-			 * clean set, which is also the save that retires the old flag, so
-			 * the row cannot come back. */
-			const dead = Object.keys(this.pcCfg())
-				.filter((g) => !(this.pcCat || []).some((c) => c.guid === g));
-			for (const g of dead) delete this.pageCheckCfg[g];
-			if (dead.length) { if (this.pcOpenRow && dead.indexOf(this.pcOpenRow) >= 0) this.pcOpenRow = null; this.pcTouch(); }
+			/* A row whose collection is not in the catalog is HIDDEN (pagesPane),
+			 * never deleted here. This used to delete it and mark Settings
+			 * changed, so merely opening and closing Settings saved: on
+			 * 2026-11-03 that wrote another workspace's settings over his (see
+			 * onLoad). A row for a missing collection draws no checkbox
+			 * anywhere, so keeping it costs nothing; Settings saves only what
+			 * he changed. */
 			render();
 			for (const g of Object.keys(this.pcCfg())) this.pcPreloadValues(g).then(() => this.pcRepaint());
 		});
