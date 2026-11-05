@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.13.0 - 2026-11-05
+
+- **Moving a repeating page or task moves only that occurrence.** Push today's occurrence to tomorrow and the series keeps its rhythm: the next one comes on its usual day, and other pages made from the repeat are left alone.
+- **Changing a repeat no longer reloads Supertask.** Page repeat rules now live in a hidden collection of their own, Supertask Data, instead of in the plugin's settings, so editing a rule is instant and nothing flickers.
+- **Removing a date removes its repeat.** Delete the date from a task or empty a page's date field and the repeat goes with it. A cancelled repeating task without a date now lands under Done like any other.
+- **Typing just a time keeps the day.** Writing "07:00" in the date box keeps the date already chosen, or today if there was none. A page never gets a time without a day.
+- **⌘1-9 leaves a row with a time alone.** A row or page that has a clock time gets no timeblock; you see a short message instead. ⌘0 and the same digit again still remove a block.
+- **Groups follow your indentation.** When a task under a heading is already indented, Done and the other groups are indented with it. A task no longer jumps left before settling into a group, a task you type into a grouped section is filed, and a group never gets a duplicate.
+- **Pick which property holds a page's date.** Settings > Pages lets you choose the date property per collection, for collections that call it When instead of Due Date.
+- **A page repeat without "Done when" follows the Checkboxes rule for every page.**
+- **Settings stay in their own workspace.** With more than one workspace on the same computer, saving Supertask's settings in one could later overwrite another. Each workspace now keeps its own, and opening and closing Settings never saves anything you did not change.
+- **For plugin authors:** `window.__rsRecur` can create and replace a page's rule (`put`), and `window.__rsDateBox` offers the bare calendar for another plugin's date field.
+
 ## v1.12.1 - 2026-10-08
 
 - **The Repeat value in the date box is back to normal size.** Since v1.12.0, opening the date box on a page or task that repeats showed a huge empty green block where the rule should be. It now reads "Every year" (or whatever the rule is) on one line again.

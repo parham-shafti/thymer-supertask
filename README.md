@@ -49,6 +49,12 @@ When that value lands on the page, the date advances and the status resets. Your
 
 ![Setting a repeat on a page and marking it done](assets/pages-repeat.gif)
 
+A page's rule is kept in a hidden collection of Supertask's own, **Supertask Data**, so changing a repeat never reloads the plugin. Leave that collection alone; it holds nothing you need to read.
+
+### Moving one occurrence
+
+Didn't get to it today? Move the date, and only that occurrence moves. The series keeps its rhythm: the next occurrence comes on its usual day, counted from the date the moved one stood for, and pages already made from the repeat are left alone. Removing the date altogether removes the repeat with it.
+
 ### Leave a trail
 
 A repeating task normally moves forward and leaves nothing behind. Two other shapes, chosen in Custom:
@@ -85,7 +91,7 @@ Everything else in the template is literal text, so the separator is yours: `{ti
 |---|---|---|
 | `⌘⇧S` | `Ctrl+Shift+S` | Open the date box: calendar, free-text parsing, time toggle, end dates, Repeat rule |
 | `⌃+` / `⌃−` | `Alt++` / `Alt+-` | Move the date one day forward / back |
-| `⌘1` … `⌘9` | `Ctrl+1` … `Ctrl+9` | Tag the caret's line with your own hashtags (timeblocks, priorities, contexts, yours to define in Settings). On a page it writes that collection's *Timeblock* property instead. Same key again clears. |
+| `⌘1` … `⌘9` | `Ctrl+1` … `Ctrl+9` | Tag the caret's line with your own hashtags (timeblocks, priorities, contexts, yours to define in Settings). On a page it writes that collection's *Timeblock* property instead. Same key again clears. A row or page with a clock time gets no timeblock: its time already places it. |
 | `⌘0` | `Ctrl+0` | Clear the line's timeblock, whichever one it has. On a page it empties the *Timeblock* property. |
 | `⌃1` … `⌃0` | `Alt+1` … `Alt+0` | Set the task status: In Progress, Important, Alert, Starred, Billable, Discuss, Blocked, Clear, Done. On a page it writes the value you mapped to that status. Same chord again clears. |
 
@@ -107,7 +113,7 @@ Clicking the box writes the property, so it syncs and collaborates like a hand-m
 
 **One rule for every collection.** Wiring each collection separately gets old fast, so *On every Page* matches a single property **by name** across the whole workspace, which is all you need when every collection calls its status the same thing. Your per-collection wiring is kept while the global rule is on, and comes back untouched when you switch it off.
 
-It is all configured under **Page Checkboxes** in Settings.
+It is all configured under **Pages** in Settings, in the *Checkboxes* section.
 
 ![The Page Checkboxes settings: one property matched by name, and its values mapped onto the statuses](assets/page-checkbox-settings.png)
 
@@ -129,7 +135,7 @@ One set of chords covers both halves of a GTD system. The target resolves in thi
 4. The caret's line **is** a page reference (one ref and nothing else) → the referenced page's **Due Date**
 5. Anything else → a new date on the line, counted from today
 
-Rule 4 is deliberately strict: a prose todo that merely mentions `[[Some Project]]` moves its *own* date, never the project's. Everything works inside live searches too — the plugin follows Thymer's virtual result rows to the real lines behind them. `Due Date` is found by name, so any collection with such a field works regardless of its internal field id.
+Rule 4 is deliberately strict: a prose todo that merely mentions `[[Some Project]]` moves its *own* date, never the project's. Everything works inside live searches too — the plugin follows Thymer's virtual result rows to the real lines behind them. `Due Date` is found by name, so any collection with such a field works regardless of its internal field id. If yours is called something else, pick that name under **Pages** in Settings, and give a single collection its own date property where it differs (a calendar's *When*, say).
 
 ## Group and order your sections
 
@@ -148,7 +154,7 @@ The `⋯` menu itself comes from **[View Options](https://github.com/parham-shaf
 
 The roofs are real H5 headings, so they fold natively. A roof only exists while it has tasks — empty ones disappear by themselves. Tasks arriving from anywhere — moved in from another page, captured, typed, retagged, restatused — file themselves under the right roof within a couple of seconds. Turn everything off with one click and the section returns to a flat list.
 
-Grouping can also be enabled **globally** in Settings: tick a status's *Grouped* box under **Task Status**, and every heading in the workspace groups it as tasks change, no per-section setup. A section's own `⋯` menu always overrides the global choice.
+Grouping can also be enabled **globally** in Settings: tick a status's *Grouped* box under **Tasks**, and every heading in the workspace groups it as tasks change, no per-section setup. A section's own `⋯` menu always overrides the global choice.
 
 Thymer draws a heading's lines flush with the heading, so a group's tasks would sit level with its roof. **Indent Grouped Tasks** (on by default) puts them one step in, the way a Tab would; switch it off and they stay flush. A line you type yourself inside a group is never moved: only a task with something on it gets filed.
 
@@ -172,12 +178,12 @@ Wherever a bar shows in a document, the line's `⋯` menu is there too, so you c
 
 ## Settings
 
-`Supertask: Settings` in the command palette. Four pages, one per job:
+`Supertask: Settings` in the command palette. Four pages, one per job. Settings belong to the workspace they were made in, also when several workspaces share a computer, and opening and closing Settings saves nothing you did not change.
 
-- **Task Status** lists the `⌃`-digit shortcuts, which status each key sets (the arrows move a status to another key) and which statuses group under every heading, plus *Indent Grouped Tasks*.
+- **Tasks** lists the `⌃`-digit shortcuts, which status each key sets (the arrows move a status to another key) and which statuses group under every heading, plus *Indent Grouped Tasks*.
+- **Pages** says which property holds a page's date, and under *Checkboxes* is where you pick the property that drives a page's box and map its values onto the statuses you use, per collection or through the one global rule.
 - **Timeblocks** defines your `⌘`-digit hashtags: the row is the key, and each row takes a name (shown on roofs and in menus) plus the hashtag that lands on the line. The hashtag field lists every tag in your workspace, so you can search for the right one.
 - **Progress Bar** holds the two global bar switches.
-- **Page Checkboxes** is where you pick the property that drives a page's box and map its values onto the statuses you use, per collection or through the one global rule.
 
 ![Settings, Task Status](assets/settings.png)
 
@@ -196,7 +202,7 @@ The `⋯` menu on a line comes from **[View Options](https://github.com/parham-s
 ## Notes
 
 - Statuses, dates and moves go through Thymer's own APIs, so everything syncs and collaborates like hand-made edits.
-- The recurrence and hashtag engines are covered by offline test suites (`node test-recurrence.mjs`, 60 cases; `node test-timeblock.mjs`, 14 cases) that extract the shipped code verbatim, so tests and plugin cannot drift.
+- The recurrence and hashtag engines are covered by offline test suites (`node test-recurrence.mjs`, 72 cases; `node test-timeblock.mjs`, 20 cases; `node test-fileable.mjs`, 10 cases) that extract the shipped code verbatim, so tests and plugin cannot drift.
 
 ## License
 
