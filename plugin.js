@@ -6728,14 +6728,24 @@ class Plugin extends AppPlugin {
 			let key = mp.rs_sweep_bin || (mp.rs_done_bin ? 'done' : null)
 				|| (this.binKnown && this.binKnown.get(x.guid)) || null;
 			if (key === 'Done') key = 'done';
-			fresh.push({ li: x, guid: x.guid, key });
+			/* an empty text line with nothing under it (ts holds type/text pairs) */
+			const blank = it.type === 'text' && !(it.cguids || []).length
+				&& !(it.ts || []).some((v, i) => i % 2 === 1 && String(v).trim());
+			fresh.push({ li: x, guid: x.guid, key, blank });
 		}
 		const headLiF = all.find((x) => x.guid === headSt.guid) || headLi;
 		const binEntry = fresh.find((f) => f.key === bin.key) || null;
 		let binLi = binEntry ? binEntry.li : null;
 		if (!binLi) {
 			/* insert BEFORE the first collector of a higher rank; else last */
-			let afterLi = fresh.length ? fresh[fresh.length - 1].li : null;
+			/* ABOVE TRAILING EMPTY LINES (his recording 2026-11-05): an empty
+			 * line left flush at the end of an indented section made the new
+			 * Done flush too, since it may not sit deeper than the line before
+			 * it. Landing after the last line with content keeps the indent;
+			 * the empty lines stay below, his spacing untouched. */
+			let end = fresh.length;
+			while (end > 1 && fresh[end - 1].blank && !fresh[end - 1].key) end--;
+			let afterLi = end ? fresh[end - 1].li : null;
 			const hi = fresh.find((f) => f.key && this.binRank(f.key) > rank);
 			if (hi) {
 				const at = fresh.indexOf(hi);
