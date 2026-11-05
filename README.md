@@ -185,7 +185,7 @@ Wherever a bar shows in a document, the line's `⋯` menu is there too, so you c
 - **Timeblocks** defines your `⌘`-digit hashtags: the row is the key, and each row takes a name (shown on roofs and in menus) plus the hashtag that lands on the line. The hashtag field lists every tag in your workspace, so you can search for the right one.
 - **Progress Bar** holds the two global bar switches.
 
-![Settings, Task Status](assets/settings.png)
+![Settings, Tasks](assets/settings.png)
 
 ![Settings, Timeblocks](assets/timeblocks-settings.png)
 
