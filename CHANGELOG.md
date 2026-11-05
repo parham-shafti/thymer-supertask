@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.13.1 - 2026-11-05
+
+- **Done keeps your indentation when the section ends in an empty line.** If the tasks under a heading were indented and the last line of the section was an empty one, a new Done group landed flush with the heading. It now sits above the empty lines, at the same level as your tasks.
+
 ## v1.13.0 - 2026-11-05
 
 - **Moving a repeating page or task moves only that occurrence.** Push today's occurrence to tomorrow and the series keeps its rhythm: the next one comes on its usual day, and other pages made from the repeat are left alone.
