@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.13.2 - 2026-11-15
+
+- **Supertask works in the editor again after a Thymer update.** Thymer changed how a line knows which page it is on, so `Cmd+Shift+S` said "Put the caret on a line", and Done groups and progress bars stopped updating. All of it works again.
+
 ## v1.13.1 - 2026-11-05
 
 - **Done keeps your indentation when the section ends in an empty line.** If the tasks under a heading were indented and the last line of the section was an empty one, a new Done group landed flush with the heading. It now sits above the empty lines, at the same level as your tasks.
