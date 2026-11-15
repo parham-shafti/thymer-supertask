@@ -1018,6 +1018,18 @@ function rsIsTrail(r) { return !!(r && r.tr === 'f'); }
 /* A RAW LINE ROW'S `dlt` IS A BIT FIELD (Thymer's bundle 2026-11-03: 2|4 deleted,
  * 8 trashed, 1 RESURRECTED). Reading any non-zero as deleted made a resurrected
  * Done group invisible to the sweep, which then made a second one (his report). */
+/* A line state's PAGE guid. Thymer stopped putting `rguid` on line state
+ * (seen 2026-11-14, every line in itemsByGuid): the page is now the root
+ * `document` of the parent chain, whose guid IS the record guid, journal pages
+ * included. An older build still carries rguid. Null when the chain is not
+ * loaded up to its document, which callers already treat as "not a page line". */
+function rsRguid(st) {
+	if (!st) return null;
+	if (st.rguid) return st.rguid;
+	let n = st;
+	for (let i = 0; n.parent && i < 500; i++) n = n.parent;
+	return n !== st && n.type === 'document' ? n.guid : null;
+}
 function rsGone(raw) { return !!(raw && (raw.dlt & 14)); }
 /* a property value as an event carries it, emptied: nothing, [], or a typed
  * array with no value after its type (["datetime"]) */
@@ -3494,7 +3506,7 @@ class Plugin extends AppPlugin {
 		for (let i = 0; i + 1 < ts.length; i += 2) segments.push({ type: String(ts[i]), text: ts[i + 1] });
 		/* props carries our own rs_recur meta, so the picker can show the repeat
 		 * rule that is already on the line instead of always saying Never */
-		return { segments, lineGuid: st.guid, pageGuid: st.rguid, domGuid, props: st.props || null };
+		return { segments, lineGuid: st.guid, pageGuid: rsRguid(st), domGuid, props: st.props || null };
 	}
 
 	/* The focused (or selected) row in Thymer's TASKS VIEW — a first-class
@@ -3508,11 +3520,11 @@ class Plugin extends AppPlugin {
 		if (!el) return null;
 		const guid = el.getAttribute('data-guid');
 		const st = ((window.g_universe && window.g_universe.itemsByGuid) || {})[guid];
-		if (!st || !st.rguid) return null;
+		if (!st || !rsRguid(st)) return null;
 		const ts = st.text_segments || [];
 		const segments = [];
 		for (let i = 0; i + 1 < ts.length; i += 2) segments.push({ type: String(ts[i]), text: ts[i + 1] });
-		return { segments, lineGuid: st.guid, pageGuid: st.rguid, domGuid: st.guid, props: st.props || null, noCaret: true };
+		return { segments, lineGuid: st.guid, pageGuid: rsRguid(st), domGuid: st.guid, props: st.props || null, noCaret: true };
 	}
 
 	/* the surface HOLDING THE FOCUS wins: in a split view a caret parked in
@@ -6562,7 +6574,7 @@ class Plugin extends AppPlugin {
 	async sweep(guid, arrival) {
 		const byGuid = (window.g_universe && window.g_universe.itemsByGuid) || {};
 		const st = byGuid[guid];
-		if (!st || st.is_trashed || st.is_deleted || st.is_virtual || !st.rguid) return;
+		if (!st || st.is_trashed || st.is_deleted || st.is_virtual || !rsRguid(st)) return;
 		if (st.props && (st.props.rs_recur || st.props.itemref)) return;
 		if (this.binKeyOf(st)) return; /* never sweep a collector itself */
 		/* ONLY TASKS WITH CONTENT ARE FILED (his 2026-10-06 report: "Supertask
@@ -6606,7 +6618,7 @@ class Plugin extends AppPlugin {
 		const conf = this.effectiveOrderConf(headSt);
 		if (!conf) return; /* this section has not opted in */
 
-		const pl = await this.pageLines(st.rguid);
+		const pl = await this.pageLines(rsRguid(st));
 		if (!pl) return;
 		const li = pl.byG.get(guid);
 		const headLi = pl.byG.get(headSt.guid);
@@ -6915,11 +6927,11 @@ class Plugin extends AppPlugin {
 		const byGuid = (window.g_universe && window.g_universe.itemsByGuid) || {};
 		for (const g in byGuid) {
 			const st = byGuid[g];
-			if (!st || st.is_trashed || st.is_deleted || st.is_virtual || !st.rguid) continue;
+			if (!st || st.is_trashed || st.is_deleted || st.is_virtual || !rsRguid(st)) continue;
 			if (!this.binKeyOf(st)) continue;
 			const kids = (st.children || []).filter((k) => k && !k.is_trashed && !k.is_deleted);
 			if (kids.length) continue;
-			const pl = await this.pageLines(st.rguid);
+			const pl = await this.pageLines(rsRguid(st));
 			const li = pl && pl.byG.get(st.guid);
 			if (li) { try { await li.delete(); } catch (e) {} }
 		}
@@ -6946,7 +6958,7 @@ class Plugin extends AppPlugin {
 		const heads = new Map();
 		for (const g in byGuid) {
 			const st = byGuid[g];
-			if (!st || st.is_trashed || st.is_deleted || st.is_virtual || !st.rguid) continue;
+			if (!st || st.is_trashed || st.is_deleted || st.is_virtual || !rsRguid(st)) continue;
 			if (!this.binKeyOf(st)) continue;
 			const h = st.parent;
 			if (h && h.guid && !heads.has(h.guid)) heads.set(h.guid, h);
@@ -6970,7 +6982,7 @@ class Plugin extends AppPlugin {
 			const lastTaskAt = (() => { let at = -1; kids.forEach((k, i) => { if (ours(k)) at = i; }); return at; })();
 			const firstBinAt = kids.findIndex((k) => this.binKeyOf(k));
 			if (ranksOk && (lastTaskAt < 0 || firstBinAt < 0 || firstBinAt > lastTaskAt)) continue; /* ordered */
-			const pl = await this.pageLines(headSt.rguid);
+			const pl = await this.pageLines(rsRguid(headSt));
 			if (!pl) continue;
 			const desired = bins.map((k, i) => ({ g: k.guid, r: ranks[i], i }))
 				.sort((a, b) => a.r - b.r || a.i - b.i);
@@ -7015,9 +7027,9 @@ class Plugin extends AppPlugin {
 	async tidyDoneBin(binGuid) {
 		const byGuid = (window.g_universe && window.g_universe.itemsByGuid) || {};
 		const binSt = byGuid[binGuid];
-		if (!binSt || binSt.is_trashed || binSt.is_deleted || !binSt.rguid) return;
+		if (!binSt || binSt.is_trashed || binSt.is_deleted || !rsRguid(binSt)) return;
 		if (this.binKeyOf(binSt) !== 'done') return;
-		const pl = await this.pageLines(binSt.rguid);
+		const pl = await this.pageLines(rsRguid(binSt));
 		if (!pl) return;
 		const all = await pl.rec.getLineItems(false).catch(() => null);
 		if (!all) return;
@@ -7095,7 +7107,7 @@ class Plugin extends AppPlugin {
 		const byGuid = (window.g_universe && window.g_universe.itemsByGuid) || {};
 		for (const g in byGuid) {
 			const st = byGuid[g];
-			if (!st || st.is_trashed || st.is_deleted || st.is_virtual || !st.rguid) continue;
+			if (!st || st.is_trashed || st.is_deleted || st.is_virtual || !rsRguid(st)) continue;
 			const conf = this.effectiveOrderConf(st);
 			if (!conf) continue;
 			const kids = (st.children || []).filter((k) => k && !k.is_trashed && !k.is_deleted);
@@ -7395,7 +7407,7 @@ class Plugin extends AppPlugin {
 			/* a rendered foreign row means the REAL line is in the universe (the
 			 * search loaded it) even though its siblings and children are not —
 			 * so its rguid is the way to its page */
-			const pageGuid = st && st.rguid;
+			const pageGuid = st && rsRguid(st);
 			if (!pageGuid) continue;
 			if (!pages.has(pageGuid)) pages.set(pageGuid, await this.pageLines(pageGuid).catch(() => null));
 			const pl = pages.get(pageGuid);
@@ -7799,14 +7811,14 @@ class Plugin extends AppPlugin {
 		const caretGuid = sel && sel.lineGuid;
 		for (const g in byGuid) {
 			const st = byGuid[g];
-			if (!st || st.is_trashed || st.is_deleted || st.is_virtual || !st.rguid || g === caretGuid) continue;
+			if (!st || st.is_trashed || st.is_deleted || st.is_virtual || !rsRguid(st) || g === caretGuid) continue;
 			const key = this.binKeyOf(st);
 			if (!key) continue;
 			const def = this.binDef(key);
 			if (!def) continue;
 			const ts = st.text_segments || [];
 			if (String(ts[1]) === def.icon && String(ts[3] || '').trim() === def.label) continue;
-			const pl = await this.pageLines(st.rguid);
+			const pl = await this.pageLines(rsRguid(st));
 			const li = pl && pl.byG.get(g);
 			if (li) { try { await li.setSegments([{ type: 'icon', text: def.icon }, { type: 'text', text: ' ' + def.label }]); } catch (e) {} }
 		}
@@ -7840,7 +7852,7 @@ class Plugin extends AppPlugin {
 		const targets = [];
 		for (const g in byGuid) {
 			const st = byGuid[g];
-			if (!st || st.is_trashed || st.is_deleted || st.is_virtual || !st.rguid) continue;
+			if (!st || st.is_trashed || st.is_deleted || st.is_virtual || !rsRguid(st)) continue;
 			if (st.type === 'heading') continue;
 			const key = this.binKeyOf(st);
 			if (key) targets.push({ guid: g, key });
@@ -7852,7 +7864,7 @@ class Plugin extends AppPlugin {
 				|| (st.children || []).some((k) => k && k.guid === caretGuid))) continue;
 			const bin = this.binDef(tg.key);
 			if (!bin) continue;
-			const pl = await this.pageLines(st.rguid);
+			const pl = await this.pageLines(rsRguid(st));
 			if (!pl) continue;
 			let all = await pl.rec.getLineItems(false).catch(() => null);
 			if (!all) continue;
@@ -8325,8 +8337,8 @@ class Plugin extends AppPlugin {
 	async voTarget(guid) {
 		const byGuid = (window.g_universe && window.g_universe.itemsByGuid) || {};
 		const headSt = byGuid[guid];
-		if (!headSt || !headSt.rguid) return null;
-		const pl = await this.pageLines(headSt.rguid);
+		if (!headSt || !rsRguid(headSt)) return null;
+		const pl = await this.pageLines(rsRguid(headSt));
 		const headLi = pl && pl.byG.get(guid);
 		if (!headLi) return null;
 		return { headSt, headLi, pl };
